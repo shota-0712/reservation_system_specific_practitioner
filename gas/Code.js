@@ -146,9 +146,6 @@ function getAvailableSlots(dateStr, menuMinutes) {
     return availableSlots;
 }
 
-return availableSlots;
-}
-
 function makeReservation(data) {
     const lock = LockService.getScriptLock();
     if (!lock.tryLock(10000)) return { status: 'error', message: 'サーバーが混み合っています' };
