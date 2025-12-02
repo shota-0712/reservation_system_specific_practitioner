@@ -51,7 +51,22 @@ function doGet(e) {
         .setMimeType(ContentService.MimeType.JSON);
 }
 
-// ... (doPost remains the same) ...
+// POSTリクエスト処理
+// ==============================================
+function doPost(e) {
+    const json = JSON.parse(e.postData.contents);
+    const action = json.action;
+    let result = {};
+
+    if (action === 'makeReservation') {
+        result = makeReservation(json.data);
+    } else if (action === 'cancelReservation') {
+        result = cancelReservation(json.userId, json.reservationId);
+    }
+
+    return ContentService.createTextOutput(JSON.stringify(result))
+        .setMimeType(ContentService.MimeType.JSON);
+}
 
 // ==============================================
 // 4. 週次予約状況取得 (⚪︎, ×, -)
