@@ -90,36 +90,43 @@
           </div>
         </div>
 
-        <!-- Step 2: Date Selection -->
+        <!-- Step 2: Date Selection (Weekly View) -->
         <div id="step-date" class="hidden animate-fade-in">
           <button onclick="goBack('step-menu')" class="btn-ghost mb-2 text-gray-500 text-sm flex items-center gap-1">
             <i class="fas fa-arrow-left"></i> 戻る
           </button>
           <h2 class="text-lg font-bold text-gray-800 mb-4 border-l-4 border-enji pl-3">日時選択</h2>
 
-          <!-- Custom Calendar -->
-          <div class="bg-white rounded-xl shadow-sm p-4 mb-4">
-            <div class="flex justify-between items-center mb-4">
-              <button id="prev-month" class="p-2 text-enji hover:bg-red-50 rounded-full">❮</button>
-              <h3 id="calendar-title" class="font-bold text-lg text-gray-700"></h3>
-              <button id="next-month" class="p-2 text-enji hover:bg-red-50 rounded-full">❯</button>
+          <!-- Weekly Calendar Controls -->
+          <div class="bg-white rounded-xl shadow-sm p-2 mb-4">
+            <div class="flex justify-between items-center mb-2 px-2">
+              <button id="prev-week"
+                class="px-3 py-1 bg-gray-100 rounded-full text-sm text-gray-600 hover:bg-gray-200 transition-colors">
+                <i class="fas fa-chevron-left"></i> 前の週へ
+              </button>
+              <h3 id="calendar-title" class="font-bold text-gray-700"></h3>
+              <button id="next-week"
+                class="px-3 py-1 bg-gray-100 rounded-full text-sm text-gray-600 hover:bg-gray-200 transition-colors">
+                次の週へ <i class="fas fa-chevron-right"></i>
+              </button>
             </div>
-            <div class="grid grid-cols-7 gap-1 text-center text-xs text-gray-400 mb-2">
-              <div>日</div>
-              <div>月</div>
-              <div>火</div>
-              <div>水</div>
-              <div>木</div>
-              <div>金</div>
-              <div>土</div>
-            </div>
-            <div id="calendar-grid" class="grid grid-cols-7 gap-1"></div>
-          </div>
 
-          <!-- Time Slots -->
-          <div id="time-slots-container" class="hidden">
-            <h3 class="font-bold text-gray-700 mb-2">時間を選択</h3>
-            <div id="time-slots" class="grid grid-cols-3 gap-2"></div>
+            <!-- Weekly Grid -->
+            <div class="overflow-x-auto">
+              <table class="w-full text-center text-sm border-collapse">
+                <thead>
+                  <tr id="weekly-header" class="text-gray-500 border-b border-gray-100">
+                    <!-- Header cells will be injected here -->
+                  </tr>
+                </thead>
+                <tbody id="weekly-body">
+                  <!-- Time slots will be injected here -->
+                </tbody>
+              </table>
+            </div>
+            <div id="weekly-loading" class="hidden py-8 text-center text-enji">
+              <i class="fas fa-spinner fa-spin fa-2x"></i>
+            </div>
           </div>
         </div>
 
@@ -165,6 +172,7 @@
       </div>
 
       <!-- MY PAGE VIEW -->
+      <!-- ... (My Page View remains same) ... -->
       <div id="mypage-view" class="hidden animate-fade-in">
         <h2 class="text-lg font-bold text-gray-800 mb-4 border-l-4 border-enji pl-3">マイページ</h2>
 
@@ -235,7 +243,7 @@
 
   <script>
     // Configuration
-    const GAS_API_URL = "https://script.google.com/macros/s/AKfycbzN_VS4CvX0FiqaUwLh7Rf2imhqP4cepVgQ9W9mKCeqkDo6_d-UIZlwjM2SPi1raeeG/exec";
+    const GAS_API_URL = "https://script.google.com/macros/s/AKfycbzc6-wsejnmbgOD7zwA-HX34zG9je6ofi7WFBdGu9-GJgxuMe4S8aGf4Lc1uTm-P5Iw/exec";
     const LIFF_ID = "2008591418-6eRNAepa";
 
     // State
@@ -359,105 +367,117 @@
       document.getElementById('step-date').classList.remove('hidden');
       state.date = null;
       state.time = null;
-      document.getElementById('time-slots-container').classList.add('hidden');
-      initCalendar();
+      initWeeklyCalendar();
     };
 
-    // Calendar
-    let currentMonth = new Date();
+    // Weekly Calendar Logic
+    let currentWeekStart = new Date();
 
-    function initCalendar() {
-      document.getElementById('prev-month').onclick = () => {
-        currentMonth.setMonth(currentMonth.getMonth() - 1);
-        renderCalendar();
+    function initWeeklyCalendar() {
+      // Reset to today/start of week
+      currentWeekStart = new Date();
+
+      document.getElementById('prev-week').onclick = () => {
+        currentWeekStart.setDate(currentWeekStart.getDate() - 7);
+        renderWeeklyCalendar();
       };
-      document.getElementById('next-month').onclick = () => {
-        currentMonth.setMonth(currentMonth.getMonth() + 1);
-        renderCalendar();
+      document.getElementById('next-week').onclick = () => {
+        currentWeekStart.setDate(currentWeekStart.getDate() + 7);
+        renderWeeklyCalendar();
       };
-      renderCalendar();
+
+      renderWeeklyCalendar();
     }
 
-    function renderCalendar() {
-      const year = currentMonth.getFullYear();
-      const month = currentMonth.getMonth();
+    async function renderWeeklyCalendar() {
+      const startDateStr = formatDate(currentWeekStart);
+      const title = `${currentWeekStart.getFullYear()}年 ${currentWeekStart.getMonth() + 1}月`;
+      document.getElementById('calendar-title').innerText = title;
 
-      document.getElementById('calendar-title').innerText = `${year}年 ${month + 1}月`;
+      const headerRow = document.getElementById('weekly-header');
+      const body = document.getElementById('weekly-body');
+      const loading = document.getElementById('weekly-loading');
+      const table = document.querySelector('#step-date table');
 
-      const firstDay = new Date(year, month, 1);
-      const lastDay = new Date(year, month + 1, 0);
-
-      const grid = document.getElementById('calendar-grid');
-      grid.innerHTML = '';
-
-      for (let i = 0; i < firstDay.getDay(); i++) {
-        grid.appendChild(document.createElement('div'));
-      }
-
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-
-      for (let d = 1; d <= lastDay.getDate(); d++) {
-        const date = new Date(year, month, d);
-        const dateStr = `${year}/${String(month + 1).padStart(2, '0')}/${String(d).padStart(2, '0')}`;
-
-        const btn = document.createElement('button');
-        btn.className = "h-10 w-full rounded-lg flex items-center justify-center text-sm font-medium transition-colors relative";
-
-        if (date < today) {
-          btn.classList.add('text-gray-300', 'cursor-not-allowed');
-          btn.innerText = d;
-        } else {
-          btn.classList.add('hover:bg-enji', 'hover:text-white', 'text-gray-700');
-          if (state.date === dateStr) {
-            btn.classList.add('bg-enji', 'text-white');
-          }
-          btn.innerText = d;
-          btn.onclick = () => selectDate(dateStr);
-        }
-        grid.appendChild(btn);
-      }
-    }
-
-    async function selectDate(dateStr) {
-      state.date = dateStr;
-      renderCalendar();
-
-      const container = document.getElementById('time-slots');
-      const wrapper = document.getElementById('time-slots-container');
-
-      wrapper.classList.remove('hidden');
-      container.innerHTML = '<div class="col-span-3 text-center text-enji"><i class="fas fa-spinner fa-spin"></i></div>';
+      // Show loading
+      loading.classList.remove('hidden');
+      table.classList.add('hidden');
 
       try {
-        let slots = [];
+        let weeklyData = [];
         if (location.hostname === 'localhost' || location.hostname === '127.0.0.1') {
-          // Mock slots
-          slots = ['10:00', '11:00', '14:00', '16:00'];
+          // Mock Data
+          await new Promise(r => setTimeout(r, 500));
+          weeklyData = generateMockWeeklyData(currentWeekStart);
         } else {
-          const res = await fetch(`${GAS_API_URL}?action=getSlots&date=${dateStr}&minutes=${state.menu.minutes}`);
-          slots = await res.json();
+          const res = await fetch(`${GAS_API_URL}?action=getWeeklyAvailability&startDate=${startDateStr}&minutes=${state.menu.minutes}`);
+          weeklyData = await res.json();
         }
 
-        container.innerHTML = '';
-        if (slots.length === 0) {
-          container.innerHTML = '<div class="col-span-3 text-center text-sm text-gray-400">空き枠がありません</div>';
-          return;
-        }
-
-        slots.forEach(time => {
-          const btn = document.createElement('button');
-          btn.className = "py-2 border border-gray-300 rounded-lg text-sm hover:bg-enji hover:border-enji hover:text-white transition-colors";
-          btn.innerText = time;
-          btn.onclick = () => selectTime(time);
-          container.appendChild(btn);
+        // Render Header
+        headerRow.innerHTML = '<th class="py-2 w-16 bg-gray-50 sticky left-0 z-10 border-r border-gray-100">日時</th>';
+        weeklyData.forEach(day => {
+          const isSat = day.day === '土';
+          const isSun = day.day === '日';
+          const colorClass = isSat ? 'text-blue-500' : (isSun ? 'text-red-500' : 'text-gray-700');
+          // Extract day number from date string (yyyy/MM/dd)
+          const dayNum = day.date.split('/')[2];
+          headerRow.innerHTML += `
+            <th class="py-2 min-w-[50px]">
+              <div class="text-xs ${colorClass}">${dayNum}</div>
+              <div class="text-xs ${colorClass}">(${day.day})</div>
+            </th>
+          `;
         });
+
+        // Render Body
+        body.innerHTML = '';
+        // Assuming all days have same time slots, take the first day's slots to generate rows
+        const timeSlots = weeklyData[0].slots.map(s => s.time);
+
+        timeSlots.forEach((time, index) => {
+          let rowHtml = `<tr class="border-b border-gray-50">`;
+          // Time Column
+          rowHtml += `<td class="py-3 text-xs font-bold text-gray-600 bg-gray-50 sticky left-0 z-10 border-r border-gray-100">${time}</td>`;
+
+          // Data Columns
+          weeklyData.forEach(day => {
+            const slot = day.slots[index];
+            let cellContent = '';
+            let cellClass = '';
+
+            if (slot.status === '⚪︎') {
+              cellContent = '<i class="far fa-circle text-enji text-lg"></i>'; // Using FontAwesome circle for better look, or just text
+              cellClass = 'cursor-pointer hover:bg-red-50 transition-colors';
+            } else if (slot.status === '×') {
+              cellContent = '<i class="fas fa-times text-gray-400 text-lg"></i>';
+              cellClass = 'bg-gray-100';
+            } else {
+              cellContent = '<span class="text-gray-300 font-bold">－</span>';
+              cellClass = 'bg-gray-50';
+            }
+
+            // Onclick only for available slots
+            const clickHandler = slot.status === '⚪︎' ? `onclick="selectWeeklySlot('${day.date}', '${time}')"` : '';
+
+            rowHtml += `<td class="py-2 ${cellClass}" ${clickHandler}>${cellContent}</td>`;
+          });
+
+          rowHtml += `</tr>`;
+          body.innerHTML += rowHtml;
+        });
+
       } catch (e) {
-        container.innerHTML = '<div class="col-span-3 text-red-400 text-xs text-center">エラー</div>';
+        console.error(e);
+        body.innerHTML = '<tr><td colspan="8" class="text-red-500 py-4">読み込みエラー</td></tr>';
+      } finally {
+        loading.classList.add('hidden');
+        table.classList.remove('hidden');
       }
     }
 
-    function selectTime(time) {
+    function selectWeeklySlot(date, time) {
+      state.date = date;
       state.time = time;
       document.getElementById('step-date').classList.add('hidden');
       document.getElementById('step-confirm').classList.remove('hidden');
@@ -465,6 +485,44 @@
       document.getElementById('confirm-menu').innerText = state.menu.name;
       document.getElementById('confirm-date').innerText = state.date;
       document.getElementById('confirm-time').innerText = state.time;
+    }
+
+    function formatDate(date) {
+      const y = date.getFullYear();
+      const m = String(date.getMonth() + 1).padStart(2, '0');
+      const d = String(date.getDate()).padStart(2, '0');
+      return `${y}/${m}/${d}`;
+    }
+
+    function generateMockWeeklyData(startDate) {
+      const result = [];
+      for (let i = 0; i < 7; i++) {
+        const d = new Date(startDate);
+        d.setDate(startDate.getDate() + i);
+        const dateStr = formatDate(d);
+        const dayOfWeek = ['日', '月', '火', '水', '木', '金', '土'][d.getDay()];
+
+        const slots = [];
+        let current = new Date(d);
+        current.setHours(10, 0, 0, 0);
+        const end = new Date(d);
+        end.setHours(20, 0, 0, 0);
+
+        while (current < end) {
+          const time = `${String(current.getHours()).padStart(2, '0')}:${String(current.getMinutes()).padStart(2, '0')}`;
+          // Random status
+          const rand = Math.random();
+          let status = '⚪︎';
+          if (rand < 0.3) status = '×';
+          if (rand < 0.1) status = '-';
+
+          slots.push({ time, status });
+          current.setMinutes(current.getMinutes() + 30);
+        }
+
+        result.push({ date: dateStr, day: dayOfWeek, slots });
+      }
+      return result;
     }
 
     window.submitReservation = async () => {
