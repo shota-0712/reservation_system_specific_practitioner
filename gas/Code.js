@@ -183,7 +183,13 @@ function getMenus() {
     const data = sheet.getDataRange().getValues();
     const menus = [];
     for (let i = 1; i < data.length; i++) {
-        menus.push({ id: data[i][0], name: data[i][1], minutes: parseInt(data[i][2]), price: data[i][3] });
+        menus.push({
+            id: data[i][0],
+            name: data[i][1],
+            minutes: parseInt(data[i][2]),
+            price: data[i][3],
+            description: data[i][4]
+        });
     }
     return menus;
 }

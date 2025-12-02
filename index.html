@@ -235,7 +235,7 @@
 
   <script>
     // Configuration
-    const GAS_API_URL = "https://script.google.com/macros/s/AKfycbzfUl1LSBL4pc2XLJtuCaT6Pz97tlQ8KYq4deL448TKCb_TEiHWrvQcvac8LYaDns-G/exec";
+    const GAS_API_URL = "https://script.google.com/macros/s/AKfycbwo4Pf7JXtXUMh0ROjWxG0ZPtOFhoilhvcGU9DIhSSJt3a-iZ4p6bfOHSsSEXKqFFvZ/exec";
     const LIFF_ID = "2008591418-6eRNAepa";
 
     // State
@@ -326,9 +326,9 @@
         let menus = [];
         if (location.hostname === 'localhost' || location.hostname === '127.0.0.1') {
           menus = [
-            { id: '1', name: 'フェイシャル基本コース', minutes: 60, price: 8000 },
-            { id: '2', name: '全身アロマオイル', minutes: 90, price: 12000 },
-            { id: '3', name: 'クイックマッサージ', minutes: 30, price: 4000 }
+            { id: '1', name: 'フェイシャル基本コース', minutes: 60, price: 8000, description: '基本のフェイシャルコースです。' },
+            { id: '2', name: '全身アロマオイル', minutes: 90, price: 12000, description: '全身のリラックス効果が高いアロマオイルマッサージです。' },
+            { id: '3', name: 'クイックマッサージ', minutes: 30, price: 4000, description: 'お急ぎの方におすすめのクイックコース。' }
           ];
         } else {
           const res = await fetch(`${GAS_API_URL}?action=getMenus`);
@@ -340,6 +340,7 @@
             <div class="flex justify-between items-center">
               <div>
                 <h3 class="font-bold text-gray-800">${menu.name}</h3>
+                <p class="text-xs text-gray-500 mt-1 mb-1">${menu.description || ''}</p>
                 <p class="text-sm text-gray-400 mt-1"><i class="far fa-clock"></i> ${menu.minutes}分</p>
               </div>
               <div class="text-enji font-bold text-lg">¥${menu.price.toLocaleString()}</div>
