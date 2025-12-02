@@ -243,7 +243,7 @@
 
   <script>
     // Configuration
-    const GAS_API_URL = "https://script.google.com/macros/s/AKfycbwNIRhi58MT2i6HQLYBADWrGTr1ru084BLl1gfqbSicxC0Xug_lG_QHdM7tLaHyRF4S/exec";
+    const GAS_API_URL = "https://script.google.com/macros/s/AKfycby8af97FE4HquExgSdh5ehEs8jx5TUmZp0b1N98EG1LzeLa2bethpPdgio17VPirNbw/exec";
     const LIFF_ID = "2008591418-6eRNAepa";
 
     // State
@@ -555,7 +555,7 @@
           alert('予約が完了しました！');
           switchTab('mypage');
         } else {
-          alert('エラー: ' + result.message);
+          alert('エラー: ' + (result.message || JSON.stringify(result)));
         }
       } catch (e) {
         alert('通信エラー');

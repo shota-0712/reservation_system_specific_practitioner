@@ -62,6 +62,8 @@ function doPost(e) {
         result = makeReservation(json.data);
     } else if (action === 'cancelReservation') {
         result = cancelReservation(json.userId, json.reservationId);
+    } else {
+        result = { status: 'error', message: 'Invalid action: ' + action };
     }
 
     return ContentService.createTextOutput(JSON.stringify(result))
@@ -334,7 +336,7 @@ function testWeeklyAvailability() {
 function testGetMenus() {
     console.log("--- メニュー取得テスト開始 ---");
     try {
-        const menus = getMenus();
+        const menus = getMenus(); ZZ
         console.log("取得できたメニュー数: " + menus.length);
         console.log(JSON.stringify(menus, null, 2));
     } catch (e) {
