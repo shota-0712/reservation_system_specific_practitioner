@@ -534,8 +534,11 @@
         const payload = {
           userId: state.user.userId,
           name: name,
-          menuName: state.menu.name,
-          menuMinutes: state.menu.minutes,
+          menu: {
+            name: state.menu.name,
+            minutes: state.menu.minutes
+          },
+          phone: document.getElementById('user-phone-input')?.value || '', // Added phone just in case, though not in input yet
           date: state.date,
           time: state.time
         };
