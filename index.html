@@ -544,7 +544,10 @@
         if (!(location.hostname === 'localhost' || location.hostname === '127.0.0.1')) {
           const res = await fetch(GAS_API_URL, {
             method: 'POST',
-            body: JSON.stringify(payload)
+            body: JSON.stringify({
+              action: 'makeReservation',
+              data: payload
+            })
           });
           result = await res.json();
         } else {
