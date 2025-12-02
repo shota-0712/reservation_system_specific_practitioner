@@ -229,18 +229,21 @@ ${PRECAUTIONS}
 function getUserReservations(userId) {
     const ss = SpreadsheetApp.openById(SHEET_ID);
     const sheet = ss.getSheetByName('reservations');
-    const data = sheet.getDataRange().getValues();
+    const data = sheet.getDataRange().getDisplayValues(); // Use getDisplayValues to get strings
     const history = [];
     const now = new Date();
     now.setHours(0, 0, 0, 0);
+
     for (let i = 1; i < data.length; i++) {
+        // data[i][5] is "yyyy/MM/dd" string, data[i][6] is "HH:mm" string
         const rowDate = new Date(data[i][5]);
+
         if (data[i][2] === userId && data[i][7] === 'reserved' && rowDate >= now) {
             history.push({
                 id: data[i][0],
                 menu: data[i][4],
-                date: Utilities.formatDate(rowDate, 'Asia/Tokyo', 'yyyy/MM/dd'),
-                time: Utilities.formatDate(new Date(data[i][6]), 'Asia/Tokyo', 'HH:mm')
+                date: data[i][5], // Use string directly
+                time: data[i][6]  // Use string directly
             });
         }
     }

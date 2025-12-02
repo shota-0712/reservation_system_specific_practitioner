@@ -243,7 +243,7 @@
 
   <script>
     // Configuration
-    const GAS_API_URL = "https://script.google.com/macros/s/AKfycby8af97FE4HquExgSdh5ehEs8jx5TUmZp0b1N98EG1LzeLa2bethpPdgio17VPirNbw/exec";
+    const GAS_API_URL = "https://script.google.com/macros/s/AKfycbywGQp47XR4Q4R5prCWphqWBpsNRNU2-FMK3TFQlJxktzStOx9u_HpRDUzzvIx3_fVu/exec";
     const LIFF_ID = "2008591418-6eRNAepa";
 
     // State
@@ -484,7 +484,22 @@
 
       document.getElementById('confirm-menu').innerText = state.menu.name;
       document.getElementById('confirm-date').innerText = state.date;
-      document.getElementById('confirm-time').innerText = state.time;
+
+      // Calculate end time
+      console.log('Time calculation debug:', {
+        startTime: time,
+        menuMinutes: state.menu.minutes,
+        typeOfMinutes: typeof state.menu.minutes
+      });
+
+      const [hours, minutes] = time.split(':').map(Number);
+      const endDate = new Date();
+      endDate.setHours(hours, minutes + parseInt(state.menu.minutes));
+      const endTime = `${String(endDate.getHours()).padStart(2, '0')}:${String(endDate.getMinutes()).padStart(2, '0')}`;
+
+      console.log('Calculated endTime:', endTime);
+
+      document.getElementById('confirm-time').innerText = `${state.time} 〜 ${endTime}`;
     }
 
     function formatDate(date) {
