@@ -208,3 +208,59 @@ function pushLineMessage(userId, text) {
         'payload': JSON.stringify({ 'to': userId, 'messages': [{ 'type': 'text', 'text': text }] })
     });
 }
+
+// ==============================================
+// 5. メニュー取得
+// ==============================================
+function getMenus() {
+    const ss = SpreadsheetApp.openById(SHEET_ID);
+    const sheet = ss.getSheetByName('menus');
+    const data = sheet.getDataRange().getValues();
+    const menus = [];
+    for (let i = 1; i < data.length; i++) {
+        menus.push({
+            id: data[i][0],
+            name: data[i][1],
+            minutes: parseInt(data[i][2]),
+            price: data[i][3],
+            description: data[i][4]
+        });
+    }
+    return menus;
+}
+
+// ==============================================
+// テスト用関数 (デプロイ不要で動作確認できます)
+// ==============================================
+function testWeeklyAvailability() {
+    const e = {
+        parameter: {
+            action: 'getWeeklyAvailability',
+            startDate: '2025/12/09', // テストしたい日付 (yyyy/MM/dd)
+            minutes: '60'
+        }
+    };
+
+    console.log("--- テスト開始 ---");
+    try {
+        const result = doGet(e);
+        console.log("結果:");
+        console.log(result.getContent());
+    } catch (err) {
+        console.error("エラー発生:");
+        console.error(err);
+    }
+    console.log("--- テスト終了 ---");
+}
+
+function testGetMenus() {
+    console.log("--- メニュー取得テスト開始 ---");
+    try {
+        const menus = getMenus();
+        console.log("取得できたメニュー数: " + menus.length);
+        console.log(JSON.stringify(menus, null, 2));
+    } catch (e) {
+        console.error("エラー発生: " + e.toString());
+    }
+    console.log("--- メニュー取得テスト終了 ---");
+}
