@@ -645,7 +645,7 @@
       try {
         let result = { status: 'success' };
         if (!(location.hostname === 'localhost' || location.hostname === '127.0.0.1')) {
-          const payload = { action: 'cancel', userId: state.user.userId, reservationId: reservationId };
+          const payload = { action: 'cancelReservation', userId: state.user.userId, reservationId: reservationId };
           const res = await fetch(GAS_API_URL, { method: 'POST', body: JSON.stringify(payload) });
           result = await res.json();
         } else {
