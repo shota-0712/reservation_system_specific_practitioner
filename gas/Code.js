@@ -1,14 +1,14 @@
 // ==============================================
-// 1. 設定エリア (★ここを自分の情報に書き換え！)
+// 設定エリア (書き換えてください)
 // ==============================================
-const SHEET_ID = 'あなたのスプレッドシートID';
-const CALENDAR_ID = 'あなたのカレンダーID@group.calendar.google.com';
-const ACCESS_TOKEN = 'あなたのチャネルアクセストークン';
+const SHEET_ID = '1HwXZ3SMV9U01kGcKQ0g8gCr4LM9E4uU83yd5M4SRU3U';
+const CALENDAR_ID = 'en.178.bz@gmail.com';
+const ACCESS_TOKEN = '4u8PbFKHutUL7IWa8K10v298ervi8As3AOxAm9fQGrn7q4R3YxZI6iwtzb3WgAkmeE5N9cuGzJ8ivHHDDm2Ki2V5dDKsIjfb7I1Nov2F6eS2z/1tkvV69MAqWmJi8JdQ2O9AbIIP9RFnTv7nuTVUVAdB04t89/1O/w1cDnyilFU=';
 
 // ★店舗情報 (メッセージに使われます)
 const SALON_INFO = `
 【店舗情報】
-サロン名: En Salon
+サロン名: en Inner health&beauty
 電話番号: 03-0000-0000
 住所: 東京都新宿区〇〇 1-2-3
 アクセス: 〇〇駅から徒歩5分
