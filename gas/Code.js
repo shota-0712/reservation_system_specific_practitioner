@@ -146,6 +146,72 @@ function getAvailableSlots(dateStr, menuMinutes) {
     return availableSlots;
 }
 
+return availableSlots;
+}
+
+function makeReservation(data) {
+    const lock = LockService.getScriptLock();
+    if (!lock.tryLock(10000)) return { status: 'error', message: 'サーバーが混み合っています' };
+
+    try {
+        const ss = SpreadsheetApp.openById(SHEET_ID);
+        const sheet = ss.getSheetByName('reservations');
+        const calendar = CalendarApp.getCalendarById(CALENDAR_ID);
+
+        const date = new Date(data.date.replace(/-/g, '/') + ' ' + data.time);
+        const endTime = new Date(date.getTime() + (data.menu.minutes * 60000));
+
+        // 重複チェック
+        const events = calendar.getEvents(date, endTime);
+        if (events.length > 0) {
+            return { status: 'error', message: '指定された時間は既に予約が入っています' };
+        }
+
+        // カレンダー登録
+        const event = calendar.createEvent(
+            `【予約】${data.name}様 (${data.menu.name})`,
+            date,
+            endTime,
+            { description: `電話番号: ${data.phone}\nLINE ID: ${data.userId}` }
+        );
+
+        // シート登録
+        const newRow = [
+            Utilities.getUuid(),
+            new Date(),
+            data.userId,
+            data.name,
+            data.menu.name,
+            data.date,
+            data.time,
+            'reserved',
+            event.getId()
+        ];
+        sheet.appendRow(newRow);
+
+        // LINE通知
+        const message = `
+${data.name}様
+ご予約ありがとうございます。
+
+📅 日時: ${data.date} ${data.time}
+💆‍♀️ メニュー: ${data.menu.name}
+---------------
+${SALON_INFO}
+---------------
+${PRECAUTIONS}
+`;
+        pushLineMessage(data.userId, message.trim());
+
+        return { status: 'success' };
+
+    } catch (e) {
+        return { status: 'error', message: e.toString() };
+    } finally {
+        lock.releaseLock();
+    }
+}
+
 function getUserReservations(userId) {
     const ss = SpreadsheetApp.openById(SHEET_ID);
     const sheet = ss.getSheetByName('reservations');
