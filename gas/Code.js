@@ -240,9 +240,28 @@ function cancelReservation(userId, reservationId) {
     const data = sheet.getDataRange().getValues();
     for (let i = 1; i < data.length; i++) {
         if (data[i][0] === reservationId && data[i][2] === userId) {
+            const name = data[i][3];
+            const menu = data[i][4];
+            const date = Utilities.formatDate(new Date(data[i][5]), 'Asia/Tokyo', 'yyyy/MM/dd');
+            const time = Utilities.formatDate(new Date(data[i][6]), 'Asia/Tokyo', 'HH:mm');
+
             const eventId = data[i][8];
             if (eventId) { try { CalendarApp.getCalendarById(CALENDAR_ID).getEventById(eventId).deleteEvent(); } catch (e) { } }
             sheet.getRange(i + 1, 8).setValue('canceled');
+
+            const message = `
+${name}様
+ご予約のキャンセルを承りました。
+
+📅 日時: ${date} ${time}
+💆‍♀️ メニュー: ${menu}
+---------------
+${SALON_INFO}
+---------------
+またのご来店を心よりお待ちしております。
+`;
+            pushLineMessage(userId, message.trim());
+
             return { status: 'success' };
         }
     }
