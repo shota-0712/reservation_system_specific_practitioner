@@ -4,6 +4,7 @@
 const SHEET_ID = '1HwXZ3SMV9U01kGcKQ0g8gCr4LM9E4uU83yd5M4SRU3U';
 const CALENDAR_ID = 'en.178.bz@gmail.com';
 const ACCESS_TOKEN = '4u8PbFKHutUL7IWa8K10v298ervi8As3AOxAm9fQGrn7q4R3YxZI6iwtzb3WgAkmeE5N9cuGzJ8ivHHDDm2Ki2V5dDKsIjfb7I1Nov2F6eS2z/1tkvV69MAqWmJi8JdQ2O9AbIIP9RFnTv7nuTVUVAdB04t89/1O/w1cDnyilFU=';
+const ADMIN_LINE_ID = 'U5f0d3c6efbc2ae00fbfe05b881153f18'; // 管理者のLINE User ID
 
 // ★店舗情報 (メッセージに使われます)
 const SALON_INFO = `
@@ -203,7 +204,7 @@ function makeReservation(data) {
         ];
         sheet.appendRow(newRow);
 
-        // LINE通知
+        // LINE通知 (ユーザーへ)
         const message = `
 ${data.name}様
 ご予約ありがとうございます。
@@ -216,6 +217,16 @@ ${SALON_INFO}
 ${PRECAUTIONS}
 `;
         pushLineMessage(data.userId, message.trim());
+
+        // LINE通知 (管理者へ)
+        const adminMessage = `
+【新規予約が入りました】
+👤 名前: ${data.name} 様
+📅 日時: ${data.date} ${data.time}
+💆‍♀️ メニュー: ${data.menu.name}
+📱 電話: ${data.phone}
+`;
+        pushLineMessage(ADMIN_LINE_ID, adminMessage.trim());
 
         return { status: 'success' };
 
@@ -278,6 +289,15 @@ ${SALON_INFO}
 `;
             pushLineMessage(userId, message.trim());
 
+            // LINE通知 (管理者へ)
+            const adminMessage = `
+【予約キャンセルがありました】
+👤 名前: ${name} 様
+📅 日時: ${date} ${time}
+💆‍♀️ メニュー: ${menu}
+`;
+            pushLineMessage(ADMIN_LINE_ID, adminMessage.trim());
+
             return { status: 'success' };
         }
     }
@@ -339,7 +359,7 @@ function testWeeklyAvailability() {
 function testGetMenus() {
     console.log("--- メニュー取得テスト開始 ---");
     try {
-        const menus = getMenus(); ZZ
+        const menus = getMenus();
         console.log("取得できたメニュー数: " + menus.length);
         console.log(JSON.stringify(menus, null, 2));
     } catch (e) {
