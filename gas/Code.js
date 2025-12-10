@@ -4,7 +4,7 @@
 const SHEET_ID = '1HwXZ3SMV9U01kGcKQ0g8gCr4LM9E4uU83yd5M4SRU3U';
 const CALENDAR_ID = 'en.178.bz@gmail.com';
 const ACCESS_TOKEN = '4u8PbFKHutUL7IWa8K10v298ervi8As3AOxAm9fQGrn7q4R3YxZI6iwtzb3WgAkmeE5N9cuGzJ8ivHHDDm2Ki2V5dDKsIjfb7I1Nov2F6eS2z/1tkvV69MAqWmJi8JdQ2O9AbIIP9RFnTv7nuTVUVAdB04t89/1O/w1cDnyilFU=';
-const ADMIN_LINE_ID = 'U5f0d3c6efbc2ae00fbfe05b881153f18'; // 管理者のLINE User ID
+const ADMIN_LINE_ID = 'U7859f282793bcc5d142d78b1675d17e1'; // 管理者のLINE User ID
 
 // ★店舗情報 (メッセージに使われます)
 const SALON_INFO = `
@@ -51,6 +51,10 @@ function doGet(e) {
         result = getUserReservations(e.parameter.userId);
     } else if (action === 'getWeeklyAvailability') {
         result = getWeeklyAvailability(e.parameter.startDate, parseInt(e.parameter.minutes));
+    } else if (action === 'checkAdmin') {
+        result = checkAdmin(e.parameter.userId);
+    } else if (action === 'getAllReservations') {
+        result = getAllReservations(e.parameter.adminId);
     }
 
     return ContentService.createTextOutput(JSON.stringify(result))
@@ -68,6 +72,12 @@ function doPost(e) {
         result = makeReservation(json.data);
     } else if (action === 'cancelReservation') {
         result = cancelReservation(json.userId, json.reservationId);
+    } else if (action === 'addMenu') {
+        result = addMenu(json.adminId, json.menu);
+    } else if (action === 'updateMenu') {
+        result = updateMenu(json.adminId, json.menuId, json.menu);
+    } else if (action === 'deleteMenu') {
+        result = deleteMenu(json.adminId, json.menuId);
     } else {
         result = { status: 'error', message: 'Invalid action: ' + action };
     }
@@ -338,7 +348,149 @@ function getMenus() {
 }
 
 // ==============================================
-// テスト用関数 (デプロイ不要で動作確認できます)
+// 6. 管理者機能
+// ==============================================
+
+// 管理者判定
+function checkAdmin(userId) {
+    return { isAdmin: userId === ADMIN_LINE_ID };
+}
+
+// 全予約一覧取得（管理者のみ）
+function getAllReservations(adminId) {
+    if (adminId !== ADMIN_LINE_ID) {
+        return { status: 'error', message: '権限がありません' };
+    }
+
+    const ss = SpreadsheetApp.openById(SHEET_ID);
+    const sheet = ss.getSheetByName('reservations');
+    const data = sheet.getDataRange().getDisplayValues();
+    const reservations = [];
+
+    for (let i = 1; i < data.length; i++) {
+        reservations.push({
+            id: data[i][0],
+            timestamp: data[i][1],
+            lineId: data[i][2],
+            name: data[i][3],
+            menu: data[i][4],
+            date: data[i][5],
+            time: data[i][6],
+            status: data[i][7],
+            calEventId: data[i][8]
+        });
+    }
+
+    // 日付順でソート（新しい順）
+    reservations.sort((a, b) => {
+        const dateA = new Date(a.date + ' ' + a.time);
+        const dateB = new Date(b.date + ' ' + b.time);
+        return dateB - dateA;
+    });
+
+    return reservations;
+}
+
+// メニュー追加
+function addMenu(adminId, menuData) {
+    if (adminId !== ADMIN_LINE_ID) {
+        return { status: 'error', message: '権限がありません' };
+    }
+
+    const lock = LockService.getScriptLock();
+    if (!lock.tryLock(10000)) return { status: 'error', message: 'サーバーが混み合っています' };
+
+    try {
+        const ss = SpreadsheetApp.openById(SHEET_ID);
+        const sheet = ss.getSheetByName('menus');
+        const data = sheet.getDataRange().getValues();
+
+        // 新しいIDを生成（既存の最大ID + 1）
+        let maxId = 0;
+        for (let i = 1; i < data.length; i++) {
+            const id = parseInt(data[i][0]);
+            if (id > maxId) maxId = id;
+        }
+        const newId = maxId + 1;
+
+        sheet.appendRow([
+            newId,
+            menuData.name,
+            menuData.minutes,
+            menuData.price,
+            menuData.description || ''
+        ]);
+
+        return { status: 'success', menuId: newId };
+    } catch (e) {
+        return { status: 'error', message: e.toString() };
+    } finally {
+        lock.releaseLock();
+    }
+}
+
+// メニュー編集
+function updateMenu(adminId, menuId, menuData) {
+    if (adminId !== ADMIN_LINE_ID) {
+        return { status: 'error', message: '権限がありません' };
+    }
+
+    const lock = LockService.getScriptLock();
+    if (!lock.tryLock(10000)) return { status: 'error', message: 'サーバーが混み合っています' };
+
+    try {
+        const ss = SpreadsheetApp.openById(SHEET_ID);
+        const sheet = ss.getSheetByName('menus');
+        const data = sheet.getDataRange().getValues();
+
+        for (let i = 1; i < data.length; i++) {
+            if (String(data[i][0]) === String(menuId)) {
+                sheet.getRange(i + 1, 2).setValue(menuData.name);
+                sheet.getRange(i + 1, 3).setValue(menuData.minutes);
+                sheet.getRange(i + 1, 4).setValue(menuData.price);
+                sheet.getRange(i + 1, 5).setValue(menuData.description || '');
+                return { status: 'success' };
+            }
+        }
+
+        return { status: 'error', message: 'メニューが見つかりませんでした' };
+    } catch (e) {
+        return { status: 'error', message: e.toString() };
+    } finally {
+        lock.releaseLock();
+    }
+}
+
+// メニュー削除
+function deleteMenu(adminId, menuId) {
+    if (adminId !== ADMIN_LINE_ID) {
+        return { status: 'error', message: '権限がありません' };
+    }
+
+    const lock = LockService.getScriptLock();
+    if (!lock.tryLock(10000)) return { status: 'error', message: 'サーバーが混み合っています' };
+
+    try {
+        const ss = SpreadsheetApp.openById(SHEET_ID);
+        const sheet = ss.getSheetByName('menus');
+        const data = sheet.getDataRange().getValues();
+
+        for (let i = 1; i < data.length; i++) {
+            if (String(data[i][0]) === String(menuId)) {
+                sheet.deleteRow(i + 1);
+                return { status: 'success' };
+            }
+        }
+
+        return { status: 'error', message: 'メニューが見つかりませんでした' };
+    } catch (e) {
+        return { status: 'error', message: e.toString() };
+    } finally {
+        lock.releaseLock();
+    }
+}
+
+
 // ==============================================
 function testWeeklyAvailability() {
     const e = {

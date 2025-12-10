@@ -192,6 +192,37 @@
         </div>
       </div>
 
+      <!-- ADMIN VIEW (管理者のみ表示) -->
+      <div id="admin-view" class="hidden animate-fade-in">
+        <h2 class="text-lg font-bold text-gray-800 mb-4 border-l-4 border-enji pl-3">管理ダッシュボード</h2>
+
+        <!-- Tab Switcher for Admin -->
+        <div class="flex mb-4 bg-white rounded-lg shadow-sm overflow-hidden">
+          <button onclick="switchAdminTab('reservations')" id="admin-tab-reservations"
+            class="flex-1 py-3 text-sm font-bold text-white bg-enji transition-colors">予約一覧</button>
+          <button onclick="switchAdminTab('menus')" id="admin-tab-menus"
+            class="flex-1 py-3 text-sm font-bold text-gray-500 bg-gray-50 hover:bg-gray-100 transition-colors">メニュー管理</button>
+        </div>
+
+        <!-- Admin: Reservations List -->
+        <div id="admin-reservations" class="block">
+          <div id="admin-reservation-list" class="space-y-3">
+            <div class="flex justify-center py-8 text-enji"><i class="fas fa-spinner fa-spin fa-2x"></i></div>
+          </div>
+        </div>
+
+        <!-- Admin: Menu Management -->
+        <div id="admin-menus" class="hidden">
+          <button onclick="showAddMenuModal()"
+            class="w-full mb-4 bg-enji hover:bg-enji-dark text-white font-bold py-3 rounded-lg shadow-md transition-colors">
+            <i class="fas fa-plus mr-2"></i>新しいメニューを追加
+          </button>
+          <div id="admin-menu-list" class="space-y-3">
+            <div class="flex justify-center py-8 text-enji"><i class="fas fa-spinner fa-spin fa-2x"></i></div>
+          </div>
+        </div>
+      </div>
+
     </main>
 
     <!-- Bottom Navigation -->
@@ -206,6 +237,11 @@
           class="flex flex-col items-center justify-center w-full h-full text-gray-400 transition-colors">
           <i class="fas fa-clipboard-list text-xl mb-1"></i>
           <span class="text-xs font-medium">確認/キャンセル</span>
+        </button>
+        <button onclick="switchTab('admin')" id="nav-admin"
+          class="hidden flex-col items-center justify-center w-full h-full text-gray-400 transition-colors">
+          <i class="fas fa-cog text-xl mb-1"></i>
+          <span class="text-xs font-medium">管理</span>
         </button>
       </div>
     </nav>
@@ -241,9 +277,55 @@
     </div>
   </div>
 
+  <!-- Menu Edit Modal -->
+  <div id="menu-modal"
+    class="fixed inset-0 bg-black/50 flex justify-center items-center z-50 hidden p-4 animate-fade-in">
+    <div class="bg-white rounded-xl shadow-lg w-full max-w-sm overflow-hidden">
+      <div class="bg-enji text-white p-4 flex justify-between items-center">
+        <h3 id="menu-modal-title" class="font-bold text-lg">メニュー編集</h3>
+        <button onclick="closeMenuModal()" class="text-white hover:text-gray-200"><i class="fas fa-times"></i></button>
+      </div>
+      <div class="p-6 space-y-4">
+        <input type="hidden" id="menu-edit-id">
+        <div>
+          <label class="text-xs text-gray-400 block mb-1">メニュー名</label>
+          <input type="text" id="menu-edit-name"
+            class="w-full p-2 border border-gray-300 rounded focus:outline-none focus:border-enji focus:ring-1 focus:ring-enji"
+            placeholder="メニュー名を入力">
+        </div>
+        <div class="flex gap-4">
+          <div class="flex-1">
+            <label class="text-xs text-gray-400 block mb-1">施術時間（分）</label>
+            <input type="number" id="menu-edit-minutes"
+              class="w-full p-2 border border-gray-300 rounded focus:outline-none focus:border-enji focus:ring-1 focus:ring-enji"
+              placeholder="60">
+          </div>
+          <div class="flex-1">
+            <label class="text-xs text-gray-400 block mb-1">料金（円）</label>
+            <input type="number" id="menu-edit-price"
+              class="w-full p-2 border border-gray-300 rounded focus:outline-none focus:border-enji focus:ring-1 focus:ring-enji"
+              placeholder="10000">
+          </div>
+        </div>
+        <div>
+          <label class="text-xs text-gray-400 block mb-1">説明</label>
+          <textarea id="menu-edit-description" rows="3"
+            class="w-full p-2 border border-gray-300 rounded focus:outline-none focus:border-enji focus:ring-1 focus:ring-enji resize-none"
+            placeholder="メニューの説明を入力"></textarea>
+        </div>
+        <div class="pt-4 border-t border-gray-100 space-y-2">
+          <button onclick="saveMenu()"
+            class="w-full bg-enji hover:bg-enji-dark text-white font-bold py-3 rounded-lg transition-colors">保存</button>
+          <button id="menu-delete-btn" onclick="deleteMenuFromModal()"
+            class="w-full border border-red-500 text-red-500 font-bold py-3 rounded-lg hover:bg-red-50 transition-colors hidden">削除</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <script>
     // Configuration
-    const GAS_API_URL = "https://script.google.com/macros/s/AKfycbxmC3jIc0gNeQNuNaJgB5nbgjx0G2KZ3i1o2HOpbkjDRYraAbLoyE-rmFPUXti3dgzo/exec";
+    const GAS_API_URL = "https://script.google.com/macros/s/AKfycbxERZzxi1CdXeuuRhsB5FlPht9LYebl75dEDdymNctlGwZCG11W00H6GjNKiZ-gur0/exec";
     const LIFF_ID = "2008591418-6eRNAepa";
 
     // State
@@ -252,15 +334,20 @@
       menu: null,
       date: null,
       time: null,
-      currentTab: 'home'
+      currentTab: 'home',
+      isAdmin: false
     };
 
     // Initialization
     window.onload = async () => {
-      // Localhost Mock
-      if (location.hostname === 'localhost' || location.hostname === '127.0.0.1') {
-        state.user = { userId: 'mock_user', displayName: 'Guest User', pictureUrl: 'https://placehold.co/100' };
+      // Localhost Mock - set to true to test admin mode
+      const MOCK_ADMIN = true; // ★ ローカルテスト用: trueで管理者モード
+
+      if (!location.hostname || location.hostname === 'localhost' || location.hostname === '127.0.0.1') {
+        state.user = { userId: MOCK_ADMIN ? 'U7859f282793bcc5d142d78b1675d17e1' : 'mock_user', displayName: 'Guest User', pictureUrl: 'https://placehold.co/100' };
+        state.isAdmin = MOCK_ADMIN;
         updateUserDisplay();
+        if (state.isAdmin) showAdminTab();
         loadMenus();
         return;
       }
@@ -274,12 +361,24 @@
         const profile = await liff.getProfile();
         state.user = profile;
         updateUserDisplay();
+
+        // Check if admin
+        const adminRes = await fetch(`${GAS_API_URL}?action=checkAdmin&userId=${profile.userId}`);
+        const adminData = await adminRes.json();
+        state.isAdmin = adminData.isAdmin;
+        if (state.isAdmin) showAdminTab();
+
         loadMenus();
       } catch (err) {
         console.error('LIFF Init Error', err);
         alert('LIFF Error: ' + err.message);
       }
     };
+
+    function showAdminTab() {
+      document.getElementById('nav-admin').classList.remove('hidden');
+      document.getElementById('nav-admin').classList.add('flex');
+    }
 
     function updateUserDisplay() {
       if (state.user) {
@@ -299,24 +398,31 @@
       document.getElementById('home-view').classList.toggle('block', tab === 'home');
       document.getElementById('mypage-view').classList.toggle('hidden', tab !== 'mypage');
       document.getElementById('mypage-view').classList.toggle('block', tab === 'mypage');
+      document.getElementById('admin-view').classList.toggle('hidden', tab !== 'admin');
+      document.getElementById('admin-view').classList.toggle('block', tab === 'admin');
 
       // Toggle Nav Active State
       const navHome = document.getElementById('nav-home');
       const navMypage = document.getElementById('nav-mypage');
+      const navAdmin = document.getElementById('nav-admin');
+
+      // Reset all nav buttons
+      [navHome, navMypage, navAdmin].forEach(btn => {
+        btn.classList.add('text-gray-400');
+        btn.classList.remove('text-enji');
+      });
 
       if (tab === 'home') {
         navHome.classList.add('text-enji');
         navHome.classList.remove('text-gray-400');
-        navMypage.classList.add('text-gray-400');
-        navMypage.classList.remove('text-enji');
-        // If returning to home, ensure calendar is init
-        if (!document.getElementById('calendar-grid').hasChildNodes()) initCalendar();
-      } else {
+      } else if (tab === 'mypage') {
         navMypage.classList.add('text-enji');
         navMypage.classList.remove('text-gray-400');
-        navHome.classList.add('text-gray-400');
-        navHome.classList.remove('text-enji');
         loadHistory();
+      } else if (tab === 'admin') {
+        navAdmin.classList.add('text-enji');
+        navAdmin.classList.remove('text-gray-400');
+        loadAdminReservations();
       }
     };
 
@@ -655,6 +761,234 @@
         if (result.status === 'success') {
           alert('キャンセルしました');
           loadHistory();
+        } else {
+          alert('エラー: ' + result.message);
+        }
+      } catch (e) {
+        alert('通信エラー');
+      } finally {
+        document.getElementById('loading').classList.add('hidden');
+      }
+    };
+
+    // ==============================================
+    // 管理者機能
+    // ==============================================
+
+    window.switchAdminTab = (tab) => {
+      const tabReservations = document.getElementById('admin-tab-reservations');
+      const tabMenus = document.getElementById('admin-tab-menus');
+      const sectionReservations = document.getElementById('admin-reservations');
+      const sectionMenus = document.getElementById('admin-menus');
+
+      if (tab === 'reservations') {
+        tabReservations.classList.add('bg-enji', 'text-white');
+        tabReservations.classList.remove('bg-gray-50', 'text-gray-500');
+        tabMenus.classList.add('bg-gray-50', 'text-gray-500');
+        tabMenus.classList.remove('bg-enji', 'text-white');
+        sectionReservations.classList.remove('hidden');
+        sectionMenus.classList.add('hidden');
+        loadAdminReservations();
+      } else {
+        tabMenus.classList.add('bg-enji', 'text-white');
+        tabMenus.classList.remove('bg-gray-50', 'text-gray-500');
+        tabReservations.classList.add('bg-gray-50', 'text-gray-500');
+        tabReservations.classList.remove('bg-enji', 'text-white');
+        sectionMenus.classList.remove('hidden');
+        sectionReservations.classList.add('hidden');
+        loadAdminMenus();
+      }
+    };
+
+    async function loadAdminReservations() {
+      const container = document.getElementById('admin-reservation-list');
+      container.innerHTML = '<div class="flex justify-center py-8 text-enji"><i class="fas fa-spinner fa-spin fa-2x"></i></div>';
+
+      try {
+        let reservations = [];
+        if (location.hostname === 'localhost' || location.hostname === '127.0.0.1') {
+          // Mock data
+          await new Promise(r => setTimeout(r, 500));
+          reservations = [
+            { id: '1', name: '堀江祥汰', menu: 'フォトフェイシャル', date: '2025/12/15', time: '10:00', status: 'reserved' },
+            { id: '2', name: '山田花子', menu: 'フォト+イオン導入', date: '2025/12/14', time: '14:00', status: 'reserved' },
+            { id: '3', name: '田中太郎', menu: '美肌ケア', date: '2025/12/13', time: '11:30', status: 'canceled' },
+          ];
+        } else {
+          const res = await fetch(`${GAS_API_URL}?action=getAllReservations&adminId=${state.user.userId}`);
+          reservations = await res.json();
+        }
+
+        if (reservations.length === 0) {
+          container.innerHTML = '<div class="text-center text-gray-400 py-8">予約がありません</div>';
+          return;
+        }
+
+        container.innerHTML = reservations.map(item => {
+          const statusColor = item.status === 'reserved' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500';
+          const statusText = item.status === 'reserved' ? '予約中' : 'キャンセル';
+          return `
+            <div class="bg-white shadow-sm border border-gray-100 p-4 rounded-xl">
+              <div class="flex justify-between items-start">
+                <div>
+                  <div class="font-bold text-gray-800">${item.name} 様</div>
+                  <div class="text-sm text-gray-600 mt-1">${item.date} ${item.time}</div>
+                  <div class="text-xs text-gray-500 mt-1">${item.menu}</div>
+                </div>
+                <span class="px-2 py-1 rounded-full text-xs font-bold ${statusColor}">${statusText}</span>
+              </div>
+            </div>
+          `;
+        }).join('');
+      } catch (e) {
+        console.error(e);
+        container.innerHTML = '<div class="text-center text-red-400 py-8">読み込みエラー</div>';
+      }
+    }
+
+    async function loadAdminMenus() {
+      const container = document.getElementById('admin-menu-list');
+      container.innerHTML = '<div class="flex justify-center py-8 text-enji"><i class="fas fa-spinner fa-spin fa-2x"></i></div>';
+
+      try {
+        let menus = [];
+        if (location.hostname === 'localhost' || location.hostname === '127.0.0.1') {
+          await new Promise(r => setTimeout(r, 500));
+          menus = [
+            { id: 1, name: 'フォトフェイシャル', minutes: 45, price: 8800, description: 'クレンジング・洗顔・鎮静美容パック付き' },
+            { id: 2, name: 'フォト+イオン導入', minutes: 60, price: 11000, description: 'クレンジング・洗顔・ビタミンパック' },
+          ];
+        } else {
+          const res = await fetch(`${GAS_API_URL}?action=getMenus`);
+          menus = await res.json();
+        }
+
+        if (menus.length === 0) {
+          container.innerHTML = '<div class="text-center text-gray-400 py-8">メニューがありません</div>';
+          return;
+        }
+
+        container.innerHTML = menus.map(menu => `
+          <div onclick='showEditMenuModal(${JSON.stringify(menu)})' class="bg-white shadow-sm border border-gray-100 p-4 rounded-xl cursor-pointer hover:border-enji transition-all active:scale-95">
+            <div class="flex justify-between items-center">
+              <div>
+                <h3 class="font-bold text-gray-800">${menu.name}</h3>
+                <p class="text-xs text-gray-500 mt-1 mb-1">${menu.description || ''}</p>
+                <p class="text-sm text-gray-400 mt-1"><i class="far fa-clock"></i> ${menu.minutes}分</p>
+              </div>
+              <div class="text-enji font-bold text-lg">¥${menu.price.toLocaleString()}</div>
+            </div>
+          </div>
+        `).join('');
+      } catch (e) {
+        console.error(e);
+        container.innerHTML = '<div class="text-center text-red-400 py-8">読み込みエラー</div>';
+      }
+    }
+
+    window.showAddMenuModal = () => {
+      document.getElementById('menu-modal-title').innerText = '新しいメニューを追加';
+      document.getElementById('menu-edit-id').value = '';
+      document.getElementById('menu-edit-name').value = '';
+      document.getElementById('menu-edit-minutes').value = '';
+      document.getElementById('menu-edit-price').value = '';
+      document.getElementById('menu-edit-description').value = '';
+      document.getElementById('menu-delete-btn').classList.add('hidden');
+      document.getElementById('menu-modal').classList.remove('hidden');
+    };
+
+    window.showEditMenuModal = (menu) => {
+      document.getElementById('menu-modal-title').innerText = 'メニューを編集';
+      document.getElementById('menu-edit-id').value = menu.id;
+      document.getElementById('menu-edit-name').value = menu.name;
+      document.getElementById('menu-edit-minutes').value = menu.minutes;
+      document.getElementById('menu-edit-price').value = menu.price;
+      document.getElementById('menu-edit-description').value = menu.description || '';
+      document.getElementById('menu-delete-btn').classList.remove('hidden');
+      document.getElementById('menu-modal').classList.remove('hidden');
+    };
+
+    window.closeMenuModal = () => {
+      document.getElementById('menu-modal').classList.add('hidden');
+    };
+
+    window.saveMenu = async () => {
+      const id = document.getElementById('menu-edit-id').value;
+      const name = document.getElementById('menu-edit-name').value;
+      const minutes = parseInt(document.getElementById('menu-edit-minutes').value);
+      const price = parseInt(document.getElementById('menu-edit-price').value);
+      const description = document.getElementById('menu-edit-description').value;
+
+      if (!name || !minutes || !price) {
+        alert('メニュー名、施術時間、料金は必須です');
+        return;
+      }
+
+      document.getElementById('loading').classList.remove('hidden');
+      try {
+        const menuData = { name, minutes, price, description };
+        let result = { status: 'success' };
+
+        if (!(location.hostname === 'localhost' || location.hostname === '127.0.0.1')) {
+          if (id) {
+            // Update existing menu
+            const res = await fetch(GAS_API_URL, {
+              method: 'POST',
+              body: JSON.stringify({ action: 'updateMenu', adminId: state.user.userId, menuId: id, menu: menuData })
+            });
+            result = await res.json();
+          } else {
+            // Add new menu
+            const res = await fetch(GAS_API_URL, {
+              method: 'POST',
+              body: JSON.stringify({ action: 'addMenu', adminId: state.user.userId, menu: menuData })
+            });
+            result = await res.json();
+          }
+        } else {
+          await new Promise(r => setTimeout(r, 500));
+        }
+
+        if (result.status === 'success') {
+          alert(id ? 'メニューを更新しました' : 'メニューを追加しました');
+          closeMenuModal();
+          loadAdminMenus();
+          loadMenus(); // Refresh public menu list
+        } else {
+          alert('エラー: ' + result.message);
+        }
+      } catch (e) {
+        alert('通信エラー');
+      } finally {
+        document.getElementById('loading').classList.add('hidden');
+      }
+    };
+
+    window.deleteMenuFromModal = async () => {
+      const id = document.getElementById('menu-edit-id').value;
+      if (!id) return;
+
+      if (!confirm('このメニューを削除しますか？')) return;
+
+      document.getElementById('loading').classList.remove('hidden');
+      try {
+        let result = { status: 'success' };
+
+        if (!(location.hostname === 'localhost' || location.hostname === '127.0.0.1')) {
+          const res = await fetch(GAS_API_URL, {
+            method: 'POST',
+            body: JSON.stringify({ action: 'deleteMenu', adminId: state.user.userId, menuId: id })
+          });
+          result = await res.json();
+        } else {
+          await new Promise(r => setTimeout(r, 500));
+        }
+
+        if (result.status === 'success') {
+          alert('メニューを削除しました');
+          closeMenuModal();
+          loadAdminMenus();
+          loadMenus(); // Refresh public menu list
         } else {
           alert('エラー: ' + result.message);
         }
