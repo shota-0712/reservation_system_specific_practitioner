@@ -344,7 +344,7 @@
       const MOCK_ADMIN = true; // ★ ローカルテスト用: trueで管理者モード
 
       if (!location.hostname || location.hostname === 'localhost' || location.hostname === '127.0.0.1') {
-        state.user = { userId: MOCK_ADMIN ? 'U7859f282793bcc5d142d78b1675d17e1' : 'mock_user', displayName: 'Guest User', pictureUrl: 'https://placehold.co/100' };
+        state.user = { userId: MOCK_ADMIN ? 'U5f0d3c6efbc2ae00fbfe05b881153f18' : 'mock_user', displayName: 'Guest User', pictureUrl: 'https://placehold.co/100' };
         state.isAdmin = MOCK_ADMIN;
         updateUserDisplay();
         if (state.isAdmin) showAdminTab();
