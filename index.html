@@ -348,7 +348,7 @@
     // ==============================================
     // Configuration (設定エリア)
     // ==============================================
-    const GAS_API_URL = "https://script.google.com/macros/s/AKfycbyqje5bV6DeJCWKqEs9Ksq1ivUI47siX5U4eciO0PjbbIzwk2eCdTiToePGpvsZS1bG/exec";
+    const GAS_API_URL = "https://script.google.com/macros/s/AKfycbwQxUWc5tcRHiYNAy34a7qPfiSvDx9nYCIn1LCLyuGc_VLAw9sd3nRqUGFADWD3gqEd/exec";
     const LIFF_ID = "2008591418-6eRNAepa";
     const MOCK_ADMIN = true; // ★ ローカルテスト用: trueで管理者モード
 
@@ -1064,7 +1064,8 @@
           alert('エラー: ' + result.message);
         }
       } catch (e) {
-        alert('通信エラー');
+        console.error('saveMenu error:', e);
+        alert('通信エラー: ' + e.message);
       } finally {
         document.getElementById('loading').classList.add('hidden');
       }

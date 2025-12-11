@@ -500,22 +500,38 @@ function deleteMenu(adminId, menuId) {
 // 7. 画像アップロード (Google Drive)
 // ==============================================
 function uploadImage(adminId, imageData, fileName) {
+    // E001: 権限エラー
     if (adminId !== ADMIN_LINE_ID) {
-        return { status: 'error', message: '権限がありません' };
+        return { status: 'error', code: 'E001', message: '[E001] 権限がありません' };
     }
 
+    // E002: フォルダID未設定
     if (!MENU_IMAGE_FOLDER_ID) {
-        return { status: 'error', message: 'MENU_IMAGE_FOLDER_ID が設定されていません。Code.js の設定エリアでフォルダIDを設定してください。' };
+        return { status: 'error', code: 'E002', message: '[E002] MENU_IMAGE_FOLDER_ID が設定されていません' };
+    }
+
+    // E003: 画像データなし
+    if (!imageData) {
+        return { status: 'error', code: 'E003', message: '[E003] 画像データがありません' };
     }
 
     try {
         // Base64データからBlobを作成
-        const contentType = imageData.match(/data:([^;]+);/)[1];
+        const match = imageData.match(/data:([^;]+);/);
+        if (!match) {
+            return { status: 'error', code: 'E004', message: '[E004] 画像フォーマットが不正です' };
+        }
+        const contentType = match[1];
         const base64Data = imageData.replace(/^data:[^;]+;base64,/, '');
         const blob = Utilities.newBlob(Utilities.base64Decode(base64Data), contentType, fileName);
 
         // 指定されたフォルダIDでフォルダを取得
-        const folder = DriveApp.getFolderById(MENU_IMAGE_FOLDER_ID);
+        let folder;
+        try {
+            folder = DriveApp.getFolderById(MENU_IMAGE_FOLDER_ID);
+        } catch (folderError) {
+            return { status: 'error', code: 'E005', message: '[E005] フォルダが見つかりません: ' + MENU_IMAGE_FOLDER_ID };
+        }
 
         // 画像を保存
         const file = folder.createFile(blob);
@@ -527,7 +543,7 @@ function uploadImage(adminId, imageData, fileName) {
 
         return { status: 'success', imageUrl: imageUrl };
     } catch (e) {
-        return { status: 'error', message: e.toString() };
+        return { status: 'error', code: 'E006', message: '[E006] ' + e.toString() };
     }
 }
 
