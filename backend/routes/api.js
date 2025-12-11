@@ -34,11 +34,17 @@ const PRECAUTIONS = `
 ご迷惑をお掛けしてしまいますが、予めご了承下さいませ。
 `;
 
-const ADMIN_LINE_ID = process.env.ADMIN_LINE_ID;
+const ADMIN_LINE_IDS = (process.env.ADMIN_LINE_ID || '').split(',').map(id => id.trim()).filter(id => id);
 
 // ヘルパー: 管理者チェック
 function isAdmin(userId) {
-    return userId === ADMIN_LINE_ID;
+    return ADMIN_LINE_IDS.includes(userId);
+}
+
+// ヘルパー: 全管理者に通知
+async function notifyAdmins(text) {
+    const promises = ADMIN_LINE_IDS.map(adminId => lineService.pushMessage(adminId, text));
+    await Promise.all(promises);
 }
 
 // ====================
@@ -204,7 +210,7 @@ ${PRECAUTIONS}
 💆‍♀️ メニュー: ${data.menu.name}
 📱 電話: ${data.phone || 'なし'}
 `.trim();
-        await lineService.pushMessage(ADMIN_LINE_ID, adminMessage);
+        await notifyAdmins(adminMessage);
 
         res.json({ status: 'success' });
     } catch (err) {
@@ -253,7 +259,7 @@ ${SALON_INFO}
 📅 日時: ${reservation.date} ${reservation.time}
 💆‍♀️ メニュー: ${reservation.menu}
 `.trim();
-        await lineService.pushMessage(ADMIN_LINE_ID, adminMessage);
+        await notifyAdmins(adminMessage);
 
         res.json({ status: 'success' });
     } catch (err) {
