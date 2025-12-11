@@ -45,6 +45,11 @@ jobs:
           THEME_COLOR_LIGHT: ${{ secrets.THEME_COLOR_LIGHT }}
           THEME_COLOR_DARK: ${{ secrets.THEME_COLOR_DARK }}
 
+      - name: Inject LIFF ID
+        if: ${{ secrets.LIFF_ID != '' }}
+        run: |
+          sed -i 's/const LIFF_ID = ".*"/const LIFF_ID = "${{ secrets.LIFF_ID }}"/g' backend/public/index.html
+
       - name: Build and Push Container
         run: |
           cd backend
@@ -65,4 +70,6 @@ jobs:
             --set-env-vars "LINE_ACCESS_TOKEN=${{ secrets.LINE_ACCESS_TOKEN }}" \
             --set-env-vars "^@^ADMIN_LINE_ID=${{ secrets.ADMIN_LINE_ID }}" \
             --set-env-vars "SCHEDULER_SECRET=${{ secrets.SCHEDULER_SECRET }}" \
-            --set-env-vars "GCS_BUCKET_NAME=${{ env.PROJECT_ID }}-images"
+            --set-env-vars "GCS_BUCKET_NAME=${{ env.PROJECT_ID }}-images" \
+            --set-env-vars "^|^SALON_INFO=${{ secrets.SALON_INFO }}" \
+            --set-env-vars "^|^PRECAUTIONS=${{ secrets.PRECAUTIONS }}"

@@ -5,11 +5,11 @@ const calendarService = require('../services/calendar');
 const lineService = require('../services/line');
 const storageService = require('../services/storage');  // Google Cloud Storage
 
-// 店舗情報 (メッセージに使用)
-const SALON_INFO = `
+// 店舗情報 (環境変数から読み込み、未設定時はデフォルト値を使用)
+const SALON_INFO = process.env.SALON_INFO || `
 【店舗情報】
 サロン名: en Inner health&beauty
-最寄り駅: 千葉駅·東千葉駅
+最寄り駅: 千葉駅・東千葉駅
 住所: 〒264-0035 千葉市若葉区東寺山町581-4 VIPイーストピアビル3階
 営業時間: 10:00〜19:00 (完全予約制 / 19:00以降可、ご相談ください)
 定休日: 不定休
@@ -17,7 +17,7 @@ const SALON_INFO = `
 支払い方法：現金又はクレジットカード(2万以上のみ)
 `;
 
-const PRECAUTIONS = `
+const PRECAUTIONS = process.env.PRECAUTIONS || `
 【ご来店に際しての注意点】
 
 ⏰ 遅刻について
