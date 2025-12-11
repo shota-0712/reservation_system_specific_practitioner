@@ -4,7 +4,7 @@
 const SHEET_ID = '1HwXZ3SMV9U01kGcKQ0g8gCr4LM9E4uU83yd5M4SRU3U';
 const CALENDAR_ID = 'en.178.bz@gmail.com';
 const ACCESS_TOKEN = '4u8PbFKHutUL7IWa8K10v298ervi8As3AOxAm9fQGrn7q4R3YxZI6iwtzb3WgAkmeE5N9cuGzJ8ivHHDDm2Ki2V5dDKsIjfb7I1Nov2F6eS2z/1tkvV69MAqWmJi8JdQ2O9AbIIP9RFnTv7nuTVUVAdB04t89/1O/w1cDnyilFU=';
-const ADMIN_LINE_ID = 'U5f0d3c6efbc2ae00fbfe05b881153f18'; // 管理者のLINE User ID
+const ADMIN_LINE_ID = 'U7859f282793bcc5d142d78b1675d17e1'; // 管理者のLINE User ID
 const MENU_IMAGE_FOLDER = 'en_salon_menu_images'; // メニュー画像保存フォルダ名
 
 // ★店舗情報 (メッセージに使われます)
