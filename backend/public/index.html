@@ -561,7 +561,7 @@
       let tabsHtml = `<button onclick="filterByCategory('all')" class="category-tab px-3 py-1.5 rounded-full text-sm font-medium bg-enji text-white transition-colors" data-category="all">すべて</button>`;
 
       categories.forEach(cat => {
-        tabsHtml += `<button onclick="filterByCategory('${cat}')" class="category-tab px-3 py-1.5 rounded-full text-sm font-medium bg-gray-100 text-gray-600 hover:bg-gray-200 transition-colors" data-category="${cat}">${cat}</button>`;
+        tabsHtml += `<button onclick="filterByCategory('${cat}')" class="category-tab px-3 py-1.5 rounded-full text-sm font-medium bg-pink-50 text-pink-600 hover:bg-pink-100 transition-colors" data-category="${cat}">${cat}</button>`;
       });
 
       tabsContainer.innerHTML = tabsHtml;
@@ -573,11 +573,11 @@
       // Update tab styles
       document.querySelectorAll('.category-tab').forEach(tab => {
         if (tab.dataset.category === category) {
-          tab.classList.remove('bg-gray-100', 'text-gray-600');
+          tab.classList.remove('bg-pink-50', 'text-pink-600');
           tab.classList.add('bg-enji', 'text-white');
         } else {
           tab.classList.remove('bg-enji', 'text-white');
-          tab.classList.add('bg-gray-100', 'text-gray-600');
+          tab.classList.add('bg-pink-50', 'text-pink-600');
         }
       });
 
