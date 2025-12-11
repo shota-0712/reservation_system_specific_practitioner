@@ -20,17 +20,18 @@ async function getMenus() {
     const sheets = await getSheetsClient();
     const response = await sheets.spreadsheets.values.get({
         spreadsheetId: SHEET_ID,
-        range: 'menus!A2:F',
+        range: 'menus!A2:G',  // A:id, B:category, C:name, D:minutes, E:price, F:description, G:imageUrl
     });
 
     const rows = response.data.values || [];
     return rows.map(row => ({
         id: row[0],
-        name: row[1],
-        minutes: parseInt(row[2]),
-        price: row[3],
-        description: row[4] || '',
-        imageUrl: row[5] || '',
+        category: row[1] || '',
+        name: row[2],
+        minutes: parseInt(row[3]),
+        price: row[4],
+        description: row[5] || '',
+        imageUrl: row[6] || '',
     }));
 }
 
@@ -48,11 +49,12 @@ async function addMenu(menuData) {
 
     await sheets.spreadsheets.values.append({
         spreadsheetId: SHEET_ID,
-        range: 'menus!A:F',
+        range: 'menus!A:G',
         valueInputOption: 'USER_ENTERED',
         requestBody: {
             values: [[
                 newId,
+                menuData.category || '',
                 menuData.name,
                 menuData.minutes,
                 menuData.price,
@@ -71,7 +73,7 @@ async function updateMenu(menuId, menuData) {
     // 対象行を見つける
     const response = await sheets.spreadsheets.values.get({
         spreadsheetId: SHEET_ID,
-        range: 'menus!A:F',
+        range: 'menus!A:G',
     });
 
     const rows = response.data.values || [];
@@ -90,10 +92,11 @@ async function updateMenu(menuId, menuData) {
 
     await sheets.spreadsheets.values.update({
         spreadsheetId: SHEET_ID,
-        range: `menus!B${targetRowIndex}:F${targetRowIndex}`,
+        range: `menus!B${targetRowIndex}:G${targetRowIndex}`,
         valueInputOption: 'USER_ENTERED',
         requestBody: {
             values: [[
+                menuData.category || '',
                 menuData.name,
                 menuData.minutes,
                 menuData.price,
@@ -112,7 +115,7 @@ async function deleteMenu(menuId) {
     // 対象行を見つける
     const response = await sheets.spreadsheets.values.get({
         spreadsheetId: SHEET_ID,
-        range: 'menus!A:F',
+        range: 'menus!A:G',
     });
 
     const rows = response.data.values || [];
