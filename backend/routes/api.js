@@ -3,7 +3,7 @@ const router = express.Router();
 const sheetsService = require('../services/sheets');
 const calendarService = require('../services/calendar');
 const lineService = require('../services/line');
-const driveService = require('../services/drive');  // 共有ドライブ用
+const storageService = require('../services/storage');  // Google Cloud Storage
 
 // 店舗情報 (メッセージに使用)
 const SALON_INFO = `
@@ -288,7 +288,7 @@ router.post('/upload-image', async (req, res, next) => {
             return res.json({ status: 'error', code: 'E003', message: '[E003] 画像データがありません' });
         }
 
-        const result = await driveService.uploadImage(imageData, fileName);
+        const result = await storageService.uploadImage(imageData, fileName);
         res.json(result);
     } catch (err) {
         next(err);
