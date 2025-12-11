@@ -279,13 +279,13 @@
 
   <!-- Menu Edit Modal -->
   <div id="menu-modal"
-    class="fixed inset-0 bg-black/50 flex justify-center items-center z-50 hidden p-4 animate-fade-in">
-    <div class="bg-white rounded-xl shadow-lg w-full max-w-sm overflow-hidden">
-      <div class="bg-enji text-white p-4 flex justify-between items-center">
+    class="fixed inset-0 bg-black/50 flex justify-center items-center z-50 hidden p-4 animate-fade-in overflow-y-auto">
+    <div class="bg-white rounded-xl shadow-lg w-full max-w-sm overflow-hidden my-auto max-h-[90vh] flex flex-col">
+      <div class="bg-enji text-white p-4 flex justify-between items-center flex-shrink-0">
         <h3 id="menu-modal-title" class="font-bold text-lg">メニュー編集</h3>
         <button onclick="closeMenuModal()" class="text-white hover:text-gray-200"><i class="fas fa-times"></i></button>
       </div>
-      <div class="p-6 space-y-4">
+      <div class="p-6 space-y-4 overflow-y-auto flex-1">
         <input type="hidden" id="menu-edit-id">
         <input type="hidden" id="menu-edit-imageUrl">
         <div>
@@ -479,13 +479,13 @@
 
         container.innerHTML = menus.map(menu => {
           const imageHtml = menu.imageUrl
-            ? `<img src="${menu.imageUrl}" alt="${menu.name}" class="w-full h-32 object-cover rounded-t-xl mb-3">`
+            ? `<div class="w-20 h-20 flex-shrink-0"><img src="${menu.imageUrl}" alt="${menu.name}" class="w-20 h-20 object-cover rounded-lg"></div>`
             : '';
           return `
           <div onclick='selectMenu(${JSON.stringify(menu)})' class="bg-white shadow-sm border border-gray-100 rounded-xl cursor-pointer hover:border-enji transition-all active:scale-95 overflow-hidden">
-            ${imageHtml}
-            <div class="p-4">
-              <div class="flex justify-between items-center">
+            <div class="p-4 flex gap-4 items-center">
+              ${imageHtml}
+              <div class="flex-1 flex justify-between items-center">
                 <div>
                   <h3 class="font-bold text-gray-800">${menu.name}</h3>
                   <p class="text-xs text-gray-500 mt-1 mb-1">${menu.description || ''}</p>
