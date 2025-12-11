@@ -93,7 +93,7 @@ router.put('/menus/:id', async (req, res, next) => {
 // DELETE /api/menus/:id - メニュー削除 (管理者のみ)
 router.delete('/menus/:id', async (req, res, next) => {
     try {
-        const { adminId } = req.body;
+        const adminId = req.query.adminId || (req.body && req.body.adminId);
         const menuId = req.params.id;
         if (!isAdmin(adminId)) {
             return res.status(403).json({ status: 'error', message: '権限がありません' });

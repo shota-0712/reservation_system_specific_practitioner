@@ -566,7 +566,7 @@
       const tabsContainer = document.getElementById('category-tabs');
       const categories = [...new Set(menus.map(m => m.category).filter(c => c))];
 
-      let tabsHtml = `<button onclick="filterByCategory('all')" class="category-tab px-3 py-1.5 rounded-full text-sm font-medium border border-enji bg-enji text-white transition-colors" data-category="all">すべて</button>`;
+      let tabsHtml = `<button onclick="filterByCategory('all')" class="category-tab px-3 py-1.5 rounded-full text-sm font-medium border border-enji !bg-enji !text-white transition-colors" data-category="all">すべて</button>`;
 
       categories.forEach(cat => {
         tabsHtml += `<button onclick="filterByCategory('${cat}')" class="category-tab px-3 py-1.5 rounded-full text-sm font-medium border border-enji bg-white text-enji hover:bg-gray-50 transition-colors" data-category="${cat}">${cat}</button>`;
@@ -582,9 +582,9 @@
       document.querySelectorAll('.category-tab').forEach(tab => {
         if (tab.dataset.category === category) {
           tab.classList.remove('bg-white', 'text-enji');
-          tab.classList.add('bg-enji', 'text-white');
+          tab.classList.add('!bg-enji', '!text-white', '!border-enji');
         } else {
-          tab.classList.remove('bg-enji', 'text-white');
+          tab.classList.remove('!bg-enji', '!text-white', '!border-enji');
           tab.classList.add('bg-white', 'text-enji');
         }
       });
