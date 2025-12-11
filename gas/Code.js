@@ -5,7 +5,7 @@ const SHEET_ID = '1HwXZ3SMV9U01kGcKQ0g8gCr4LM9E4uU83yd5M4SRU3U';
 const CALENDAR_ID = 'en.178.bz@gmail.com';
 const ACCESS_TOKEN = '4u8PbFKHutUL7IWa8K10v298ervi8As3AOxAm9fQGrn7q4R3YxZI6iwtzb3WgAkmeE5N9cuGzJ8ivHHDDm2Ki2V5dDKsIjfb7I1Nov2F6eS2z/1tkvV69MAqWmJi8JdQ2O9AbIIP9RFnTv7nuTVUVAdB04t89/1O/w1cDnyilFU=';
 const ADMIN_LINE_ID = 'U7859f282793bcc5d142d78b1675d17e1'; // 管理者のLINE User ID
-const MENU_IMAGE_FOLDER = 'en_salon_menu_images'; // メニュー画像保存フォルダ名
+const MENU_IMAGE_FOLDER_ID = '1kgTTW7nxHX4kKdBeQqUv_3Kj0Y-aLZsV'; // ★ メニュー画像保存先のGoogleドライブフォルダID
 
 // ★店舗情報 (メッセージに使われます)
 const SALON_INFO = `
@@ -504,20 +504,18 @@ function uploadImage(adminId, imageData, fileName) {
         return { status: 'error', message: '権限がありません' };
     }
 
+    if (!MENU_IMAGE_FOLDER_ID) {
+        return { status: 'error', message: 'MENU_IMAGE_FOLDER_ID が設定されていません。Code.js の設定エリアでフォルダIDを設定してください。' };
+    }
+
     try {
         // Base64データからBlobを作成
         const contentType = imageData.match(/data:([^;]+);/)[1];
         const base64Data = imageData.replace(/^data:[^;]+;base64,/, '');
         const blob = Utilities.newBlob(Utilities.base64Decode(base64Data), contentType, fileName);
 
-        // メニュー画像フォルダを取得または作成
-        const folders = DriveApp.getFoldersByName(MENU_IMAGE_FOLDER);
-        let folder;
-        if (folders.hasNext()) {
-            folder = folders.next();
-        } else {
-            folder = DriveApp.createFolder(MENU_IMAGE_FOLDER);
-        }
+        // 指定されたフォルダIDでフォルダを取得
+        const folder = DriveApp.getFolderById(MENU_IMAGE_FOLDER_ID);
 
         // 画像を保存
         const file = folder.createFile(blob);
