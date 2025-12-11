@@ -287,6 +287,7 @@
       </div>
       <div class="p-6 space-y-4">
         <input type="hidden" id="menu-edit-id">
+        <input type="hidden" id="menu-edit-imageUrl">
         <div>
           <label class="text-xs text-gray-400 block mb-1">メニュー名</label>
           <input type="text" id="menu-edit-name"
@@ -313,6 +314,26 @@
             class="w-full p-2 border border-gray-300 rounded focus:outline-none focus:border-enji focus:ring-1 focus:ring-enji resize-none"
             placeholder="メニューの説明を入力"></textarea>
         </div>
+        <div>
+          <label class="text-xs text-gray-400 block mb-1">メニュー画像</label>
+          <div id="menu-image-preview" class="mb-2 hidden">
+            <img id="menu-preview-img" src="" alt="Preview"
+              class="w-full h-32 object-cover rounded-lg border border-gray-200">
+          </div>
+          <div class="flex gap-2">
+            <label class="flex-1 cursor-pointer">
+              <input type="file" id="menu-edit-image" accept="image/*" class="hidden" onchange="previewMenuImage(this)">
+              <div
+                class="w-full py-2 text-center border-2 border-dashed border-gray-300 rounded-lg text-gray-500 hover:border-enji hover:text-enji transition-colors">
+                <i class="fas fa-camera mr-2"></i>画像を選択
+              </div>
+            </label>
+            <button type="button" onclick="clearMenuImage()" id="menu-clear-image-btn"
+              class="hidden px-4 py-2 border border-red-400 text-red-400 rounded-lg hover:bg-red-50 transition-colors">
+              <i class="fas fa-trash"></i>
+            </button>
+          </div>
+        </div>
         <div class="pt-4 border-t border-gray-100 space-y-2">
           <button onclick="saveMenu()"
             class="w-full bg-enji hover:bg-enji-dark text-white font-bold py-3 rounded-lg transition-colors">保存</button>
@@ -324,11 +345,16 @@
   </div>
 
   <script>
-    // Configuration
-    const GAS_API_URL = "https://script.google.com/macros/s/AKfycbxsXubpev107-yV2fv0r-C-lTeEOykvFb8t15pcsevox8yr46nRW36xfBMc2qj8Z819/exec";
+    // ==============================================
+    // Configuration (設定エリア)
+    // ==============================================
+    const GAS_API_URL = "https://script.google.com/macros/s/AKfycbyXNXotNn7udAl_kob1wO1N3R9YPUzYmFYE3vwCpftqN9xsr-0RWjhduLSaVZQd6wTg/exec";
     const LIFF_ID = "2008591418-6eRNAepa";
+    const MOCK_ADMIN = true; // ★ ローカルテスト用: trueで管理者モード
 
+    // ==============================================
     // State
+    // ==============================================
     let state = {
       user: null,
       menu: null,
@@ -338,11 +364,10 @@
       isAdmin: false
     };
 
+    // ==============================================
     // Initialization
+    // ==============================================
     window.onload = async () => {
-      // Localhost Mock - set to true to test admin mode
-      const MOCK_ADMIN = true; // ★ ローカルテスト用: trueで管理者モード
-
       if (!location.hostname || location.hostname === 'localhost' || location.hostname === '127.0.0.1') {
         state.user = { userId: MOCK_ADMIN ? 'U5f0d3c6efbc2ae00fbfe05b881153f18' : 'mock_user', displayName: 'Guest User', pictureUrl: 'https://placehold.co/100' };
         state.isAdmin = MOCK_ADMIN;
@@ -449,18 +474,25 @@
           menus = await res.json();
         }
 
-        container.innerHTML = menus.map(menu => `
-          <div onclick='selectMenu(${JSON.stringify(menu)})' class="bg-white shadow-sm border border-gray-100 p-4 rounded-xl cursor-pointer hover:border-enji transition-all active:scale-95">
-            <div class="flex justify-between items-center">
-              <div>
-                <h3 class="font-bold text-gray-800">${menu.name}</h3>
-                <p class="text-xs text-gray-500 mt-1 mb-1">${menu.description || ''}</p>
-                <p class="text-sm text-gray-400 mt-1"><i class="far fa-clock"></i> ${menu.minutes}分</p>
+        container.innerHTML = menus.map(menu => {
+          const imageHtml = menu.imageUrl
+            ? `<img src="${menu.imageUrl}" alt="${menu.name}" class="w-full h-32 object-cover rounded-t-xl mb-3">`
+            : '';
+          return `
+          <div onclick='selectMenu(${JSON.stringify(menu)})' class="bg-white shadow-sm border border-gray-100 rounded-xl cursor-pointer hover:border-enji transition-all active:scale-95 overflow-hidden">
+            ${imageHtml}
+            <div class="p-4">
+              <div class="flex justify-between items-center">
+                <div>
+                  <h3 class="font-bold text-gray-800">${menu.name}</h3>
+                  <p class="text-xs text-gray-500 mt-1 mb-1">${menu.description || ''}</p>
+                  <p class="text-sm text-gray-400 mt-1"><i class="far fa-clock"></i> ${menu.minutes}分</p>
+                </div>
+                <div class="text-enji font-bold text-lg">¥${menu.price.toLocaleString()}</div>
               </div>
-              <div class="text-enji font-bold text-lg">¥${menu.price.toLocaleString()}</div>
             </div>
           </div>
-        `).join('');
+        `}).join('');
       } catch (e) {
         console.error(e);
         container.innerHTML = '<div class="text-center text-red-400">メニュー読み込みエラー</div>';
@@ -893,6 +925,10 @@
       document.getElementById('menu-edit-minutes').value = '';
       document.getElementById('menu-edit-price').value = '';
       document.getElementById('menu-edit-description').value = '';
+      document.getElementById('menu-edit-imageUrl').value = '';
+      document.getElementById('menu-edit-image').value = '';
+      document.getElementById('menu-image-preview').classList.add('hidden');
+      document.getElementById('menu-clear-image-btn').classList.add('hidden');
       document.getElementById('menu-delete-btn').classList.add('hidden');
       document.getElementById('menu-modal').classList.remove('hidden');
     };
@@ -904,6 +940,19 @@
       document.getElementById('menu-edit-minutes').value = menu.minutes;
       document.getElementById('menu-edit-price').value = menu.price;
       document.getElementById('menu-edit-description').value = menu.description || '';
+      document.getElementById('menu-edit-imageUrl').value = menu.imageUrl || '';
+      document.getElementById('menu-edit-image').value = '';
+
+      // Show/hide image preview
+      if (menu.imageUrl) {
+        document.getElementById('menu-preview-img').src = menu.imageUrl;
+        document.getElementById('menu-image-preview').classList.remove('hidden');
+        document.getElementById('menu-clear-image-btn').classList.remove('hidden');
+      } else {
+        document.getElementById('menu-image-preview').classList.add('hidden');
+        document.getElementById('menu-clear-image-btn').classList.add('hidden');
+      }
+
       document.getElementById('menu-delete-btn').classList.remove('hidden');
       document.getElementById('menu-modal').classList.remove('hidden');
     };
@@ -912,12 +961,64 @@
       document.getElementById('menu-modal').classList.add('hidden');
     };
 
+    // Image preview and upload helper functions
+    window.previewMenuImage = (input) => {
+      if (input.files && input.files[0]) {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          document.getElementById('menu-preview-img').src = e.target.result;
+          document.getElementById('menu-image-preview').classList.remove('hidden');
+          document.getElementById('menu-clear-image-btn').classList.remove('hidden');
+        };
+        reader.readAsDataURL(input.files[0]);
+      }
+    };
+
+    window.clearMenuImage = () => {
+      document.getElementById('menu-edit-image').value = '';
+      document.getElementById('menu-edit-imageUrl').value = '';
+      document.getElementById('menu-image-preview').classList.add('hidden');
+      document.getElementById('menu-clear-image-btn').classList.add('hidden');
+    };
+
+    async function uploadMenuImage(file) {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = async (e) => {
+          try {
+            const base64Data = e.target.result;
+            const res = await fetch(GAS_API_URL, {
+              method: 'POST',
+              body: JSON.stringify({
+                action: 'uploadImage',
+                adminId: state.user.userId,
+                imageData: base64Data,
+                fileName: file.name
+              })
+            });
+            const result = await res.json();
+            if (result.status === 'success') {
+              resolve(result.imageUrl);
+            } else {
+              reject(new Error(result.message));
+            }
+          } catch (err) {
+            reject(err);
+          }
+        };
+        reader.onerror = () => reject(new Error('ファイルの読み込みに失敗しました'));
+        reader.readAsDataURL(file);
+      });
+    }
+
     window.saveMenu = async () => {
       const id = document.getElementById('menu-edit-id').value;
       const name = document.getElementById('menu-edit-name').value;
       const minutes = parseInt(document.getElementById('menu-edit-minutes').value);
       const price = parseInt(document.getElementById('menu-edit-price').value);
       const description = document.getElementById('menu-edit-description').value;
+      let imageUrl = document.getElementById('menu-edit-imageUrl').value;
+      const imageFile = document.getElementById('menu-edit-image').files[0];
 
       if (!name || !minutes || !price) {
         alert('メニュー名、施術時間、料金は必須です');
@@ -926,7 +1027,12 @@
 
       document.getElementById('loading').classList.remove('hidden');
       try {
-        const menuData = { name, minutes, price, description };
+        // Upload new image if selected
+        if (imageFile && !(location.hostname === 'localhost' || location.hostname === '127.0.0.1')) {
+          imageUrl = await uploadMenuImage(imageFile);
+        }
+
+        const menuData = { name, minutes, price, description, imageUrl };
         let result = { status: 'success' };
 
         if (!(location.hostname === 'localhost' || location.hostname === '127.0.0.1')) {

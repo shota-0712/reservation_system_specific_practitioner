@@ -5,6 +5,7 @@ const SHEET_ID = '1HwXZ3SMV9U01kGcKQ0g8gCr4LM9E4uU83yd5M4SRU3U';
 const CALENDAR_ID = 'en.178.bz@gmail.com';
 const ACCESS_TOKEN = '4u8PbFKHutUL7IWa8K10v298ervi8As3AOxAm9fQGrn7q4R3YxZI6iwtzb3WgAkmeE5N9cuGzJ8ivHHDDm2Ki2V5dDKsIjfb7I1Nov2F6eS2z/1tkvV69MAqWmJi8JdQ2O9AbIIP9RFnTv7nuTVUVAdB04t89/1O/w1cDnyilFU=';
 const ADMIN_LINE_ID = 'U5f0d3c6efbc2ae00fbfe05b881153f18'; // 管理者のLINE User ID
+const MENU_IMAGE_FOLDER = 'en_salon_menu_images'; // メニュー画像保存フォルダ名
 
 // ★店舗情報 (メッセージに使われます)
 const SALON_INFO = `
@@ -78,6 +79,8 @@ function doPost(e) {
         result = updateMenu(json.adminId, json.menuId, json.menu);
     } else if (action === 'deleteMenu') {
         result = deleteMenu(json.adminId, json.menuId);
+    } else if (action === 'uploadImage') {
+        result = uploadImage(json.adminId, json.imageData, json.fileName);
     } else {
         result = { status: 'error', message: 'Invalid action: ' + action };
     }
@@ -341,7 +344,8 @@ function getMenus() {
             name: data[i][1],
             minutes: parseInt(data[i][2]),
             price: data[i][3],
-            description: data[i][4]
+            description: data[i][4],
+            imageUrl: data[i][5] || ''
         });
     }
     return menus;
@@ -418,7 +422,8 @@ function addMenu(adminId, menuData) {
             menuData.name,
             menuData.minutes,
             menuData.price,
-            menuData.description || ''
+            menuData.description || '',
+            menuData.imageUrl || ''
         ]);
 
         return { status: 'success', menuId: newId };
@@ -449,6 +454,7 @@ function updateMenu(adminId, menuId, menuData) {
                 sheet.getRange(i + 1, 3).setValue(menuData.minutes);
                 sheet.getRange(i + 1, 4).setValue(menuData.price);
                 sheet.getRange(i + 1, 5).setValue(menuData.description || '');
+                sheet.getRange(i + 1, 6).setValue(menuData.imageUrl || '');
                 return { status: 'success' };
             }
         }
@@ -490,8 +496,44 @@ function deleteMenu(adminId, menuId) {
     }
 }
 
-
 // ==============================================
+// 7. 画像アップロード (Google Drive)
+// ==============================================
+function uploadImage(adminId, imageData, fileName) {
+    if (adminId !== ADMIN_LINE_ID) {
+        return { status: 'error', message: '権限がありません' };
+    }
+
+    try {
+        // Base64データからBlobを作成
+        const contentType = imageData.match(/data:([^;]+);/)[1];
+        const base64Data = imageData.replace(/^data:[^;]+;base64,/, '');
+        const blob = Utilities.newBlob(Utilities.base64Decode(base64Data), contentType, fileName);
+
+        // メニュー画像フォルダを取得または作成
+        const folders = DriveApp.getFoldersByName(MENU_IMAGE_FOLDER);
+        let folder;
+        if (folders.hasNext()) {
+            folder = folders.next();
+        } else {
+            folder = DriveApp.createFolder(MENU_IMAGE_FOLDER);
+        }
+
+        // 画像を保存
+        const file = folder.createFile(blob);
+        file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+
+        // 公開URLを生成
+        const fileId = file.getId();
+        const imageUrl = `https://drive.google.com/uc?export=view&id=${fileId}`;
+
+        return { status: 'success', imageUrl: imageUrl };
+    } catch (e) {
+        return { status: 'error', message: e.toString() };
+    }
+}
+
+
 function testWeeklyAvailability() {
     const e = {
         parameter: {
