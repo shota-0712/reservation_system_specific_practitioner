@@ -68,8 +68,16 @@
   <div id="app" class="min-h-screen pb-24">
     <!-- Header -->
     <header class="bg-white shadow-sm sticky top-0 z-40">
-      <div class="max-w-md mx-auto px-4 h-16 flex items-center justify-center">
-        <img src="en_logo.jpeg" alt="En Salon" class="h-10 w-auto">
+      <div class="max-w-md mx-auto px-4 py-3 flex items-center gap-4">
+        <img src="en_logo.jpeg" alt="En Salon" class="h-12 w-12 rounded-full object-cover flex-shrink-0">
+        <div class="flex-1 min-w-0">
+          <h1 class="font-bold text-gray-800 text-sm truncate">en Inner health&beauty</h1>
+          <p class="text-xs text-gray-500 truncate">〒264-0035 千葉市若葉区東寺山町581-4</p>
+          <p class="text-xs text-gray-400 flex items-center gap-1">
+            <i class="fas fa-train text-xs"></i>
+            <span>千葉駅・東千葉駅</span>
+          </p>
+        </div>
       </div>
     </header>
 
@@ -79,35 +87,35 @@
       <!-- HOME VIEW -->
       <div id="home-view" class="block">
 
-        <!-- Progress Steps Indicator -->
-        <div id="progress-steps" class="bg-white rounded-xl shadow-sm p-4 mb-4">
-          <div class="flex justify-between items-center">
-            <div class="flex flex-col items-center flex-1">
+        <!-- Progress Steps Indicator (Compact) -->
+        <div id="progress-steps" class="bg-white rounded-xl shadow-sm p-3 mb-4">
+          <div class="flex items-center justify-between">
+            <div class="flex flex-col items-center">
               <div id="step-icon-1"
-                class="w-8 h-8 rounded-full bg-enji text-white flex items-center justify-center text-sm font-bold mb-1">
-                1</div>
-              <span class="text-xs text-gray-600">メニュー</span>
+                class="w-6 h-6 rounded-full bg-enji text-white flex items-center justify-center text-xs font-bold">1
+              </div>
+              <span class="text-[10px] text-gray-600 mt-1 whitespace-nowrap">メニュー</span>
             </div>
-            <div class="flex-1 h-0.5 bg-gray-200 -mt-4" id="step-line-1"></div>
-            <div class="flex flex-col items-center flex-1">
+            <div class="flex-1 h-0.5 bg-gray-200 mx-1" id="step-line-1"></div>
+            <div class="flex flex-col items-center">
               <div id="step-icon-2"
-                class="w-8 h-8 rounded-full bg-gray-200 text-gray-400 flex items-center justify-center text-sm font-bold mb-1">
+                class="w-6 h-6 rounded-full bg-gray-200 text-gray-400 flex items-center justify-center text-xs font-bold">
                 2</div>
-              <span class="text-xs text-gray-400">日時選択</span>
+              <span class="text-[10px] text-gray-400 mt-1 whitespace-nowrap">日時選択</span>
             </div>
-            <div class="flex-1 h-0.5 bg-gray-200 -mt-4" id="step-line-2"></div>
-            <div class="flex flex-col items-center flex-1">
+            <div class="flex-1 h-0.5 bg-gray-200 mx-1" id="step-line-2"></div>
+            <div class="flex flex-col items-center">
               <div id="step-icon-3"
-                class="w-8 h-8 rounded-full bg-gray-200 text-gray-400 flex items-center justify-center text-sm font-bold mb-1">
+                class="w-6 h-6 rounded-full bg-gray-200 text-gray-400 flex items-center justify-center text-xs font-bold">
                 3</div>
-              <span class="text-xs text-gray-400">確認</span>
+              <span class="text-[10px] text-gray-400 mt-1 whitespace-nowrap">確認</span>
             </div>
-            <div class="flex-1 h-0.5 bg-gray-200 -mt-4" id="step-line-3"></div>
-            <div class="flex flex-col items-center flex-1">
+            <div class="flex-1 h-0.5 bg-gray-200 mx-1" id="step-line-3"></div>
+            <div class="flex flex-col items-center">
               <div id="step-icon-4"
-                class="w-8 h-8 rounded-full bg-gray-200 text-gray-400 flex items-center justify-center text-sm font-bold mb-1">
+                class="w-6 h-6 rounded-full bg-gray-200 text-gray-400 flex items-center justify-center text-xs font-bold">
                 4</div>
-              <span class="text-xs text-gray-400">完了</span>
+              <span class="text-[10px] text-gray-400 mt-1 whitespace-nowrap">完了</span>
             </div>
           </div>
         </div>
