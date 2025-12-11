@@ -256,15 +256,14 @@
 
       <!-- ADMIN VIEW (管理者のみ表示) -->
       <div id="admin-view" class="hidden animate-fade-in">
-        <div class="flex justify-between items-center mb-4">
-          <h2 class="text-lg font-bold text-gray-800 border-l-4 border-enji pl-3">管理</h2>
-          <!-- Tab Switcher for Admin -->
-          <div class="flex bg-white rounded-lg shadow-sm overflow-hidden">
-            <button onclick="switchAdminTab('reservations')" id="admin-tab-reservations"
-              class="px-3 py-1.5 text-xs font-bold text-white bg-enji transition-colors whitespace-nowrap">予約一覧</button>
-            <button onclick="switchAdminTab('menus')" id="admin-tab-menus"
-              class="px-3 py-1.5 text-xs font-bold text-gray-500 bg-gray-50 hover:bg-gray-100 transition-colors whitespace-nowrap">メニュー</button>
-          </div>
+        <h2 class="text-lg font-bold text-gray-800 mb-4 border-l-4 border-enji pl-3">管理ダッシュボード</h2>
+
+        <!-- Tab Switcher for Admin -->
+        <div class="flex mb-4 bg-white rounded-lg shadow-sm overflow-hidden">
+          <button onclick="switchAdminTab('reservations')" id="admin-tab-reservations"
+            class="flex-1 py-3 text-sm font-bold text-white bg-enji transition-colors">予約一覧</button>
+          <button onclick="switchAdminTab('menus')" id="admin-tab-menus"
+            class="flex-1 py-3 text-sm font-bold text-gray-500 bg-gray-50 hover:bg-gray-100 transition-colors">メニュー管理</button>
         </div>
 
         <!-- Admin: Reservations List -->
@@ -975,8 +974,8 @@
       const sectionReservations = document.getElementById('admin-reservations');
       const sectionMenus = document.getElementById('admin-menus');
 
-      const activeClasses = 'px-3 py-1.5 text-xs font-bold text-white bg-enji transition-colors whitespace-nowrap';
-      const inactiveClasses = 'px-3 py-1.5 text-xs font-bold text-gray-500 bg-gray-50 hover:bg-gray-100 transition-colors whitespace-nowrap';
+      const activeClasses = 'flex-1 py-3 text-sm font-bold text-white bg-enji transition-colors';
+      const inactiveClasses = 'flex-1 py-3 text-sm font-bold text-gray-500 bg-gray-50 hover:bg-gray-100 transition-colors';
 
       if (tab === 'reservations') {
         tabReservations.className = activeClasses;
@@ -1019,16 +1018,16 @@
 
         container.innerHTML = reservations.map(item => {
           const statusColor = item.status === 'reserved' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500';
-          const statusText = item.status === 'reserved' ? '予約中' : 'キャンセル';
+          const statusText = item.status === 'reserved' ? '予約中' : '取消';
           return `
             <div class="bg-white shadow-sm border border-gray-100 p-4 rounded-xl">
-              <div class="flex justify-between items-start">
-                <div>
+              <div class="flex justify-between items-start gap-2">
+                <div class="min-w-0 flex-1">
                   <div class="font-bold text-gray-800">${item.name} 様</div>
                   <div class="text-sm text-gray-600 mt-1">${item.date} ${item.time}</div>
-                  <div class="text-xs text-gray-500 mt-1">${item.menu}</div>
+                  <div class="text-xs text-gray-500 mt-1 truncate">${item.menu}</div>
                 </div>
-                <span class="px-2 py-1 rounded-full text-xs font-bold ${statusColor}">${statusText}</span>
+                <span class="px-2 py-1 rounded-full text-xs font-bold whitespace-nowrap flex-shrink-0 ${statusColor}">${statusText}</span>
               </div>
             </div>
           `;
