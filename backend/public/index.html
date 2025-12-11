@@ -279,6 +279,12 @@
             class="w-full mb-4 bg-enji hover:bg-enji-dark text-white font-bold py-3 rounded-lg shadow-md transition-colors">
             <i class="fas fa-plus mr-2"></i>新しいメニューを追加
           </button>
+          <!-- Category Filter Tabs for Admin Menu -->
+          <div id="admin-category-tabs" class="flex flex-wrap gap-2 mb-4">
+            <button onclick="filterAdminMenuByCategory('all')"
+              class="admin-category-tab px-3 py-1.5 rounded-full text-sm font-medium border border-enji bg-enji text-white transition-colors"
+              data-category="all">すべて</button>
+          </div>
           <div id="admin-menu-list" class="space-y-3">
             <div class="flex justify-center py-8 text-enji"><i class="fas fa-spinner fa-spin fa-2x"></i></div>
           </div>
@@ -355,6 +361,16 @@
           <input type="text" id="menu-edit-name"
             class="w-full p-2 border border-gray-300 rounded focus:outline-none focus:border-enji focus:ring-1 focus:ring-enji"
             placeholder="メニュー名を入力">
+        </div>
+        <div class="relative">
+          <label class="text-xs text-gray-400 block mb-1">カテゴリ</label>
+          <input type="text" id="menu-edit-category"
+            class="w-full p-2 border border-gray-300 rounded focus:outline-none focus:border-enji focus:ring-1 focus:ring-enji"
+            placeholder="カテゴリを入力（例：全員、初回限定）" oninput="showCategorySuggestions(this.value)"
+            onfocus="showCategorySuggestions(this.value)">
+          <div id="category-suggestions"
+            class="hidden absolute z-10 w-full bg-white border border-gray-200 rounded-lg shadow-lg mt-1 max-h-40 overflow-y-auto">
+          </div>
         </div>
         <div class="flex gap-4">
           <div class="flex-1">
@@ -1038,6 +1054,10 @@
       }
     }
 
+    // Admin menu management with category filter
+    let allAdminMenus = [];
+    let currentAdminCategory = 'all';
+
     async function loadAdminMenus() {
       const container = document.getElementById('admin-menu-list');
       container.innerHTML = '<div class="flex justify-center py-8 text-enji"><i class="fas fa-spinner fa-spin fa-2x"></i></div>';
@@ -1047,23 +1067,77 @@
         if (location.hostname === 'localhost' || location.hostname === '127.0.0.1') {
           await new Promise(r => setTimeout(r, 500));
           menus = [
-            { id: 1, name: 'フォトフェイシャル', minutes: 45, price: 8800, description: 'クレンジング・洗顔・鎮静美容パック付き' },
-            { id: 2, name: 'フォト+イオン導入', minutes: 60, price: 11000, description: 'クレンジング・洗顔・ビタミンパック' },
+            { id: 1, category: '全員', name: 'フォトフェイシャル', minutes: 45, price: 8800, description: 'クレンジング・洗顔・鎮静美容パック付き' },
+            { id: 2, category: '初回限定', name: 'フォト+イオン導入', minutes: 60, price: 11000, description: 'クレンジング・洗顔・ビタミンパック' },
           ];
         } else {
           const res = await fetch(`${API_BASE_URL}/api/menus`);
           menus = await res.json();
         }
 
-        if (menus.length === 0) {
-          container.innerHTML = '<div class="text-center text-gray-400 py-8">メニューがありません</div>';
-          return;
-        }
+        allAdminMenus = menus;
 
-        container.innerHTML = menus.map(menu => `
+        // Generate category tabs
+        generateAdminCategoryTabs(menus);
+
+        // Render menus
+        renderAdminMenus(menus);
+      } catch (e) {
+        console.error(e);
+        container.innerHTML = '<div class="text-center text-red-400 py-8">読み込みエラー</div>';
+      }
+    }
+
+    function generateAdminCategoryTabs(menus) {
+      const tabsContainer = document.getElementById('admin-category-tabs');
+      const categories = [...new Set(menus.map(m => m.category).filter(c => c))];
+
+      let tabsHtml = `<button onclick="filterAdminMenuByCategory('all')" class="admin-category-tab px-3 py-1.5 rounded-full text-sm font-medium border border-enji bg-enji text-white transition-colors" data-category="all">すべて</button>`;
+
+      categories.forEach(cat => {
+        tabsHtml += `<button onclick="filterAdminMenuByCategory('${cat}')" class="admin-category-tab px-3 py-1.5 rounded-full text-sm font-medium border border-enji bg-white text-enji hover:bg-pink-50 transition-colors" data-category="${cat}">${cat}</button>`;
+      });
+
+      tabsContainer.innerHTML = tabsHtml;
+    }
+
+    window.filterAdminMenuByCategory = (category) => {
+      currentAdminCategory = category;
+
+      // Update tab styles
+      document.querySelectorAll('.admin-category-tab').forEach(tab => {
+        const baseClasses = 'admin-category-tab px-3 py-1.5 rounded-full text-sm font-medium border border-enji transition-colors';
+        if (tab.dataset.category === category) {
+          tab.className = `${baseClasses} bg-enji text-white`;
+        } else {
+          tab.className = `${baseClasses} bg-white text-enji hover:bg-pink-50`;
+        }
+      });
+
+      // Filter and render menus
+      const filteredMenus = category === 'all'
+        ? allAdminMenus
+        : allAdminMenus.filter(m => m.category === category);
+      renderAdminMenus(filteredMenus);
+    };
+
+    function renderAdminMenus(menus) {
+      const container = document.getElementById('admin-menu-list');
+
+      if (menus.length === 0) {
+        container.innerHTML = '<div class="text-center text-gray-400 py-8">メニューがありません</div>';
+        return;
+      }
+
+      container.innerHTML = menus.map(menu => {
+        const categoryBadge = menu.category
+          ? `<span class="inline-block px-2 py-0.5 bg-pink-100 text-pink-600 text-xs rounded-full mb-1">${menu.category}</span>`
+          : '';
+        return `
           <div onclick='showEditMenuModal(${JSON.stringify(menu)})' class="bg-white shadow-sm border border-gray-100 p-4 rounded-xl cursor-pointer hover:border-enji transition-all active:scale-95">
             <div class="flex justify-between items-center">
               <div>
+                ${categoryBadge}
                 <h3 class="font-bold text-gray-800">${menu.name}</h3>
                 <p class="text-xs text-gray-500 mt-1 mb-1">${menu.description || ''}</p>
                 <p class="text-sm text-gray-400 mt-1"><i class="far fa-clock"></i> ${menu.minutes}分</p>
@@ -1071,17 +1145,15 @@
               <div class="text-enji font-bold text-lg">¥${menu.price.toLocaleString()}</div>
             </div>
           </div>
-        `).join('');
-      } catch (e) {
-        console.error(e);
-        container.innerHTML = '<div class="text-center text-red-400 py-8">読み込みエラー</div>';
-      }
+        `;
+      }).join('');
     }
 
     window.showAddMenuModal = () => {
       document.getElementById('menu-modal-title').innerText = '新しいメニューを追加';
       document.getElementById('menu-edit-id').value = '';
       document.getElementById('menu-edit-name').value = '';
+      document.getElementById('menu-edit-category').value = '';
       document.getElementById('menu-edit-minutes').value = '';
       document.getElementById('menu-edit-price').value = '';
       document.getElementById('menu-edit-description').value = '';
@@ -1090,6 +1162,7 @@
       document.getElementById('menu-image-preview').classList.add('hidden');
       document.getElementById('menu-clear-image-btn').classList.add('hidden');
       document.getElementById('menu-delete-btn').classList.add('hidden');
+      document.getElementById('category-suggestions').classList.add('hidden');
       document.getElementById('menu-modal').classList.remove('hidden');
     };
 
@@ -1097,6 +1170,7 @@
       document.getElementById('menu-modal-title').innerText = 'メニューを編集';
       document.getElementById('menu-edit-id').value = menu.id;
       document.getElementById('menu-edit-name').value = menu.name;
+      document.getElementById('menu-edit-category').value = menu.category || '';
       document.getElementById('menu-edit-minutes').value = menu.minutes;
       document.getElementById('menu-edit-price').value = menu.price;
       document.getElementById('menu-edit-description').value = menu.description || '';
@@ -1113,13 +1187,50 @@
         document.getElementById('menu-clear-image-btn').classList.add('hidden');
       }
 
+      document.getElementById('category-suggestions').classList.add('hidden');
       document.getElementById('menu-delete-btn').classList.remove('hidden');
       document.getElementById('menu-modal').classList.remove('hidden');
     };
 
     window.closeMenuModal = () => {
       document.getElementById('menu-modal').classList.add('hidden');
+      document.getElementById('category-suggestions').classList.add('hidden');
     };
+
+    // Category suggestion functions
+    window.showCategorySuggestions = (inputValue) => {
+      const suggestionsDiv = document.getElementById('category-suggestions');
+      const existingCategories = [...new Set(allAdminMenus.map(m => m.category).filter(c => c))];
+
+      // Filter categories that match input
+      const filteredCategories = existingCategories.filter(cat =>
+        cat.toLowerCase().includes(inputValue.toLowerCase())
+      );
+
+      if (filteredCategories.length === 0) {
+        suggestionsDiv.classList.add('hidden');
+        return;
+      }
+
+      suggestionsDiv.innerHTML = filteredCategories.map(cat => `
+        <div onclick="selectCategory('${cat}')" class="px-3 py-2 hover:bg-pink-50 cursor-pointer text-sm text-gray-700 border-b border-gray-100 last:border-0">
+          ${cat}
+        </div>
+      `).join('');
+      suggestionsDiv.classList.remove('hidden');
+    };
+
+    window.selectCategory = (category) => {
+      document.getElementById('menu-edit-category').value = category;
+      document.getElementById('category-suggestions').classList.add('hidden');
+    };
+
+    // Hide suggestions when clicking outside
+    document.addEventListener('click', (e) => {
+      if (!e.target.closest('#menu-edit-category') && !e.target.closest('#category-suggestions')) {
+        document.getElementById('category-suggestions')?.classList.add('hidden');
+      }
+    });
 
     // Image preview and upload helper functions
     window.previewMenuImage = (input) => {
@@ -1174,6 +1285,7 @@
     window.saveMenu = async () => {
       const id = document.getElementById('menu-edit-id').value;
       const name = document.getElementById('menu-edit-name').value;
+      const category = document.getElementById('menu-edit-category').value.trim();
       const minutes = parseInt(document.getElementById('menu-edit-minutes').value);
       const price = parseInt(document.getElementById('menu-edit-price').value);
       const description = document.getElementById('menu-edit-description').value;
@@ -1192,7 +1304,7 @@
           imageUrl = await uploadMenuImage(imageFile);
         }
 
-        const menuData = { name, minutes, price, description, imageUrl };
+        const menuData = { name, category, minutes, price, description, imageUrl };
         let result = { status: 'success' };
 
         if (!(location.hostname === 'localhost' || location.hostname === '127.0.0.1')) {
