@@ -46,9 +46,11 @@ jobs:
           THEME_COLOR_DARK: ${{ secrets.THEME_COLOR_DARK }}
 
       - name: Inject LIFF ID
-        if: ${{ secrets.LIFF_ID != '' }}
+        if: ${{ env.LIFF_ID != '' }}
+        env:
+          LIFF_ID: ${{ secrets.LIFF_ID }}
         run: |
-          sed -i 's/const LIFF_ID = ".*"/const LIFF_ID = "${{ secrets.LIFF_ID }}"/g' backend/public/index.html
+          sed -i 's/const LIFF_ID = ".*"/const LIFF_ID = "${{ env.LIFF_ID }}"/g' backend/public/index.html
 
       - name: Build and Push Container
         run: |
