@@ -348,7 +348,10 @@
     // ==============================================
     // Configuration (設定エリア)
     // ==============================================
-    const GAS_API_URL = "https://script.google.com/macros/s/AKfycbwQxUWc5tcRHiYNAy34a7qPfiSvDx9nYCIn1LCLyuGc_VLAw9sd3nRqUGFADWD3gqEd/exec";
+    // Cloud Run API URL
+    const API_BASE_URL = "https://reservation-system-api-871370633398.asia-northeast1.run.app";
+    // GAS API URL (deprecated - keeping for reference)
+    // const GAS_API_URL = "https://script.google.com/macros/s/AKfycbwQxUWc5tcRHiYNAy34a7qPfiSvDx9nYCIn1LCLyuGc_VLAw9sd3nRqUGFADWD3gqEd/exec";
     const LIFF_ID = "2008591418-6eRNAepa";
     const MOCK_ADMIN = true; // ★ ローカルテスト用: trueで管理者モード
 
@@ -388,7 +391,7 @@
         updateUserDisplay();
 
         // Check if admin
-        const adminRes = await fetch(`${GAS_API_URL}?action=checkAdmin&userId=${profile.userId}`);
+        const adminRes = await fetch(`${API_BASE_URL}/api/check-admin?userId=${profile.userId}`);
         const adminData = await adminRes.json();
         state.isAdmin = adminData.isAdmin;
         if (state.isAdmin) showAdminTab();
@@ -470,7 +473,7 @@
             { id: '3', name: 'クイックマッサージ', minutes: 30, price: 4000, description: 'お急ぎの方におすすめのクイックコース。' }
           ];
         } else {
-          const res = await fetch(`${GAS_API_URL}?action=getMenus`);
+          const res = await fetch(`${API_BASE_URL}/api/menus`);
           menus = await res.json();
         }
 
@@ -548,7 +551,7 @@
           await new Promise(r => setTimeout(r, 500));
           weeklyData = generateMockWeeklyData(currentWeekStart);
         } else {
-          const res = await fetch(`${GAS_API_URL}?action=getWeeklyAvailability&startDate=${startDateStr}&minutes=${state.menu.minutes}`);
+          const res = await fetch(`${API_BASE_URL}/api/weekly-availability?startDate=${startDateStr}&minutes=${state.menu.minutes}`);
           weeklyData = await res.json();
         }
 
@@ -698,12 +701,10 @@
 
         let result = { status: 'success' };
         if (!(location.hostname === 'localhost' || location.hostname === '127.0.0.1')) {
-          const res = await fetch(GAS_API_URL, {
+          const res = await fetch(`${API_BASE_URL}/api/reservations`, {
             method: 'POST',
-            body: JSON.stringify({
-              action: 'makeReservation',
-              data: payload
-            })
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
           });
           result = await res.json();
         } else {
@@ -734,7 +735,7 @@
             { id: 'mock1', date: '2023/12/01', time: '10:00', menu: 'フェイシャル基本コース' }
           ];
         } else {
-          const res = await fetch(`${GAS_API_URL}?action=getHistory&userId=${state.user.userId}`);
+          const res = await fetch(`${API_BASE_URL}/api/history?userId=${state.user.userId}`);
           history = await res.json();
         }
 
@@ -783,8 +784,9 @@
       try {
         let result = { status: 'success' };
         if (!(location.hostname === 'localhost' || location.hostname === '127.0.0.1')) {
-          const payload = { action: 'cancelReservation', userId: state.user.userId, reservationId: reservationId };
-          const res = await fetch(GAS_API_URL, { method: 'POST', body: JSON.stringify(payload) });
+          const res = await fetch(`${API_BASE_URL}/api/reservations/${reservationId}?userId=${state.user.userId}`, {
+            method: 'DELETE'
+          });
           result = await res.json();
         } else {
           await new Promise(r => setTimeout(r, 1000));
@@ -847,7 +849,7 @@
             { id: '3', name: '田中太郎', menu: '美肌ケア', date: '2025/12/13', time: '11:30', status: 'canceled' },
           ];
         } else {
-          const res = await fetch(`${GAS_API_URL}?action=getAllReservations&adminId=${state.user.userId}`);
+          const res = await fetch(`${API_BASE_URL}/api/all-reservations?adminId=${state.user.userId}`);
           reservations = await res.json();
         }
 
@@ -891,7 +893,7 @@
             { id: 2, name: 'フォト+イオン導入', minutes: 60, price: 11000, description: 'クレンジング・洗顔・ビタミンパック' },
           ];
         } else {
-          const res = await fetch(`${GAS_API_URL}?action=getMenus`);
+          const res = await fetch(`${API_BASE_URL}/api/menus`);
           menus = await res.json();
         }
 
@@ -987,10 +989,10 @@
         reader.onload = async (e) => {
           try {
             const base64Data = e.target.result;
-            const res = await fetch(GAS_API_URL, {
+            const res = await fetch(`${API_BASE_URL}/api/upload-image`, {
               method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
-                action: 'uploadImage',
                 adminId: state.user.userId,
                 imageData: base64Data,
                 fileName: file.name
@@ -1038,16 +1040,18 @@
         if (!(location.hostname === 'localhost' || location.hostname === '127.0.0.1')) {
           if (id) {
             // Update existing menu
-            const res = await fetch(GAS_API_URL, {
-              method: 'POST',
-              body: JSON.stringify({ action: 'updateMenu', adminId: state.user.userId, menuId: id, menu: menuData })
+            const res = await fetch(`${API_BASE_URL}/api/menus/${id}`, {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ adminId: state.user.userId, menu: menuData })
             });
             result = await res.json();
           } else {
             // Add new menu
-            const res = await fetch(GAS_API_URL, {
+            const res = await fetch(`${API_BASE_URL}/api/menus`, {
               method: 'POST',
-              body: JSON.stringify({ action: 'addMenu', adminId: state.user.userId, menu: menuData })
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ adminId: state.user.userId, menu: menuData })
             });
             result = await res.json();
           }
@@ -1082,9 +1086,8 @@
         let result = { status: 'success' };
 
         if (!(location.hostname === 'localhost' || location.hostname === '127.0.0.1')) {
-          const res = await fetch(GAS_API_URL, {
-            method: 'POST',
-            body: JSON.stringify({ action: 'deleteMenu', adminId: state.user.userId, menuId: id })
+          const res = await fetch(`${API_BASE_URL}/api/menus/${id}?adminId=${state.user.userId}`, {
+            method: 'DELETE'
           });
           result = await res.json();
         } else {
