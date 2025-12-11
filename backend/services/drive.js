@@ -35,7 +35,7 @@ async function uploadImage(imageData, fileName) {
     try {
         const drive = await getDriveClient();
 
-        // ファイルをアップロード
+        // ファイルをアップロード (supportsAllDrives for shared drive support)
         const response = await drive.files.create({
             requestBody: {
                 name: fileName,
@@ -46,6 +46,7 @@ async function uploadImage(imageData, fileName) {
                 body: require('stream').Readable.from(buffer),
             },
             fields: 'id',
+            supportsAllDrives: true,  // 共有ドライブサポートを有効化
         });
 
         const fileId = response.data.id;
@@ -57,6 +58,7 @@ async function uploadImage(imageData, fileName) {
                 role: 'reader',
                 type: 'anyone',
             },
+            supportsAllDrives: true,  // 共有ドライブサポートを有効化
         });
 
         // 公開URLを生成
