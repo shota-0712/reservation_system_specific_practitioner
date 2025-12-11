@@ -30,12 +30,12 @@ async function uploadImage(imageData, fileName) {
         const bucket = storage.bucket(BUCKET_NAME);
         const file = bucket.file(uniqueFileName);
 
-        // ファイルをアップロード
+        // ファイルをアップロード (bucket has uniform access, no per-object ACL)
         await file.save(buffer, {
             metadata: {
                 contentType: mimeType,
             },
-            public: true,  // 公開設定
+            // Note: public access is controlled at bucket level via IAM
         });
 
         // 公開URLを生成
