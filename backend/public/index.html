@@ -256,14 +256,15 @@
 
       <!-- ADMIN VIEW (管理者のみ表示) -->
       <div id="admin-view" class="hidden animate-fade-in">
-        <h2 class="text-lg font-bold text-gray-800 mb-4 border-l-4 border-enji pl-3">管理ダッシュボード</h2>
-
-        <!-- Tab Switcher for Admin -->
-        <div class="flex mb-4 bg-white rounded-lg shadow-sm overflow-hidden">
-          <button onclick="switchAdminTab('reservations')" id="admin-tab-reservations"
-            class="flex-1 py-3 text-sm font-bold text-white bg-enji transition-colors">予約一覧</button>
-          <button onclick="switchAdminTab('menus')" id="admin-tab-menus"
-            class="flex-1 py-3 text-sm font-bold text-gray-500 bg-gray-50 hover:bg-gray-100 transition-colors">メニュー管理</button>
+        <div class="flex justify-between items-center mb-4">
+          <h2 class="text-lg font-bold text-gray-800 border-l-4 border-enji pl-3">管理</h2>
+          <!-- Tab Switcher for Admin -->
+          <div class="flex bg-white rounded-lg shadow-sm overflow-hidden">
+            <button onclick="switchAdminTab('reservations')" id="admin-tab-reservations"
+              class="px-3 py-1.5 text-xs font-bold text-white bg-enji transition-colors whitespace-nowrap">予約一覧</button>
+            <button onclick="switchAdminTab('menus')" id="admin-tab-menus"
+              class="px-3 py-1.5 text-xs font-bold text-gray-500 bg-gray-50 hover:bg-gray-100 transition-colors whitespace-nowrap">メニュー</button>
+          </div>
         </div>
 
         <!-- Admin: Reservations List -->
@@ -974,8 +975,8 @@
       const sectionReservations = document.getElementById('admin-reservations');
       const sectionMenus = document.getElementById('admin-menus');
 
-      const activeClasses = 'flex-1 py-3 text-sm font-bold text-white bg-enji transition-colors';
-      const inactiveClasses = 'flex-1 py-3 text-sm font-bold text-gray-500 bg-gray-50 hover:bg-gray-100 transition-colors';
+      const activeClasses = 'px-3 py-1.5 text-xs font-bold text-white bg-enji transition-colors whitespace-nowrap';
+      const inactiveClasses = 'px-3 py-1.5 text-xs font-bold text-gray-500 bg-gray-50 hover:bg-gray-100 transition-colors whitespace-nowrap';
 
       if (tab === 'reservations') {
         tabReservations.className = activeClasses;
