@@ -849,7 +849,7 @@
             { id: '3', name: '田中太郎', menu: '美肌ケア', date: '2025/12/13', time: '11:30', status: 'canceled' },
           ];
         } else {
-          const res = await fetch(`${API_BASE_URL}/api/all-reservations?adminId=${state.user.userId}`);
+          const res = await fetch(`${API_BASE_URL}/api/reservations?adminId=${state.user.userId}`);
           reservations = await res.json();
         }
 
