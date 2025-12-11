@@ -16,9 +16,9 @@
         extend: {
           colors: {
             enji: {
-              DEFAULT: '#9b1c2c',
-              light: '#b92b3d',
-              dark: '#7a1522',
+              DEFAULT: 'var(--theme-color)',
+              light: 'var(--theme-color-light)',
+              dark: 'var(--theme-color-dark)',
             },
           },
           fontFamily: {
@@ -29,6 +29,14 @@
     }
   </script>
   <style>
+    :root {
+      /* Theme Color Configuration */
+      /* デフォルト: えんじ色 (#9b1c2c) */
+      --theme-color: #9b1c2c;
+      --theme-color-light: #b92b3d;
+      --theme-color-dark: #7a1522;
+    }
+
     body {
       font-family: 'Helvetica Neue', Arial, sans-serif;
       -webkit-font-smoothing: antialiased;
