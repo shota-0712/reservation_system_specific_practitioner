@@ -578,14 +578,13 @@
     window.filterByCategory = (category) => {
       currentCategory = category;
 
-      // Update tab styles
+      // Update tab styles - use className replacement for reliable styling
       document.querySelectorAll('.category-tab').forEach(tab => {
+        const baseClasses = 'category-tab px-3 py-1.5 rounded-full text-sm font-medium border border-enji transition-colors';
         if (tab.dataset.category === category) {
-          tab.classList.remove('bg-white', 'text-enji');
-          tab.classList.add('!bg-enji', '!text-white', '!border-enji');
+          tab.className = `${baseClasses} bg-enji text-white`;
         } else {
-          tab.classList.remove('!bg-enji', '!text-white', '!border-enji');
-          tab.classList.add('bg-white', 'text-enji');
+          tab.className = `${baseClasses} bg-white text-enji hover:bg-pink-50`;
         }
       });
 
@@ -975,19 +974,18 @@
       const sectionReservations = document.getElementById('admin-reservations');
       const sectionMenus = document.getElementById('admin-menus');
 
+      const activeClasses = 'flex-1 py-3 text-sm font-bold text-white bg-enji transition-colors';
+      const inactiveClasses = 'flex-1 py-3 text-sm font-bold text-gray-500 bg-gray-50 hover:bg-gray-100 transition-colors';
+
       if (tab === 'reservations') {
-        tabReservations.classList.add('bg-enji', 'text-white');
-        tabReservations.classList.remove('bg-gray-50', 'text-gray-500');
-        tabMenus.classList.add('bg-gray-50', 'text-gray-500');
-        tabMenus.classList.remove('bg-enji', 'text-white');
+        tabReservations.className = activeClasses;
+        tabMenus.className = inactiveClasses;
         sectionReservations.classList.remove('hidden');
         sectionMenus.classList.add('hidden');
         loadAdminReservations();
       } else {
-        tabMenus.classList.add('bg-enji', 'text-white');
-        tabMenus.classList.remove('bg-gray-50', 'text-gray-500');
-        tabReservations.classList.add('bg-gray-50', 'text-gray-500');
-        tabReservations.classList.remove('bg-enji', 'text-white');
+        tabMenus.className = activeClasses;
+        tabReservations.className = inactiveClasses;
         sectionMenus.classList.remove('hidden');
         sectionReservations.classList.add('hidden');
         loadAdminMenus();
