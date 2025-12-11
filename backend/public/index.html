@@ -1018,7 +1018,7 @@
 
         container.innerHTML = reservations.map(item => {
           const statusColor = item.status === 'reserved' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500';
-          const statusText = item.status === 'reserved' ? '予約中' : '取消';
+          const statusText = item.status === 'reserved' ? '予約中' : 'キャンセル';
           return `
             <div class="bg-white shadow-sm border border-gray-100 p-4 rounded-xl">
               <div class="flex justify-between items-start gap-2">
@@ -1027,7 +1027,7 @@
                   <div class="text-sm text-gray-600 mt-1">${item.date} ${item.time}</div>
                   <div class="text-xs text-gray-500 mt-1 truncate">${item.menu}</div>
                 </div>
-                <span class="px-2 py-1 rounded-full text-xs font-bold whitespace-nowrap flex-shrink-0 ${statusColor}">${statusText}</span>
+                <span class="px-2 py-0.5 rounded-full text-[10px] font-bold whitespace-nowrap flex-shrink-0 ${statusColor}">${statusText}</span>
               </div>
             </div>
           `;
