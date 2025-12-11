@@ -274,6 +274,37 @@ async function getReservationById(reservationId, userId) {
     return null;
 }
 
+async function getTomorrowReservations() {
+    const sheets = await getSheetsClient();
+    const response = await sheets.spreadsheets.values.get({
+        spreadsheetId: SHEET_ID,
+        range: 'reservations!A2:I',
+    });
+
+    const rows = response.data.values || [];
+
+    // 明日の日付を取得 (JST)
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    const tomorrowStr = tomorrow.toLocaleDateString('ja-JP', { year: 'numeric', month: '2-digit', day: '2-digit' }).split('/').join('-');
+
+    const targets = [];
+    for (const row of rows) {
+        // row[5] is date (YYYY-MM-DD), row[7] is status ('reserved')
+        if (row[5] === tomorrowStr && row[7] === 'reserved') {
+            targets.push({
+                lineId: row[2],
+                name: row[3],
+                menu: row[4],
+                date: row[5],
+                time: row[6],
+            });
+        }
+    }
+
+    return targets;
+}
+
 async function cancelReservation(reservationId) {
     const sheets = await getSheetsClient();
 
@@ -319,4 +350,5 @@ module.exports = {
     addReservation,
     getReservationById,
     cancelReservation,
+    getTomorrowReservations,
 };

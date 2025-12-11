@@ -295,4 +295,53 @@ router.post('/upload-image', async (req, res, next) => {
     }
 });
 
+// ====================
+// バッチ処理関連
+// ====================
+
+// POST /api/batch/reminders - 翌日の予約リマインダー送信
+router.post('/batch/reminders', async (req, res, next) => {
+    try {
+        const secret = req.headers['x-scheduler-secret'];
+        const expectedSecret = process.env.SCHEDULER_SECRET;
+
+        // セキュリティチェック
+        if (!expectedSecret || secret !== expectedSecret) {
+            console.log('[Batch] Unauthorized access attempt');
+            return res.status(403).json({ status: 'error', message: 'Forbidden' });
+        }
+
+        console.log('[Batch] Starting reminder batch...');
+        const reservations = await sheetsService.getTomorrowReservations();
+        console.log(`[Batch] Found ${reservations.length} reservations for tomorrow`);
+
+        let sentCount = 0;
+        for (const r of reservations) {
+            const message = `
+${r.name}様
+明日、ご予約の日時となりましたのでご連絡差し上げました。
+
+📅 日時: ${r.date} ${r.time}
+💆‍♀️ メニュー: ${r.menu}
+
+${PRECAUTIONS.trim()}
+
+---------------
+${SALON_INFO.trim()}
+---------------
+
+ご来店を心よりお待ちしております。
+`.trim();
+
+            await lineService.pushMessage(r.lineId, message);
+            sentCount++;
+        }
+
+        console.log(`[Batch] Sent ${sentCount} reminders`);
+        res.json({ status: 'success', sentCount });
+    } catch (err) {
+        next(err);
+    }
+});
+
 module.exports = router;
