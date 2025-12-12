@@ -8,6 +8,10 @@
   <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
   <!-- Font Awesome -->
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <!-- Flatpickr -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
+  <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+  <script src="https://cdn.jsdelivr.net/npm/flatpickr/dist/l10n/ja.js"></script>
   <!-- Tailwind CSS -->
   <script src="https://cdn.tailwindcss.com"></script>
   <script>
@@ -668,10 +672,11 @@
           </div>
 
           <div>
-            <label class="text-xs text-gray-400 block mb-1">臨時休業日（カンマ区切り）</label>
+            <label class="text-xs text-gray-400 block mb-1">臨時休業日（選択してください）</label>
             <input type="text" id="settings-holidays"
-              class="w-full p-2 border border-gray-300 rounded-lg focus:outline-none focus:border-enji focus:ring-1 focus:ring-enji text-sm"
-              placeholder="例: 2024/12/31, 2025/01/01">
+              class="flatpickr w-full p-2 border border-gray-300 rounded-lg focus:outline-none focus:border-enji focus:ring-1 focus:ring-enji text-sm bg-white"
+              placeholder="タップして日付を選択" readonly>
+            <p class="text-xs text-gray-400 mt-1">※複数選択可能です</p>
           </div>
         </div>
 
@@ -1686,7 +1691,18 @@
           // Business settings
           document.getElementById('settings-businessStart').value = settings.businessStartHour || '10';
           document.getElementById('settings-businessEnd').value = settings.businessEndHour || '20';
-          document.getElementById('settings-holidays').value = settings.holidays || '';
+
+          // Temporary holidays (Flatpickr)
+          const holidaysStr = settings.holidays || '';
+          document.getElementById('settings-holidays').value = holidaysStr;
+
+          // Initialize Flatpickr
+          flatpickr("#settings-holidays", {
+            mode: "multiple",
+            dateFormat: "Y/m/d",
+            defaultDate: holidaysStr ? holidaysStr.split(',').map(d => d.trim()) : [],
+            locale: "ja"
+          });
 
           // Regular holidays
           const regularHolidays = settings.regularHolidays || [];
