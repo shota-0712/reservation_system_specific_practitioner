@@ -346,9 +346,16 @@
     </nav>
   </div>
 
-  <!-- Loading Overlay -->
-  <div id="loading" class="fixed inset-0 bg-white/80 flex justify-center items-center z-50 hidden">
+  <!-- Loading Overlay with Text -->
+  <div id="loading" class="fixed inset-0 bg-white/80 flex flex-col justify-center items-center z-50 hidden">
     <div class="text-enji"><i class="fas fa-spinner fa-spin fa-3x"></i></div>
+    <p id="loading-text" class="text-gray-600 mt-3 text-sm font-medium">読み込み中...</p>
+  </div>
+
+  <!-- Toast Notification -->
+  <div id="toast"
+    class="fixed top-4 left-1/2 transform -translate-x-1/2 bg-gray-800 text-white px-6 py-3 rounded-lg shadow-lg z-[60] hidden opacity-0 transition-opacity duration-300">
+    <span id="toast-message">メッセージ</span>
   </div>
 
   <!-- Reservation Detail Modal -->
@@ -618,6 +625,34 @@
       currentTab: 'home',
       isAdmin: false
     };
+
+    // ==============================================
+    // UI Helper Functions (Toast, Loading)
+    // ==============================================
+
+    // Toast notification (replaces alert())
+    function showToast(message, duration = 3000) {
+      const toast = document.getElementById('toast');
+      const toastMessage = document.getElementById('toast-message');
+      toastMessage.textContent = message;
+      toast.classList.remove('hidden');
+      setTimeout(() => toast.classList.add('opacity-100'), 10);
+
+      setTimeout(() => {
+        toast.classList.remove('opacity-100');
+        setTimeout(() => toast.classList.add('hidden'), 300);
+      }, duration);
+    }
+
+    // Loading with custom text
+    function showLoading(text = '読み込み中...') {
+      document.getElementById('loading-text').textContent = text;
+      document.getElementById('loading').classList.remove('hidden');
+    }
+
+    function hideLoading() {
+      document.getElementById('loading').classList.add('hidden');
+    }
 
     // ==============================================
     // Initialization
@@ -1119,9 +1154,9 @@
 
     window.submitReservation = async () => {
       const name = document.getElementById('user-name-input').value;
-      if (!name) return alert('お名前を入力してください');
+      if (!name) { showToast('お名前を入力してください'); return; }
 
-      document.getElementById('loading').classList.remove('hidden');
+      showLoading('予約中...');
       try {
         const payload = {
           userId: state.user.userId,
@@ -1149,13 +1184,13 @@
         }
 
         if (result.status === 'success') {
-          alert('予約が完了しました！');
+          showToast('予約が完了しました！');
           switchTab('mypage');
         } else {
-          alert('エラー: ' + (result.message || JSON.stringify(result)));
+          showToast('エラー: ' + (result.message || JSON.stringify(result)));
         }
       } catch (e) {
-        alert('通信エラー');
+        showToast('通信エラー');
       } finally {
         document.getElementById('loading').classList.add('hidden');
       }
@@ -1230,13 +1265,13 @@
         }
 
         if (result.status === 'success') {
-          alert('キャンセルしました');
+          showToast('キャンセルしました');
           loadHistory();
         } else {
-          alert('エラー: ' + result.message);
+          showToast('エラー: ' + result.message);
         }
       } catch (e) {
-        alert('通信エラー');
+        showToast('通信エラー');
       } finally {
         document.getElementById('loading').classList.add('hidden');
       }
@@ -1391,7 +1426,7 @@
       const imageInput = document.getElementById('practitioner-edit-image');
 
       if (!name || !calendarId) {
-        alert('名前とカレンダーIDを入力してください');
+        showToast('名前とカレンダーIDを入力してください');
         return;
       }
 
@@ -1442,10 +1477,10 @@
 
         closePractitionerModal();
         loadAdminPractitioners();
-        alert('保存しました');
+        showToast('保存しました');
       } catch (e) {
         console.error(e);
-        alert('保存に失敗しました: ' + e.message);
+        showToast('保存に失敗しました: ' + e.message);
       } finally {
         document.getElementById('loading').classList.add('hidden');
       }
@@ -1466,10 +1501,10 @@
 
         closePractitionerModal();
         loadAdminPractitioners();
-        alert('削除しました');
+        showToast('削除しました');
       } catch (e) {
         console.error(e);
-        alert('削除に失敗しました');
+        showToast('削除に失敗しました');
       } finally {
         document.getElementById('loading').classList.remove('hidden');
       }
@@ -1549,7 +1584,7 @@
         }
       } catch (e) {
         console.error(e);
-        alert('設定の読み込みに失敗しました');
+        showToast('設定の読み込みに失敗しました');
       } finally {
         document.getElementById('loading').classList.add('hidden');
       }
@@ -1631,10 +1666,10 @@
         applySettingsToHeader({ salonName, address, station, logoUrl });
 
         closeSettingsModal();
-        alert('設定を保存しました');
+        showToast('設定を保存しました');
       } catch (e) {
         console.error(e);
-        alert('設定の保存に失敗しました: ' + e.message);
+        showToast('設定の保存に失敗しました: ' + e.message);
       } finally {
         document.getElementById('loading').classList.add('hidden');
       }
@@ -1925,7 +1960,7 @@
       const imageFile = document.getElementById('menu-edit-image').files[0];
 
       if (!name || !minutes || !price) {
-        alert('メニュー名、施術時間、料金は必須です');
+        showToast('メニュー名、施術時間、料金は必須です');
         return;
       }
 
@@ -1967,11 +2002,11 @@
           loadAdminMenus();
           loadMenus(); // Refresh public menu list
         } else {
-          alert('エラー: ' + result.message);
+          showToast('エラー: ' + result.message);
         }
       } catch (e) {
         console.error('saveMenu error:', e);
-        alert('通信エラー: ' + e.message);
+        showToast('通信エラー: ' + e.message);
       } finally {
         document.getElementById('loading').classList.add('hidden');
       }
@@ -1997,15 +2032,15 @@
         }
 
         if (result.status === 'success') {
-          alert('メニューを削除しました');
+          showToast('メニューを削除しました');
           closeMenuModal();
           loadAdminMenus();
           loadMenus(); // Refresh public menu list
         } else {
-          alert('エラー: ' + result.message);
+          showToast('エラー: ' + result.message);
         }
       } catch (e) {
-        alert('通信エラー');
+        showToast('通信エラー');
       } finally {
         document.getElementById('loading').classList.add('hidden');
       }
