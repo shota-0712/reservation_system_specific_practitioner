@@ -77,8 +77,14 @@
     <!-- Header -->
     <header class="bg-white shadow-sm sticky top-0 z-40">
       <div class="max-w-md mx-auto px-4 py-3 flex items-center gap-4">
-        <img id="header-logo" src="en_logo.jpeg" alt="Salon Logo"
-          class="h-12 w-12 rounded-full object-cover flex-shrink-0">
+        <div id="header-logo-container">
+          <div id="header-logo-placeholder"
+            class="h-12 w-12 rounded-full bg-gray-200 flex items-center justify-center flex-shrink-0">
+            <i class="fas fa-store text-gray-400 text-xl"></i>
+          </div>
+          <img id="header-logo" src="" alt="Salon Logo"
+            class="h-12 w-12 rounded-full object-cover flex-shrink-0 hidden">
+        </div>
         <div class="flex-1 min-w-0">
           <h1 id="header-salon-name" class="font-bold text-gray-800 text-sm truncate">demoサロン</h1>
           <p id="header-address" class="text-xs text-gray-500 truncate">〒123-4567 東京都千代田区1-1-1</p>
@@ -1534,6 +1540,8 @@
     function applySettingsToHeader(settings) {
       if (settings.logoUrl) {
         document.getElementById('header-logo').src = settings.logoUrl;
+        document.getElementById('header-logo').classList.remove('hidden');
+        document.getElementById('header-logo-placeholder').classList.add('hidden');
       }
       if (settings.salonName) {
         document.getElementById('header-salon-name').innerText = settings.salonName;
