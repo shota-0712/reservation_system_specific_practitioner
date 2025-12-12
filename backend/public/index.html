@@ -808,7 +808,7 @@
       }
     }
 
-    window.selectMenu = (menu) => {
+    window.selectMenu = async (menu) => {
       state.menu = menu;
       document.getElementById('step-menu').classList.add('hidden');
       document.getElementById('step-date').classList.remove('hidden');
@@ -816,7 +816,7 @@
       state.date = null;
       state.time = null;
       updateProgressSteps(2);
-      loadPractitionerPills();
+      await loadPractitionerPills();  // Wait for practitioners to load
       initWeeklyCalendar();
     };
 
