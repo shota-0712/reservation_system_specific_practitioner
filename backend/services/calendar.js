@@ -28,7 +28,6 @@ async function getWeeklyAvailability(startDateStr, menuMinutes, calendarId, busi
     const result = [];
 
     // Default business hours
-    const businessSettings = businessSettings || {};
     const startHour = businessSettings.startHour || 10;
     const endHour = businessSettings.endHour || 20;
     const holidays = businessSettings.holidays || [];
