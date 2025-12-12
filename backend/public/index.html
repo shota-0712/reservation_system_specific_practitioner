@@ -484,6 +484,7 @@
       </div>
       <div class="p-6 space-y-4 overflow-y-auto flex-1">
         <input type="hidden" id="practitioner-edit-id">
+        <input type="hidden" id="practitioner-edit-imageUrl">
         <div>
           <label class="text-xs text-gray-400 block mb-1">施術者名</label>
           <input type="text" id="practitioner-edit-name"
@@ -496,6 +497,27 @@
             class="w-full p-2 border border-gray-300 rounded focus:outline-none focus:border-enji focus:ring-1 focus:ring-enji"
             placeholder="example@gmail.com">
           <p class="text-xs text-gray-400 mt-1">カレンダーのメールアドレスを入力してください</p>
+        </div>
+        <div>
+          <label class="text-xs text-gray-400 block mb-1">プロフィール画像</label>
+          <div id="practitioner-image-preview" class="mb-2 hidden">
+            <img id="practitioner-preview-img" src="" alt="Preview"
+              class="w-24 h-24 object-cover rounded-full mx-auto border border-gray-200">
+          </div>
+          <div class="flex gap-2">
+            <label class="flex-1 cursor-pointer">
+              <input type="file" id="practitioner-edit-image" accept="image/*" class="hidden"
+                onchange="previewPractitionerImage(this)">
+              <div
+                class="w-full py-2 text-center border-2 border-dashed border-gray-300 rounded-lg text-gray-500 hover:border-enji hover:text-enji transition-colors">
+                <i class="fas fa-camera mr-2"></i>画像を選択
+              </div>
+            </label>
+            <button type="button" onclick="clearPractitionerImage()" id="practitioner-clear-image-btn"
+              class="hidden px-4 py-2 border border-red-400 text-red-400 rounded-lg hover:bg-red-50 transition-colors">
+              <i class="fas fa-trash"></i>
+            </button>
+          </div>
         </div>
         <div class="pt-4 border-t border-gray-100 space-y-2">
           <button onclick="savePractitioner()"
@@ -1243,6 +1265,10 @@
       document.getElementById('practitioner-edit-id').value = '';
       document.getElementById('practitioner-edit-name').value = '';
       document.getElementById('practitioner-edit-calendarId').value = '';
+      document.getElementById('practitioner-edit-imageUrl').value = '';
+      document.getElementById('practitioner-edit-image').value = '';
+      document.getElementById('practitioner-image-preview').classList.add('hidden');
+      document.getElementById('practitioner-clear-image-btn').classList.add('hidden');
       document.getElementById('practitioner-delete-btn').classList.add('hidden');
       document.getElementById('practitioner-modal').classList.remove('hidden');
     };
@@ -1252,6 +1278,19 @@
       document.getElementById('practitioner-edit-id').value = practitioner.id;
       document.getElementById('practitioner-edit-name').value = practitioner.name;
       document.getElementById('practitioner-edit-calendarId').value = practitioner.calendarId;
+      document.getElementById('practitioner-edit-imageUrl').value = practitioner.imageUrl || '';
+      document.getElementById('practitioner-edit-image').value = '';
+
+      // Show existing image if available
+      if (practitioner.imageUrl) {
+        document.getElementById('practitioner-preview-img').src = practitioner.imageUrl;
+        document.getElementById('practitioner-image-preview').classList.remove('hidden');
+        document.getElementById('practitioner-clear-image-btn').classList.remove('hidden');
+      } else {
+        document.getElementById('practitioner-image-preview').classList.add('hidden');
+        document.getElementById('practitioner-clear-image-btn').classList.add('hidden');
+      }
+
       document.getElementById('practitioner-delete-btn').classList.remove('hidden');
       document.getElementById('practitioner-modal').classList.remove('hidden');
     };
@@ -1260,10 +1299,32 @@
       document.getElementById('practitioner-modal').classList.add('hidden');
     };
 
+    // Practitioner image preview
+    window.previewPractitionerImage = (input) => {
+      if (input.files && input.files[0]) {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          document.getElementById('practitioner-preview-img').src = e.target.result;
+          document.getElementById('practitioner-image-preview').classList.remove('hidden');
+          document.getElementById('practitioner-clear-image-btn').classList.remove('hidden');
+        };
+        reader.readAsDataURL(input.files[0]);
+      }
+    };
+
+    window.clearPractitionerImage = () => {
+      document.getElementById('practitioner-edit-image').value = '';
+      document.getElementById('practitioner-edit-imageUrl').value = '';
+      document.getElementById('practitioner-image-preview').classList.add('hidden');
+      document.getElementById('practitioner-clear-image-btn').classList.add('hidden');
+    };
+
     window.savePractitioner = async () => {
       const id = document.getElementById('practitioner-edit-id').value;
       const name = document.getElementById('practitioner-edit-name').value;
       const calendarId = document.getElementById('practitioner-edit-calendarId').value;
+      let imageUrl = document.getElementById('practitioner-edit-imageUrl').value;
+      const imageInput = document.getElementById('practitioner-edit-image');
 
       if (!name || !calendarId) {
         alert('名前とカレンダーIDを入力してください');
@@ -1272,7 +1333,32 @@
 
       document.getElementById('loading').classList.remove('hidden');
       try {
-        const practitioner = { name, calendarId };
+        // Upload image if a new file is selected
+        if (imageInput.files && imageInput.files[0]) {
+          const reader = new FileReader();
+          const imageData = await new Promise((resolve) => {
+            reader.onload = (e) => resolve(e.target.result);
+            reader.readAsDataURL(imageInput.files[0]);
+          });
+
+          const uploadRes = await fetch(`${API_BASE_URL}/api/upload-image`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              adminId: state.user.userId,
+              imageData: imageData,
+              fileName: `practitioner_${Date.now()}.jpg`
+            })
+          });
+          const uploadResult = await uploadRes.json();
+          if (uploadResult.status === 'success') {
+            imageUrl = uploadResult.imageUrl;
+          } else {
+            throw new Error(uploadResult.message || '画像アップロードに失敗しました');
+          }
+        }
+
+        const practitioner = { name, calendarId, imageUrl };
 
         if (!(location.hostname === 'localhost' || location.hostname === '127.0.0.1')) {
           if (id) {
@@ -1295,9 +1381,9 @@
         alert('保存しました');
       } catch (e) {
         console.error(e);
-        alert('保存に失敗しました');
+        alert('保存に失敗しました: ' + e.message);
       } finally {
-        document.getElementById('loading').classList.remove('hidden');
+        document.getElementById('loading').classList.add('hidden');
       }
     };
 
