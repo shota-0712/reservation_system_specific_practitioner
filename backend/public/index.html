@@ -67,6 +67,25 @@
       width: 0px;
       background: transparent;
     }
+
+    /* Skeleton loader animation */
+    @keyframes pulse {
+
+      0%,
+      100% {
+        opacity: 1;
+      }
+
+      50% {
+        opacity: 0.4;
+      }
+    }
+
+    .skeleton {
+      animation: pulse 1.5s ease-in-out infinite;
+      background: linear-gradient(90deg, #e5e7eb 25%, #f3f4f6 50%, #e5e7eb 75%);
+      background-size: 200% 100%;
+    }
   </style>
 </head>
 
@@ -577,6 +596,41 @@
             <input type="text" id="settings-station"
               class="w-full p-2 border border-gray-300 rounded-lg focus:outline-none focus:border-enji focus:ring-1 focus:ring-enji text-sm"
               placeholder="東京駅">
+          </div>
+        </div>
+
+        <!-- Business Settings Section -->
+        <div>
+          <h4 class="font-bold text-gray-700 text-sm mb-3"><i class="fas fa-clock mr-2"></i>営業設定</h4>
+          <div class="grid grid-cols-2 gap-3 mb-3">
+            <div>
+              <label class="text-xs text-gray-400 block mb-1">営業開始時間</label>
+              <select id="settings-businessStart"
+                class="w-full p-2 border border-gray-300 rounded-lg focus:outline-none focus:border-enji focus:ring-1 focus:ring-enji text-sm">
+                <option value="9">9:00</option>
+                <option value="10" selected>10:00</option>
+                <option value="11">11:00</option>
+                <option value="12">12:00</option>
+              </select>
+            </div>
+            <div>
+              <label class="text-xs text-gray-400 block mb-1">営業終了時間</label>
+              <select id="settings-businessEnd"
+                class="w-full p-2 border border-gray-300 rounded-lg focus:outline-none focus:border-enji focus:ring-1 focus:ring-enji text-sm">
+                <option value="18">18:00</option>
+                <option value="19">19:00</option>
+                <option value="20" selected>20:00</option>
+                <option value="21">21:00</option>
+                <option value="22">22:00</option>
+              </select>
+            </div>
+          </div>
+          <div>
+            <label class="text-xs text-gray-400 block mb-1">休業日（カンマ区切り）</label>
+            <input type="text" id="settings-holidays"
+              class="w-full p-2 border border-gray-300 rounded-lg focus:outline-none focus:border-enji focus:ring-1 focus:ring-enji text-sm"
+              placeholder="2024/12/25, 2024/12/31, 2025/01/01">
+            <p class="text-xs text-gray-400 mt-1">例: 2024/12/31, 2025/01/01</p>
           </div>
         </div>
 
@@ -1588,6 +1642,11 @@
             document.getElementById('settings-clear-logo-btn').classList.remove('hidden');
           }
 
+          // Business settings
+          document.getElementById('settings-businessStart').value = settings.businessStartHour || '10';
+          document.getElementById('settings-businessEnd').value = settings.businessEndHour || '20';
+          document.getElementById('settings-holidays').value = settings.holidays || '';
+
           // Reservation info
           document.getElementById('settings-salonInfo').value = settings.salonInfo || '';
           document.getElementById('settings-precautions').value = settings.precautions || '';
@@ -1630,6 +1689,9 @@
       const station = document.getElementById('settings-station').value;
       let logoUrl = document.getElementById('settings-logoUrl').value;
       const logoInput = document.getElementById('settings-logo-file');
+      const businessStartHour = document.getElementById('settings-businessStart').value;
+      const businessEndHour = document.getElementById('settings-businessEnd').value;
+      const holidays = document.getElementById('settings-holidays').value;
       const salonInfo = document.getElementById('settings-salonInfo').value;
       const precautions = document.getElementById('settings-precautions').value;
 
@@ -1667,7 +1729,7 @@
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               adminId: state.user.userId,
-              settings: { salonName, address, station, logoUrl, salonInfo, precautions }
+              settings: { salonName, address, station, logoUrl, businessStartHour, businessEndHour, holidays, salonInfo, precautions }
             })
           });
         }

@@ -137,6 +137,10 @@ router.get('/settings', async (req, res, next) => {
             salonName: settings.salonName || '',
             address: settings.address || '',
             station: settings.station || '',
+            // Business settings
+            businessStartHour: settings.businessStartHour || '10',
+            businessEndHour: settings.businessEndHour || '20',
+            holidays: settings.holidays || '',
             // Reservation info
             salonInfo: settings.salonInfo || SALON_INFO,
             precautions: settings.precautions || PRECAUTIONS,
@@ -254,7 +258,16 @@ router.get('/weekly-availability', async (req, res, next) => {
         if (!practitioner) {
             return res.status(404).json({ error: '施術者が見つかりません' });
         }
-        const availability = await calendarService.getWeeklyAvailability(startDate, parseInt(minutes), practitioner.calendarId);
+
+        // Get business settings
+        const settings = await sheetsService.getSettings();
+        const businessSettings = {
+            startHour: parseInt(settings.businessStartHour) || 10,
+            endHour: parseInt(settings.businessEndHour) || 20,
+            holidays: settings.holidays ? settings.holidays.split(',').map(d => d.trim()) : [],
+        };
+
+        const availability = await calendarService.getWeeklyAvailability(startDate, parseInt(minutes), practitioner.calendarId, businessSettings);
         res.json(availability);
     } catch (err) {
         next(err);

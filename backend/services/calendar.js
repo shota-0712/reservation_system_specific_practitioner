@@ -23,9 +23,14 @@ function formatTimeJST(date) {
 }
 
 // 週間空き状況を取得
-async function getWeeklyAvailability(startDateStr, menuMinutes, calendarId) {
+async function getWeeklyAvailability(startDateStr, menuMinutes, calendarId, businessSettings = {}) {
     const calendar = await getCalendarClient();
     const result = [];
+
+    // Default business hours
+    const startHour = businessSettings.startHour || 10;
+    const endHour = businessSettings.endHour || 20;
+    const holidays = businessSettings.holidays || [];
 
     // 1週間分ループ
     for (let i = 0; i < 7; i++) {
@@ -35,6 +40,20 @@ async function getWeeklyAvailability(startDateStr, menuMinutes, calendarId) {
 
         const dateStr = `${targetDate.getFullYear()}/${String(targetDate.getMonth() + 1).padStart(2, '0')}/${String(targetDate.getDate()).padStart(2, '0')}`;
         const dayOfWeek = ['日', '月', '火', '水', '木', '金', '土'][targetDate.getDay()];
+
+        // 休業日チェック
+        if (holidays.includes(dateStr)) {
+            // 休業日の場合、全スロットを「休」に
+            const slots = [];
+            for (let hour = startHour; hour < endHour; hour++) {
+                for (let minute = 0; minute < 60; minute += 30) {
+                    const timeStr = `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
+                    slots.push({ time: timeStr, status: '休' });
+                }
+            }
+            result.push({ date: dateStr, day: dayOfWeek, slots: slots });
+            continue;
+        }
 
         // その日のイベントを取得 (JSTの0:00-23:59をUTCに変換)
         const dayStartJST = new Date(targetDate);
@@ -53,8 +72,8 @@ async function getWeeklyAvailability(startDateStr, menuMinutes, calendarId) {
         const events = eventsResponse.data.items || [];
         const slots = [];
 
-        // 10:00 〜 20:00 まで 30分刻み (JST)
-        for (let hour = 10; hour < 20; hour++) {
+        // 営業開始〜終了まで30分刻み (JST)
+        for (let hour = startHour; hour < endHour; hour++) {
             for (let minute = 0; minute < 60; minute += 30) {
                 const timeStr = `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
 
@@ -70,9 +89,9 @@ async function getWeeklyAvailability(startDateStr, menuMinutes, calendarId) {
                 if (slotStart < now) {
                     status = '-';
                 } else {
-                    // 2. 終了時間が営業時間(20:00)を超える場合は不可
+                    // 2. 終了時間が営業終了時間を超える場合は不可
                     const closingTime = new Date(targetDate);
-                    closingTime.setHours(20, 0, 0, 0);
+                    closingTime.setHours(endHour, 0, 0, 0);
 
                     if (slotEnd > closingTime) {
                         status = '×';
