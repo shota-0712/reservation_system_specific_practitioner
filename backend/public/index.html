@@ -545,20 +545,34 @@
       }
 
       try {
+        console.log('[DEBUG] Starting LIFF init with ID:', LIFF_ID);
         await liff.init({ liffId: LIFF_ID });
+        console.log('[DEBUG] LIFF init success, isLoggedIn:', liff.isLoggedIn());
+
         if (!liff.isLoggedIn()) {
+          console.log('[DEBUG] Not logged in, calling liff.login()');
           liff.login();
           return;
         }
+
+        console.log('[DEBUG] Getting profile...');
         const profile = await liff.getProfile();
+        console.log('[DEBUG] Profile received:', profile.userId, profile.displayName);
         state.user = profile;
         updateUserDisplay();
 
         // Check if admin
+        console.log('[DEBUG] Checking admin for userId:', profile.userId);
         const adminRes = await fetch(`${API_BASE_URL}/api/check-admin?userId=${profile.userId}`);
         const adminData = await adminRes.json();
+        console.log('[DEBUG] Admin check result:', adminData);
         state.isAdmin = adminData.isAdmin;
-        if (state.isAdmin) showAdminTab();
+        if (state.isAdmin) {
+          console.log('[DEBUG] User is admin, showing admin tab');
+          showAdminTab();
+        } else {
+          console.log('[DEBUG] User is NOT admin');
+        }
 
         loadMenus();
       } catch (err) {
