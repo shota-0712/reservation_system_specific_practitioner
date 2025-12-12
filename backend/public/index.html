@@ -1336,12 +1336,15 @@
           return;
         }
 
-        container.innerHTML = practitioners.map(p => `
+        container.innerHTML = practitioners.map(p => {
+          const avatarHtml = p.imageUrl
+            ? `<img src="${p.imageUrl}" alt="${p.name}" class="w-10 h-10 rounded-full object-cover">`
+            : `<div class="w-10 h-10 rounded-full bg-gray-200 flex items-center justify-center"><i class="fas fa-user text-gray-400"></i></div>`;
+
+          return `
           <div class="bg-white shadow-sm border border-gray-100 rounded-xl p-4 flex justify-between items-center">
             <div class="flex items-center gap-3">
-              <div class="w-10 h-10 rounded-full bg-gray-200 flex items-center justify-center">
-                <i class="fas fa-user text-gray-400"></i>
-              </div>
+              ${avatarHtml}
               <div>
                 <h3 class="font-bold text-gray-800">${p.name}</h3>
                 <p class="text-xs text-gray-400">${p.calendarId}</p>
@@ -1351,7 +1354,7 @@
               <i class="fas fa-edit"></i>
             </button>
           </div>
-        `).join('');
+        `}).join('');
       } catch (e) {
         console.error(e);
         container.innerHTML = '<div class="text-center text-red-400 py-8">読み込みエラー</div>';
