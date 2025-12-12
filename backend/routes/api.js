@@ -141,6 +141,7 @@ router.get('/settings', async (req, res, next) => {
             businessStartHour: settings.businessStartHour || '10',
             businessEndHour: settings.businessEndHour || '20',
             holidays: settings.holidays || '',
+            regularHolidays: JSON.parse(settings.regularHolidays || '[]'),
             // Reservation info
             salonInfo: settings.salonInfo || SALON_INFO,
             precautions: settings.precautions || PRECAUTIONS,
@@ -265,6 +266,7 @@ router.get('/weekly-availability', async (req, res, next) => {
             startHour: parseInt(settings.businessStartHour) || 10,
             endHour: parseInt(settings.businessEndHour) || 20,
             holidays: settings.holidays ? settings.holidays.split(',').map(d => d.trim()) : [],
+            regularHolidays: JSON.parse(settings.regularHolidays || '[]'),
         };
 
         const availability = await calendarService.getWeeklyAvailability(startDate, parseInt(minutes), practitioner.calendarId, businessSettings);

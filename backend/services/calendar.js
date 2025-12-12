@@ -31,6 +31,7 @@ async function getWeeklyAvailability(startDateStr, menuMinutes, calendarId, busi
     const startHour = businessSettings.startHour || 10;
     const endHour = businessSettings.endHour || 20;
     const holidays = businessSettings.holidays || [];
+    const regularHolidays = businessSettings.regularHolidays || [];
 
     // 1週間分ループ
     for (let i = 0; i < 7; i++) {
@@ -39,10 +40,10 @@ async function getWeeklyAvailability(startDateStr, menuMinutes, calendarId, busi
         const targetDate = new Date(year, month - 1, day + i);
 
         const dateStr = `${targetDate.getFullYear()}/${String(targetDate.getMonth() + 1).padStart(2, '0')}/${String(targetDate.getDate()).padStart(2, '0')}`;
-        const dayOfWeek = ['日', '月', '火', '水', '木', '金', '土'][targetDate.getDay()];
+        const dayOfWeek = ['日', '月', '火', '水', '木', '金', '土'][targetDate.getDay()]; // 0=Sun, 1=Mon...
 
-        // 休業日チェック
-        if (holidays.includes(dateStr)) {
+        // 臨時休業日 または 定休日チェック
+        if (holidays.includes(dateStr) || regularHolidays.includes(targetDate.getDay())) {
             // 休業日の場合、全スロットを「休」に
             const slots = [];
             for (let hour = startHour; hour < endHour; hour++) {

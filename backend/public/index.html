@@ -625,12 +625,53 @@
               </select>
             </div>
           </div>
+
+          <div class="mb-3">
+            <label class="text-xs text-gray-400 block mb-1">定休日</label>
+            <div class="flex flex-wrap gap-2" id="settings-regularHolidays-container">
+              <label
+                class="inline-flex items-center bg-gray-50 border border-gray-200 rounded px-2 py-1 cursor-pointer hover:bg-gray-100">
+                <input type="checkbox" value="1" class="form-checkbox text-enji rounded h-4 w-4 mr-1">
+                <span class="text-sm">月</span>
+              </label>
+              <label
+                class="inline-flex items-center bg-gray-50 border border-gray-200 rounded px-2 py-1 cursor-pointer hover:bg-gray-100">
+                <input type="checkbox" value="2" class="form-checkbox text-enji rounded h-4 w-4 mr-1">
+                <span class="text-sm">火</span>
+              </label>
+              <label
+                class="inline-flex items-center bg-gray-50 border border-gray-200 rounded px-2 py-1 cursor-pointer hover:bg-gray-100">
+                <input type="checkbox" value="3" class="form-checkbox text-enji rounded h-4 w-4 mr-1">
+                <span class="text-sm">水</span>
+              </label>
+              <label
+                class="inline-flex items-center bg-gray-50 border border-gray-200 rounded px-2 py-1 cursor-pointer hover:bg-gray-100">
+                <input type="checkbox" value="4" class="form-checkbox text-enji rounded h-4 w-4 mr-1">
+                <span class="text-sm">木</span>
+              </label>
+              <label
+                class="inline-flex items-center bg-gray-50 border border-gray-200 rounded px-2 py-1 cursor-pointer hover:bg-gray-100">
+                <input type="checkbox" value="5" class="form-checkbox text-enji rounded h-4 w-4 mr-1">
+                <span class="text-sm">金</span>
+              </label>
+              <label
+                class="inline-flex items-center bg-gray-50 border border-gray-200 rounded px-2 py-1 cursor-pointer hover:bg-gray-100">
+                <input type="checkbox" value="6" class="form-checkbox text-enji rounded h-4 w-4 mr-1">
+                <span class="text-sm">土</span>
+              </label>
+              <label
+                class="inline-flex items-center bg-gray-50 border border-gray-200 rounded px-2 py-1 cursor-pointer hover:bg-gray-100">
+                <input type="checkbox" value="0" class="form-checkbox text-enji rounded h-4 w-4 mr-1">
+                <span class="text-sm text-red-500">日</span>
+              </label>
+            </div>
+          </div>
+
           <div>
-            <label class="text-xs text-gray-400 block mb-1">休業日（カンマ区切り）</label>
+            <label class="text-xs text-gray-400 block mb-1">臨時休業日（カンマ区切り）</label>
             <input type="text" id="settings-holidays"
               class="w-full p-2 border border-gray-300 rounded-lg focus:outline-none focus:border-enji focus:ring-1 focus:ring-enji text-sm"
-              placeholder="2024/12/25, 2024/12/31, 2025/01/01">
-            <p class="text-xs text-gray-400 mt-1">例: 2024/12/31, 2025/01/01</p>
+              placeholder="例: 2024/12/31, 2025/01/01">
           </div>
         </div>
 
@@ -1647,6 +1688,12 @@
           document.getElementById('settings-businessEnd').value = settings.businessEndHour || '20';
           document.getElementById('settings-holidays').value = settings.holidays || '';
 
+          // Regular holidays
+          const regularHolidays = settings.regularHolidays || [];
+          document.querySelectorAll('#settings-regularHolidays-container input[type="checkbox"]').forEach(checkbox => {
+            checkbox.checked = regularHolidays.includes(parseInt(checkbox.value));
+          });
+
           // Reservation info
           document.getElementById('settings-salonInfo').value = settings.salonInfo || '';
           document.getElementById('settings-precautions').value = settings.precautions || '';
@@ -1695,6 +1742,10 @@
       const salonInfo = document.getElementById('settings-salonInfo').value;
       const precautions = document.getElementById('settings-precautions').value;
 
+      // Regular holidays
+      const regularHolidays = Array.from(document.querySelectorAll('#settings-regularHolidays-container input[type="checkbox"]:checked'))
+        .map(cb => parseInt(cb.value));
+
       document.getElementById('loading').classList.remove('hidden');
 
       try {
@@ -1729,7 +1780,7 @@
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               adminId: state.user.userId,
-              settings: { salonName, address, station, logoUrl, businessStartHour, businessEndHour, holidays, salonInfo, precautions }
+              settings: { salonName, address, station, logoUrl, businessStartHour, businessEndHour, holidays, regularHolidays, salonInfo, precautions }
             })
           });
         }
