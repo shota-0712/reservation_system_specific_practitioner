@@ -71,5 +71,6 @@ jobs:
             --set-env-vars "^@^ADMIN_LINE_ID=${{ secrets.ADMIN_LINE_ID }}" \
             --set-env-vars "SCHEDULER_SECRET=${{ secrets.SCHEDULER_SECRET }}" \
             --set-env-vars "GCS_BUCKET_NAME=${{ env.PROJECT_ID }}-images" \
+            --set-env-vars "TZ=Asia/Tokyo" \
             --set-env-vars "^|^SALON_INFO=${{ secrets.SALON_INFO }}" \
             --set-env-vars "^|^PRECAUTIONS=${{ secrets.PRECAUTIONS }}"
