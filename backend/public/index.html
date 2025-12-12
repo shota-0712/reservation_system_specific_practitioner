@@ -678,6 +678,14 @@
               placeholder="タップして日付を選択" readonly>
             <p class="text-xs text-gray-400 mt-1">※複数選択可能です</p>
           </div>
+
+          <div class="mb-3">
+            <label class="text-xs text-gray-400 block mb-1">臨時営業日</label>
+            <input type="text" id="settings-temporaryBusinessDays"
+              class="flatpickr w-full p-2 border border-gray-300 rounded-lg focus:outline-none focus:border-enji focus:ring-1 focus:ring-enji text-sm bg-white"
+              placeholder="タップして日付を選択" readonly>
+            <p class="text-xs text-gray-400 mt-1">※定休日でも営業する場合は選択</p>
+          </div>
         </div>
 
         <!-- Reservation Info Section -->
@@ -1696,11 +1704,23 @@
           const holidaysStr = settings.holidays || '';
           document.getElementById('settings-holidays').value = holidaysStr;
 
-          // Initialize Flatpickr
+          // Initialize Flatpickr for Holidays
           flatpickr("#settings-holidays", {
             mode: "multiple",
             dateFormat: "Y/m/d",
             defaultDate: holidaysStr ? holidaysStr.split(',').map(d => d.trim()) : [],
+            locale: "ja"
+          });
+
+          // Temporary Business Days (Flatpickr)
+          const temporaryBusinessDaysStr = settings.temporaryBusinessDays || '';
+          document.getElementById('settings-temporaryBusinessDays').value = temporaryBusinessDaysStr;
+
+          // Initialize Flatpickr for Temporary Business Days
+          flatpickr("#settings-temporaryBusinessDays", {
+            mode: "multiple",
+            dateFormat: "Y/m/d",
+            defaultDate: temporaryBusinessDaysStr ? temporaryBusinessDaysStr.split(',').map(d => d.trim()) : [],
             locale: "ja"
           });
 
@@ -1755,6 +1775,7 @@
       const businessStartHour = document.getElementById('settings-businessStart').value;
       const businessEndHour = document.getElementById('settings-businessEnd').value;
       const holidays = document.getElementById('settings-holidays').value;
+      const temporaryBusinessDays = document.getElementById('settings-temporaryBusinessDays').value;
       const salonInfo = document.getElementById('settings-salonInfo').value;
       const precautions = document.getElementById('settings-precautions').value;
 
@@ -1796,7 +1817,7 @@
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               adminId: state.user.userId,
-              settings: { salonName, address, station, logoUrl, businessStartHour, businessEndHour, holidays, regularHolidays, salonInfo, precautions }
+              settings: { salonName, address, station, logoUrl, businessStartHour, businessEndHour, holidays, temporaryBusinessDays, regularHolidays, salonInfo, precautions }
             })
           });
         }

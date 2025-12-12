@@ -28,10 +28,12 @@ async function getWeeklyAvailability(startDateStr, menuMinutes, calendarId, busi
     const result = [];
 
     // Default business hours
+    const businessSettings = businessSettings || {};
     const startHour = businessSettings.startHour || 10;
     const endHour = businessSettings.endHour || 20;
     const holidays = businessSettings.holidays || [];
     const regularHolidays = businessSettings.regularHolidays || [];
+    const temporaryBusinessDays = businessSettings.temporaryBusinessDays || [];
 
     // 1週間分ループ
     for (let i = 0; i < 7; i++) {
@@ -42,8 +44,22 @@ async function getWeeklyAvailability(startDateStr, menuMinutes, calendarId, busi
         const dateStr = `${targetDate.getFullYear()}/${String(targetDate.getMonth() + 1).padStart(2, '0')}/${String(targetDate.getDate()).padStart(2, '0')}`;
         const dayOfWeek = ['日', '月', '火', '水', '木', '金', '土'][targetDate.getDay()]; // 0=Sun, 1=Mon...
 
-        // 臨時休業日 または 定休日チェック
-        if (holidays.includes(dateStr) || regularHolidays.includes(targetDate.getDay())) {
+        // 営業日判定ロジック
+        // 1. 臨時休業日 (最優先で休み)
+        let isClosed = false;
+        if (holidays.includes(dateStr)) {
+            isClosed = true;
+        }
+        // 2. 臨時営業日 (定休日より優先で営業 -> 休みではない)
+        else if (temporaryBusinessDays.includes(dateStr)) {
+            isClosed = false;
+        }
+        // 3. 定休日 (デフォルト休み)
+        else if (regularHolidays.includes(targetDate.getDay())) {
+            isClosed = true;
+        }
+
+        if (isClosed) {
             // 休業日の場合、全スロットを「休」に
             const slots = [];
             for (let hour = startHour; hour < endHour; hour++) {
