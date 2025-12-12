@@ -106,6 +106,47 @@ router.delete('/menus/:id', async (req, res, next) => {
 });
 
 // ====================
+// 設定関連
+// ====================
+
+// GET /api/settings - 設定取得 (管理者のみ)
+router.get('/settings', async (req, res, next) => {
+    try {
+        const adminId = req.query.adminId;
+        if (!isAdmin(adminId)) {
+            return res.status(403).json({ status: 'error', message: '管理者権限が必要です' });
+        }
+
+        const settings = await sheetsService.getSettings();
+
+        // 環境変数のデフォルト値とマージ
+        const result = {
+            salonInfo: settings.salonInfo || SALON_INFO,
+            precautions: settings.precautions || PRECAUTIONS,
+        };
+
+        res.json(result);
+    } catch (err) {
+        next(err);
+    }
+});
+
+// PUT /api/settings - 設定更新 (管理者のみ)
+router.put('/settings', async (req, res, next) => {
+    try {
+        const { adminId, settings } = req.body;
+        if (!isAdmin(adminId)) {
+            return res.status(403).json({ status: 'error', message: '管理者権限が必要です' });
+        }
+
+        const result = await sheetsService.updateSettings(settings);
+        res.json(result);
+    } catch (err) {
+        next(err);
+    }
+});
+
+// ====================
 // 施術者関連
 // ====================
 

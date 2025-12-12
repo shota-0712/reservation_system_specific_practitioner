@@ -268,7 +268,12 @@
 
       <!-- ADMIN VIEW (管理者のみ表示) -->
       <div id="admin-view" class="hidden animate-fade-in">
-        <h2 class="text-lg font-bold text-gray-800 mb-4 border-l-4 border-enji pl-3">管理ダッシュボード</h2>
+        <div class="flex justify-between items-center mb-4">
+          <h2 class="text-lg font-bold text-gray-800 border-l-4 border-enji pl-3">管理ダッシュボード</h2>
+          <button onclick="showSettingsModal()" class="text-gray-500 hover:text-enji transition-colors p-2">
+            <i class="fas fa-cog text-xl"></i>
+          </button>
+        </div>
 
         <!-- Tab Switcher for Admin -->
         <div class="flex mb-4 bg-white rounded-lg shadow-sm overflow-hidden">
@@ -498,6 +503,38 @@
             class="w-full bg-enji hover:bg-enji-dark text-white font-bold py-3 rounded-lg transition-colors">保存</button>
           <button id="practitioner-delete-btn" onclick="deletePractitionerFromModal()"
             class="w-full border border-red-500 text-red-500 font-bold py-3 rounded-lg hover:bg-red-50 transition-colors hidden">削除</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Settings Modal (NEW) -->
+  <div id="settings-modal"
+    class="fixed inset-0 bg-black/50 flex justify-center items-center z-50 hidden p-4 animate-fade-in overflow-y-auto">
+    <div class="bg-white rounded-xl shadow-lg w-full max-w-md overflow-hidden my-auto max-h-[90vh] flex flex-col">
+      <div class="bg-enji text-white p-4 flex justify-between items-center flex-shrink-0">
+        <h3 class="font-bold text-lg"><i class="fas fa-cog mr-2"></i>予約システム設定</h3>
+        <button onclick="closeSettingsModal()" class="text-white hover:text-gray-200"><i
+            class="fas fa-times"></i></button>
+      </div>
+      <div class="p-6 space-y-4 overflow-y-auto flex-1">
+        <div>
+          <label class="text-xs text-gray-400 block mb-1">店舗情報 (予約完了時に表示)</label>
+          <textarea id="settings-salonInfo" rows="8"
+            class="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:border-enji focus:ring-1 focus:ring-enji text-sm"
+            placeholder="店舗名、住所、営業時間など"></textarea>
+        </div>
+        <div>
+          <label class="text-xs text-gray-400 block mb-1">注意事項 (予約完了時に表示)</label>
+          <textarea id="settings-precautions" rows="8"
+            class="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:border-enji focus:ring-1 focus:ring-enji text-sm"
+            placeholder="キャンセルポリシー、注意事項など"></textarea>
+        </div>
+        <div class="pt-4 border-t border-gray-100">
+          <button onclick="saveSettings()"
+            class="w-full bg-enji hover:bg-enji-dark text-white font-bold py-3 rounded-lg transition-colors">
+            <i class="fas fa-save mr-2"></i>保存
+          </button>
         </div>
       </div>
     </div>
@@ -1374,6 +1411,65 @@
         alert('削除に失敗しました');
       } finally {
         document.getElementById('loading').classList.remove('hidden');
+      }
+    };
+
+    // ====================
+    // Settings Modal (設定モーダル)
+    // ====================
+
+    window.showSettingsModal = async () => {
+      document.getElementById('settings-modal').classList.remove('hidden');
+      document.getElementById('loading').classList.remove('hidden');
+
+      try {
+        if (location.hostname === 'localhost' || location.hostname === '127.0.0.1') {
+          // Mock data
+          document.getElementById('settings-salonInfo').value = '【店舗情報】\nサロン名: テストサロン\n住所: テスト住所';
+          document.getElementById('settings-precautions').value = '【注意事項】\nテスト注意事項';
+        } else {
+          const res = await fetch(`${API_BASE_URL}/api/settings?adminId=${state.user.userId}`);
+          const settings = await res.json();
+          document.getElementById('settings-salonInfo').value = settings.salonInfo || '';
+          document.getElementById('settings-precautions').value = settings.precautions || '';
+        }
+      } catch (e) {
+        console.error(e);
+        alert('設定の読み込みに失敗しました');
+      } finally {
+        document.getElementById('loading').classList.add('hidden');
+      }
+    };
+
+    window.closeSettingsModal = () => {
+      document.getElementById('settings-modal').classList.add('hidden');
+    };
+
+    window.saveSettings = async () => {
+      const salonInfo = document.getElementById('settings-salonInfo').value;
+      const precautions = document.getElementById('settings-precautions').value;
+
+      document.getElementById('loading').classList.remove('hidden');
+
+      try {
+        if (!(location.hostname === 'localhost' || location.hostname === '127.0.0.1')) {
+          await fetch(`${API_BASE_URL}/api/settings`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              adminId: state.user.userId,
+              settings: { salonInfo, precautions }
+            })
+          });
+        }
+
+        closeSettingsModal();
+        alert('設定を保存しました');
+      } catch (e) {
+        console.error(e);
+        alert('設定の保存に失敗しました');
+      } finally {
+        document.getElementById('loading').classList.add('hidden');
       }
     };
 

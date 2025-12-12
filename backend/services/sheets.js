@@ -365,7 +365,66 @@ module.exports = {
     addPractitioner,
     updatePractitioner,
     deletePractitioner,
+    // 設定関連
+    getSettings,
+    updateSettings,
 };
+
+// ====================
+// 設定関連 (settings sheet)
+// ====================
+
+async function getSettings() {
+    const sheets = await getSheetsClient();
+    try {
+        const response = await sheets.spreadsheets.values.get({
+            spreadsheetId: SHEET_ID,
+            range: 'settings!A2:B',  // A:key, B:value
+        });
+
+        const rows = response.data.values || [];
+        const settings = {};
+        rows.forEach(row => {
+            if (row[0]) {
+                settings[row[0]] = row[1] || '';
+            }
+        });
+        return settings;
+    } catch (err) {
+        // settings シートが存在しない場合は空オブジェクトを返す
+        console.log('Settings sheet not found, returning empty settings');
+        return {};
+    }
+}
+
+async function updateSettings(settingsData) {
+    const sheets = await getSheetsClient();
+
+    // 設定データを配列形式に変換
+    const values = Object.entries(settingsData).map(([key, value]) => [key, value]);
+
+    // まずヘッダー行を設定
+    await sheets.spreadsheets.values.update({
+        spreadsheetId: SHEET_ID,
+        range: 'settings!A1:B1',
+        valueInputOption: 'RAW',
+        requestBody: {
+            values: [['key', 'value']]
+        }
+    });
+
+    // 既存データをクリアして新しいデータを書き込む
+    await sheets.spreadsheets.values.update({
+        spreadsheetId: SHEET_ID,
+        range: 'settings!A2:B',
+        valueInputOption: 'RAW',
+        requestBody: {
+            values: values.length > 0 ? values : [[]]
+        }
+    });
+
+    return { status: 'success' };
+}
 
 // ====================
 // 施術者関連
