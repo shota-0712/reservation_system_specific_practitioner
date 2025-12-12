@@ -109,18 +109,35 @@ router.delete('/menus/:id', async (req, res, next) => {
 // 設定関連
 // ====================
 
-// GET /api/settings - 設定取得 (管理者のみ)
+// GET /api/settings - 設定取得 (公開項目はpublicでアクセス可能、詳細は管理者のみ)
 router.get('/settings', async (req, res, next) => {
     try {
         const adminId = req.query.adminId;
+        const settings = await sheetsService.getSettings();
+
+        // Public access - header customization only
+        if (adminId === 'public') {
+            return res.json({
+                logoUrl: settings.logoUrl || '',
+                salonName: settings.salonName || '',
+                address: settings.address || '',
+                station: settings.station || '',
+            });
+        }
+
+        // Admin access - all settings
         if (!isAdmin(adminId)) {
             return res.status(403).json({ status: 'error', message: '管理者権限が必要です' });
         }
 
-        const settings = await sheetsService.getSettings();
-
         // 環境変数のデフォルト値とマージ
         const result = {
+            // Header customization
+            logoUrl: settings.logoUrl || '',
+            salonName: settings.salonName || '',
+            address: settings.address || '',
+            station: settings.station || '',
+            // Reservation info
             salonInfo: settings.salonInfo || SALON_INFO,
             precautions: settings.precautions || PRECAUTIONS,
         };

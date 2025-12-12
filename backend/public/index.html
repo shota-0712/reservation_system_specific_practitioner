@@ -77,13 +77,14 @@
     <!-- Header -->
     <header class="bg-white shadow-sm sticky top-0 z-40">
       <div class="max-w-md mx-auto px-4 py-3 flex items-center gap-4">
-        <img src="en_logo.jpeg" alt="En Salon" class="h-12 w-12 rounded-full object-cover flex-shrink-0">
+        <img id="header-logo" src="en_logo.jpeg" alt="Salon Logo"
+          class="h-12 w-12 rounded-full object-cover flex-shrink-0">
         <div class="flex-1 min-w-0">
-          <h1 class="font-bold text-gray-800 text-sm truncate">en Inner health&beauty</h1>
-          <p class="text-xs text-gray-500 truncate">〒264-0035 千葉市若葉区東寺山町581-4</p>
+          <h1 id="header-salon-name" class="font-bold text-gray-800 text-sm truncate">en Inner health&beauty</h1>
+          <p id="header-address" class="text-xs text-gray-500 truncate">〒264-0035 千葉市若葉区東寺山町581-4</p>
           <p class="text-xs text-gray-400 flex items-center gap-1">
             <i class="fas fa-train text-xs"></i>
-            <span>千葉駅・東千葉駅</span>
+            <span id="header-station">千葉駅・東千葉駅</span>
           </p>
         </div>
       </div>
@@ -518,18 +519,72 @@
             class="fas fa-times"></i></button>
       </div>
       <div class="p-6 space-y-4 overflow-y-auto flex-1">
-        <div>
-          <label class="text-xs text-gray-400 block mb-1">店舗情報 (予約完了時に表示)</label>
-          <textarea id="settings-salonInfo" rows="8"
-            class="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:border-enji focus:ring-1 focus:ring-enji text-sm"
-            placeholder="店舗名、住所、営業時間など"></textarea>
+        <!-- Header Customization Section -->
+        <div class="pb-4 border-b border-gray-200">
+          <h4 class="font-bold text-gray-700 text-sm mb-3"><i class="fas fa-store mr-2"></i>ヘッダー表示設定</h4>
+
+          <div class="mb-3">
+            <label class="text-xs text-gray-400 block mb-1">ロゴ画像</label>
+            <input type="hidden" id="settings-logoUrl">
+            <div id="settings-logo-preview" class="mb-2 hidden">
+              <img id="settings-logo-img" src="" alt="Logo Preview"
+                class="w-16 h-16 object-cover rounded-full mx-auto border border-gray-200">
+            </div>
+            <div class="flex gap-2">
+              <label class="flex-1 cursor-pointer">
+                <input type="file" id="settings-logo-file" accept="image/*" class="hidden"
+                  onchange="previewSettingsLogo(this)">
+                <div
+                  class="w-full py-2 text-center border-2 border-dashed border-gray-300 rounded-lg text-gray-500 hover:border-enji hover:text-enji transition-colors text-sm">
+                  <i class="fas fa-camera mr-2"></i>ロゴを選択
+                </div>
+              </label>
+              <button type="button" onclick="clearSettingsLogo()" id="settings-clear-logo-btn"
+                class="hidden px-4 py-2 border border-red-400 text-red-400 rounded-lg hover:bg-red-50 transition-colors text-sm">
+                <i class="fas fa-trash"></i>
+              </button>
+            </div>
+          </div>
+
+          <div class="mb-3">
+            <label class="text-xs text-gray-400 block mb-1">サロン名</label>
+            <input type="text" id="settings-salonName"
+              class="w-full p-2 border border-gray-300 rounded-lg focus:outline-none focus:border-enji focus:ring-1 focus:ring-enji text-sm"
+              placeholder="en Inner health&beauty">
+          </div>
+
+          <div class="mb-3">
+            <label class="text-xs text-gray-400 block mb-1">住所</label>
+            <input type="text" id="settings-address"
+              class="w-full p-2 border border-gray-300 rounded-lg focus:outline-none focus:border-enji focus:ring-1 focus:ring-enji text-sm"
+              placeholder="〒264-0035 千葉市若葉区東寺山町581-4">
+          </div>
+
+          <div class="mb-0">
+            <label class="text-xs text-gray-400 block mb-1">最寄り駅</label>
+            <input type="text" id="settings-station"
+              class="w-full p-2 border border-gray-300 rounded-lg focus:outline-none focus:border-enji focus:ring-1 focus:ring-enji text-sm"
+              placeholder="千葉駅・東千葉駅">
+          </div>
         </div>
+
+        <!-- Reservation Info Section -->
         <div>
-          <label class="text-xs text-gray-400 block mb-1">注意事項 (予約完了時に表示)</label>
-          <textarea id="settings-precautions" rows="8"
-            class="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:border-enji focus:ring-1 focus:ring-enji text-sm"
-            placeholder="キャンセルポリシー、注意事項など"></textarea>
+          <h4 class="font-bold text-gray-700 text-sm mb-3"><i class="fas fa-info-circle mr-2"></i>予約完了時の表示</h4>
+          <div class="mb-3">
+            <label class="text-xs text-gray-400 block mb-1">店舗情報</label>
+            <textarea id="settings-salonInfo" rows="6"
+              class="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:border-enji focus:ring-1 focus:ring-enji text-sm"
+              placeholder="店舗名、住所、営業時間など"></textarea>
+          </div>
+          <div>
+            <label class="text-xs text-gray-400 block mb-1">注意事項</label>
+            <textarea id="settings-precautions" rows="6"
+              class="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:border-enji focus:ring-1 focus:ring-enji text-sm"
+              placeholder="キャンセルポリシー、注意事項など"></textarea>
+          </div>
         </div>
+
         <div class="pt-4 border-t border-gray-100">
           <button onclick="saveSettings()"
             class="w-full bg-enji hover:bg-enji-dark text-white font-bold py-3 rounded-lg transition-colors">
@@ -607,6 +662,7 @@
           console.log('[DEBUG] User is NOT admin');
         }
 
+        loadAndApplySettings();  // Apply header customization
         loadMenus();
       } catch (err) {
         console.error('LIFF Init Error', err);
@@ -1418,18 +1474,71 @@
     // Settings Modal (設定モーダル)
     // ====================
 
+    // Load settings and apply to header on page load
+    async function loadAndApplySettings() {
+      try {
+        if (location.hostname === 'localhost' || location.hostname === '127.0.0.1') return;
+
+        const res = await fetch(`${API_BASE_URL}/api/settings?adminId=public`);
+        if (res.ok) {
+          const settings = await res.json();
+          applySettingsToHeader(settings);
+        }
+      } catch (e) {
+        console.log('Settings not loaded (might be first run)');
+      }
+    }
+
+    function applySettingsToHeader(settings) {
+      if (settings.logoUrl) {
+        document.getElementById('header-logo').src = settings.logoUrl;
+      }
+      if (settings.salonName) {
+        document.getElementById('header-salon-name').innerText = settings.salonName;
+      }
+      if (settings.address) {
+        document.getElementById('header-address').innerText = settings.address;
+      }
+      if (settings.station) {
+        document.getElementById('header-station').innerText = settings.station;
+      }
+    }
+
     window.showSettingsModal = async () => {
       document.getElementById('settings-modal').classList.remove('hidden');
       document.getElementById('loading').classList.remove('hidden');
 
+      // Reset logo preview
+      document.getElementById('settings-logo-file').value = '';
+      document.getElementById('settings-logo-preview').classList.add('hidden');
+      document.getElementById('settings-clear-logo-btn').classList.add('hidden');
+
       try {
         if (location.hostname === 'localhost' || location.hostname === '127.0.0.1') {
           // Mock data
-          document.getElementById('settings-salonInfo').value = '【店舗情報】\nサロン名: テストサロン\n住所: テスト住所';
+          document.getElementById('settings-salonName').value = 'テストサロン';
+          document.getElementById('settings-address').value = '〒123-4567 テスト住所';
+          document.getElementById('settings-station').value = 'テスト駅';
+          document.getElementById('settings-salonInfo').value = '【店舗情報】\nサロン名: テストサロン';
           document.getElementById('settings-precautions').value = '【注意事項】\nテスト注意事項';
         } else {
           const res = await fetch(`${API_BASE_URL}/api/settings?adminId=${state.user.userId}`);
           const settings = await res.json();
+
+          // Header customization
+          document.getElementById('settings-logoUrl').value = settings.logoUrl || '';
+          document.getElementById('settings-salonName').value = settings.salonName || '';
+          document.getElementById('settings-address').value = settings.address || '';
+          document.getElementById('settings-station').value = settings.station || '';
+
+          // Show existing logo if available
+          if (settings.logoUrl) {
+            document.getElementById('settings-logo-img').src = settings.logoUrl;
+            document.getElementById('settings-logo-preview').classList.remove('hidden');
+            document.getElementById('settings-clear-logo-btn').classList.remove('hidden');
+          }
+
+          // Reservation info
           document.getElementById('settings-salonInfo').value = settings.salonInfo || '';
           document.getElementById('settings-precautions').value = settings.precautions || '';
         }
@@ -1445,29 +1554,82 @@
       document.getElementById('settings-modal').classList.add('hidden');
     };
 
+    // Logo preview
+    window.previewSettingsLogo = (input) => {
+      if (input.files && input.files[0]) {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          document.getElementById('settings-logo-img').src = e.target.result;
+          document.getElementById('settings-logo-preview').classList.remove('hidden');
+          document.getElementById('settings-clear-logo-btn').classList.remove('hidden');
+        };
+        reader.readAsDataURL(input.files[0]);
+      }
+    };
+
+    window.clearSettingsLogo = () => {
+      document.getElementById('settings-logo-file').value = '';
+      document.getElementById('settings-logoUrl').value = '';
+      document.getElementById('settings-logo-preview').classList.add('hidden');
+      document.getElementById('settings-clear-logo-btn').classList.add('hidden');
+    };
+
     window.saveSettings = async () => {
+      const salonName = document.getElementById('settings-salonName').value;
+      const address = document.getElementById('settings-address').value;
+      const station = document.getElementById('settings-station').value;
+      let logoUrl = document.getElementById('settings-logoUrl').value;
+      const logoInput = document.getElementById('settings-logo-file');
       const salonInfo = document.getElementById('settings-salonInfo').value;
       const precautions = document.getElementById('settings-precautions').value;
 
       document.getElementById('loading').classList.remove('hidden');
 
       try {
+        // Upload logo if a new file is selected
+        if (logoInput.files && logoInput.files[0]) {
+          const reader = new FileReader();
+          const imageData = await new Promise((resolve) => {
+            reader.onload = (e) => resolve(e.target.result);
+            reader.readAsDataURL(logoInput.files[0]);
+          });
+
+          const uploadRes = await fetch(`${API_BASE_URL}/api/upload-image`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              adminId: state.user.userId,
+              imageData: imageData,
+              fileName: `logo_${Date.now()}.jpg`
+            })
+          });
+          const uploadResult = await uploadRes.json();
+          if (uploadResult.status === 'success') {
+            logoUrl = uploadResult.imageUrl;
+          } else {
+            throw new Error(uploadResult.message || 'ロゴアップロードに失敗しました');
+          }
+        }
+
         if (!(location.hostname === 'localhost' || location.hostname === '127.0.0.1')) {
           await fetch(`${API_BASE_URL}/api/settings`, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               adminId: state.user.userId,
-              settings: { salonInfo, precautions }
+              settings: { salonName, address, station, logoUrl, salonInfo, precautions }
             })
           });
         }
+
+        // Apply changes to header immediately
+        applySettingsToHeader({ salonName, address, station, logoUrl });
 
         closeSettingsModal();
         alert('設定を保存しました');
       } catch (e) {
         console.error(e);
-        alert('設定の保存に失敗しました');
+        alert('設定の保存に失敗しました: ' + e.message);
       } finally {
         document.getElementById('loading').classList.add('hidden');
       }
