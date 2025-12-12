@@ -346,10 +346,9 @@
     </nav>
   </div>
 
-  <!-- Loading Overlay with Text -->
-  <div id="loading" class="fixed inset-0 bg-white/80 flex flex-col justify-center items-center z-50 hidden">
+  <!-- Loading Overlay -->
+  <div id="loading" class="fixed inset-0 bg-white/80 flex justify-center items-center z-50 hidden">
     <div class="text-enji"><i class="fas fa-spinner fa-spin fa-3x"></i></div>
-    <p id="loading-text" class="text-gray-600 mt-3 text-sm font-medium">読み込み中...</p>
   </div>
 
   <!-- Toast Notification -->
@@ -1156,7 +1155,7 @@
       const name = document.getElementById('user-name-input').value;
       if (!name) { showToast('お名前を入力してください'); return; }
 
-      showLoading('予約中...');
+      document.getElementById('loading').classList.remove('hidden');
       try {
         const payload = {
           userId: state.user.userId,
