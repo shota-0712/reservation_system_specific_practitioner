@@ -1,6 +1,6 @@
 const { google } = require('googleapis');
 
-const CALENDAR_ID = process.env.GOOGLE_CALENDAR_ID;
+// カレンダーIDは施術者ごとに動的に受け取る
 
 // Google Calendar API クライアントを取得
 async function getCalendarClient() {
@@ -23,7 +23,7 @@ function formatTimeJST(date) {
 }
 
 // 週間空き状況を取得
-async function getWeeklyAvailability(startDateStr, menuMinutes) {
+async function getWeeklyAvailability(startDateStr, menuMinutes, calendarId) {
     const calendar = await getCalendarClient();
     const result = [];
 
@@ -43,7 +43,7 @@ async function getWeeklyAvailability(startDateStr, menuMinutes) {
         dayEndJST.setHours(23, 59, 59, 999);
 
         const eventsResponse = await calendar.events.list({
-            calendarId: CALENDAR_ID,
+            calendarId: calendarId,
             timeMin: dayStartJST.toISOString(),
             timeMax: dayEndJST.toISOString(),
             singleEvents: true,
@@ -106,7 +106,7 @@ async function getWeeklyAvailability(startDateStr, menuMinutes) {
 
 
 // 指定日の空き時間を取得
-async function getAvailableSlots(dateStr, menuMinutes) {
+async function getAvailableSlots(dateStr, menuMinutes, calendarId) {
     const calendar = await getCalendarClient();
     const targetDate = new Date(dateStr.replace(/\//g, '-') + 'T00:00:00+09:00');
 
@@ -117,7 +117,7 @@ async function getAvailableSlots(dateStr, menuMinutes) {
     dayEnd.setHours(23, 59, 59, 999);
 
     const eventsResponse = await calendar.events.list({
-        calendarId: CALENDAR_ID,
+        calendarId: calendarId,
         timeMin: dayStart.toISOString(),
         timeMax: dayEnd.toISOString(),
         singleEvents: true,
@@ -164,11 +164,11 @@ async function getAvailableSlots(dateStr, menuMinutes) {
 }
 
 // 予約の重複チェック
-async function checkConflict(startTime, endTime) {
+async function checkConflict(startTime, endTime, calendarId) {
     const calendar = await getCalendarClient();
 
     const eventsResponse = await calendar.events.list({
-        calendarId: CALENDAR_ID,
+        calendarId: calendarId,
         timeMin: startTime.toISOString(),
         timeMax: endTime.toISOString(),
         singleEvents: true,
@@ -178,11 +178,11 @@ async function checkConflict(startTime, endTime) {
 }
 
 // カレンダーにイベント作成
-async function createEvent(title, startTime, endTime, description) {
+async function createEvent(title, startTime, endTime, description, calendarId) {
     const calendar = await getCalendarClient();
 
     const response = await calendar.events.insert({
-        calendarId: CALENDAR_ID,
+        calendarId: calendarId,
         requestBody: {
             summary: title,
             description: description,
@@ -201,12 +201,12 @@ async function createEvent(title, startTime, endTime, description) {
 }
 
 // カレンダーからイベント削除
-async function deleteEvent(eventId) {
+async function deleteEvent(eventId, calendarId) {
     const calendar = await getCalendarClient();
 
     try {
         await calendar.events.delete({
-            calendarId: CALENDAR_ID,
+            calendarId: calendarId,
             eventId: eventId,
         });
         return true;

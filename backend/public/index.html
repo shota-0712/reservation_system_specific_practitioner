@@ -95,7 +95,7 @@
       <!-- HOME VIEW -->
       <div id="home-view" class="block">
 
-        <!-- Progress Steps Indicator (Compact) -->
+        <!-- Progress Steps Indicator (Compact) - 5 Steps for Practitioner Flow -->
         <div id="progress-steps" class="bg-white rounded-xl shadow-sm p-3 mb-4">
           <div class="flex items-center justify-between">
             <div class="flex flex-col items-center">
@@ -109,20 +109,27 @@
               <div id="step-icon-2"
                 class="w-6 h-6 rounded-full bg-gray-200 text-gray-400 flex items-center justify-center text-xs font-bold">
                 2</div>
-              <span class="text-[10px] text-gray-400 mt-1 whitespace-nowrap">日時選択</span>
+              <span class="text-[10px] text-gray-400 mt-1 whitespace-nowrap">施術者</span>
             </div>
             <div class="flex-1 h-0.5 bg-gray-200 mx-1" id="step-line-2"></div>
             <div class="flex flex-col items-center">
               <div id="step-icon-3"
                 class="w-6 h-6 rounded-full bg-gray-200 text-gray-400 flex items-center justify-center text-xs font-bold">
                 3</div>
-              <span class="text-[10px] text-gray-400 mt-1 whitespace-nowrap">確認</span>
+              <span class="text-[10px] text-gray-400 mt-1 whitespace-nowrap">日時</span>
             </div>
             <div class="flex-1 h-0.5 bg-gray-200 mx-1" id="step-line-3"></div>
             <div class="flex flex-col items-center">
               <div id="step-icon-4"
                 class="w-6 h-6 rounded-full bg-gray-200 text-gray-400 flex items-center justify-center text-xs font-bold">
                 4</div>
+              <span class="text-[10px] text-gray-400 mt-1 whitespace-nowrap">確認</span>
+            </div>
+            <div class="flex-1 h-0.5 bg-gray-200 mx-1" id="step-line-4"></div>
+            <div class="flex flex-col items-center">
+              <div id="step-icon-5"
+                class="w-6 h-6 rounded-full bg-gray-200 text-gray-400 flex items-center justify-center text-xs font-bold">
+                5</div>
               <span class="text-[10px] text-gray-400 mt-1 whitespace-nowrap">完了</span>
             </div>
           </div>
@@ -152,12 +159,39 @@
           </div>
         </div>
 
-        <!-- Step 2: Date Selection (Weekly View) -->
-        <div id="step-date" class="hidden animate-fade-in">
+        <!-- Step 2: Practitioner Selection (NEW) -->
+        <div id="step-practitioner" class="hidden animate-fade-in">
           <button onclick="goBack('step-menu')" class="btn-ghost mb-2 text-gray-500 text-sm flex items-center gap-1">
             <i class="fas fa-arrow-left"></i> 戻る
           </button>
+          <h2 class="text-lg font-bold text-gray-800 mb-4 border-l-4 border-enji pl-3">施術者を選択</h2>
+
+          <div id="practitioner-list" class="grid grid-cols-2 gap-4">
+            <div class="animate-pulse space-y-4 col-span-2">
+              <div class="h-32 bg-gray-200 rounded-lg"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Step 3: Date Selection (Weekly View) -->
+        <div id="step-date" class="hidden animate-fade-in">
+          <button onclick="goBack('step-practitioner')"
+            class="btn-ghost mb-2 text-gray-500 text-sm flex items-center gap-1">
+            <i class="fas fa-arrow-left"></i> 戻る
+          </button>
           <h2 class="text-lg font-bold text-gray-800 mb-4 border-l-4 border-enji pl-3">日時選択</h2>
+
+          <!-- Selected practitioner display -->
+          <div id="selected-practitioner-display" class="bg-pink-50 rounded-lg p-3 mb-4 flex items-center gap-3">
+            <div id="selected-practitioner-avatar"
+              class="w-10 h-10 rounded-full bg-gray-200 flex items-center justify-center overflow-hidden">
+              <i class="fas fa-user text-gray-400"></i>
+            </div>
+            <div>
+              <p class="text-xs text-gray-500">担当</p>
+              <p id="selected-practitioner-name" class="font-bold text-gray-800">-</p>
+            </div>
+          </div>
 
           <!-- Weekly Calendar Controls -->
           <div class="bg-white rounded-xl shadow-sm p-2 mb-4">
@@ -192,7 +226,7 @@
           </div>
         </div>
 
-        <!-- Step 3: Confirmation -->
+        <!-- Step 4: Confirmation -->
         <div id="step-confirm" class="hidden animate-fade-in">
           <button onclick="goBack('step-date')" class="btn-ghost mb-2 text-gray-500 text-sm flex items-center gap-1">
             <i class="fas fa-arrow-left"></i> 戻る
@@ -207,6 +241,10 @@
               <div>
                 <label class="text-xs text-gray-400 block">メニュー</label>
                 <p id="confirm-menu" class="font-bold text-gray-800 text-lg"></p>
+              </div>
+              <div>
+                <label class="text-xs text-gray-400 block">担当施術者</label>
+                <p id="confirm-practitioner" class="font-bold text-gray-800"></p>
               </div>
               <div class="flex gap-4">
                 <div>
@@ -264,6 +302,8 @@
             class="flex-1 py-3 text-sm font-bold text-white bg-enji transition-colors">予約一覧</button>
           <button onclick="switchAdminTab('menus')" id="admin-tab-menus"
             class="flex-1 py-3 text-sm font-bold text-gray-500 bg-gray-50 hover:bg-gray-100 transition-colors">メニュー管理</button>
+          <button onclick="switchAdminTab('practitioners')" id="admin-tab-practitioners"
+            class="flex-1 py-3 text-sm font-bold text-gray-500 bg-gray-50 hover:bg-gray-100 transition-colors">施術者管理</button>
         </div>
 
         <!-- Admin: Reservations List -->
@@ -286,6 +326,17 @@
               data-category="all">すべて</button>
           </div>
           <div id="admin-menu-list" class="space-y-3">
+            <div class="flex justify-center py-8 text-enji"><i class="fas fa-spinner fa-spin fa-2x"></i></div>
+          </div>
+        </div>
+
+        <!-- Admin: Practitioner Management (NEW) -->
+        <div id="admin-practitioners" class="hidden">
+          <button onclick="showAddPractitionerModal()"
+            class="w-full mb-4 bg-enji hover:bg-enji-dark text-white font-bold py-3 rounded-lg shadow-md transition-colors">
+            <i class="fas fa-plus mr-2"></i>新しい施術者を追加
+          </button>
+          <div id="admin-practitioner-list" class="space-y-3">
             <div class="flex justify-center py-8 text-enji"><i class="fas fa-spinner fa-spin fa-2x"></i></div>
           </div>
         </div>
@@ -422,6 +473,40 @@
     </div>
   </div>
 
+  <!-- Practitioner Edit Modal (NEW) -->
+  <div id="practitioner-modal"
+    class="fixed inset-0 bg-black/50 flex justify-center items-center z-50 hidden p-4 animate-fade-in overflow-y-auto">
+    <div class="bg-white rounded-xl shadow-lg w-full max-w-sm overflow-hidden my-auto max-h-[90vh] flex flex-col">
+      <div class="bg-enji text-white p-4 flex justify-between items-center flex-shrink-0">
+        <h3 id="practitioner-modal-title" class="font-bold text-lg">施術者編集</h3>
+        <button onclick="closePractitionerModal()" class="text-white hover:text-gray-200"><i
+            class="fas fa-times"></i></button>
+      </div>
+      <div class="p-6 space-y-4 overflow-y-auto flex-1">
+        <input type="hidden" id="practitioner-edit-id">
+        <div>
+          <label class="text-xs text-gray-400 block mb-1">施術者名</label>
+          <input type="text" id="practitioner-edit-name"
+            class="w-full p-2 border border-gray-300 rounded focus:outline-none focus:border-enji focus:ring-1 focus:ring-enji"
+            placeholder="施術者名を入力">
+        </div>
+        <div>
+          <label class="text-xs text-gray-400 block mb-1">GoogleカレンダーID</label>
+          <input type="text" id="practitioner-edit-calendarId"
+            class="w-full p-2 border border-gray-300 rounded focus:outline-none focus:border-enji focus:ring-1 focus:ring-enji"
+            placeholder="example@gmail.com">
+          <p class="text-xs text-gray-400 mt-1">カレンダーのメールアドレスを入力してください</p>
+        </div>
+        <div class="pt-4 border-t border-gray-100 space-y-2">
+          <button onclick="savePractitioner()"
+            class="w-full bg-enji hover:bg-enji-dark text-white font-bold py-3 rounded-lg transition-colors">保存</button>
+          <button id="practitioner-delete-btn" onclick="deletePractitionerFromModal()"
+            class="w-full border border-red-500 text-red-500 font-bold py-3 rounded-lg hover:bg-red-50 transition-colors hidden">削除</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <script>
     // ==============================================
     // Configuration (設定エリア)
@@ -439,6 +524,7 @@
     let state = {
       user: null,
       menu: null,
+      practitioner: null,  // 施術者情報を追加
       date: null,
       time: null,
       currentTab: 'home',
@@ -536,15 +622,18 @@
       document.getElementById('step-date').classList.add('hidden');
       document.getElementById('step-confirm').classList.add('hidden');
       document.getElementById('step-menu').classList.add('hidden');
+      document.getElementById('step-practitioner').classList.add('hidden');
       document.getElementById(stepId).classList.remove('hidden');
 
-      // Update progress steps
+      // Update progress steps (now 5 steps)
       if (stepId === 'step-menu') {
         updateProgressSteps(1);
-      } else if (stepId === 'step-date') {
+      } else if (stepId === 'step-practitioner') {
         updateProgressSteps(2);
-      } else if (stepId === 'step-confirm') {
+      } else if (stepId === 'step-date') {
         updateProgressSteps(3);
+      } else if (stepId === 'step-confirm') {
+        updateProgressSteps(4);
       }
     };
 
@@ -642,9 +731,9 @@
       `}).join('');
     }
 
-    // Update progress steps indicator
+    // Update progress steps indicator (now 5 steps)
     function updateProgressSteps(currentStep) {
-      for (let i = 1; i <= 4; i++) {
+      for (let i = 1; i <= 5; i++) {
         const icon = document.getElementById(`step-icon-${i}`);
         const line = document.getElementById(`step-line-${i}`);
 
@@ -678,10 +767,80 @@
     window.selectMenu = (menu) => {
       state.menu = menu;
       document.getElementById('step-menu').classList.add('hidden');
-      document.getElementById('step-date').classList.remove('hidden');
+      document.getElementById('step-practitioner').classList.remove('hidden');
+      state.practitioner = null;
       state.date = null;
       state.time = null;
       updateProgressSteps(2);
+      loadPractitioners();
+    };
+
+    // ====================
+    // Practitioner Selection
+    // ====================
+    let allPractitioners = [];
+
+    async function loadPractitioners() {
+      const container = document.getElementById('practitioner-list');
+      container.innerHTML = '<div class="animate-pulse col-span-2"><div class="h-32 bg-gray-200 rounded-lg"></div></div>';
+
+      try {
+        if (location.hostname === 'localhost' || location.hostname === '127.0.0.1') {
+          // Mock Data
+          allPractitioners = [
+            { id: '1', name: '田中 花子', calendarId: 'ichibi2025@gmail.com', imageUrl: '' },
+            { id: '2', name: '山田 太郎', calendarId: 'satellite0712@gmail.com', imageUrl: '' }
+          ];
+        } else {
+          const res = await fetch(`${API_BASE_URL}/api/practitioners`);
+          allPractitioners = await res.json();
+        }
+
+        renderPractitioners(allPractitioners);
+      } catch (e) {
+        console.error(e);
+        container.innerHTML = '<div class="col-span-2 text-center text-red-400">施術者の読み込みに失敗しました</div>';
+      }
+    }
+
+    function renderPractitioners(practitioners) {
+      const container = document.getElementById('practitioner-list');
+
+      if (practitioners.length === 0) {
+        container.innerHTML = '<div class="col-span-2 text-center text-gray-400 py-8">施術者が登録されていません</div>';
+        return;
+      }
+
+      container.innerHTML = practitioners.map(p => {
+        const avatarHtml = p.imageUrl
+          ? `<img src="${p.imageUrl}" alt="${p.name}" class="w-16 h-16 object-cover rounded-full">`
+          : `<div class="w-16 h-16 rounded-full bg-gray-200 flex items-center justify-center"><i class="fas fa-user text-gray-400 text-2xl"></i></div>`;
+
+        return `
+        <div onclick='selectPractitioner(${JSON.stringify(p)})' class="bg-white shadow-sm border border-gray-100 rounded-xl p-4 cursor-pointer hover:border-enji transition-all active:scale-95 flex flex-col items-center text-center">
+          ${avatarHtml}
+          <h3 class="font-bold text-gray-800 mt-3">${p.name}</h3>
+        </div>
+      `}).join('');
+    }
+
+    window.selectPractitioner = (practitioner) => {
+      state.practitioner = practitioner;
+      document.getElementById('step-practitioner').classList.add('hidden');
+      document.getElementById('step-date').classList.remove('hidden');
+
+      // Update selected practitioner display
+      const avatarContainer = document.getElementById('selected-practitioner-avatar');
+      if (practitioner.imageUrl) {
+        avatarContainer.innerHTML = `<img src="${practitioner.imageUrl}" alt="${practitioner.name}" class="w-full h-full object-cover">`;
+      } else {
+        avatarContainer.innerHTML = '<i class="fas fa-user text-gray-400"></i>';
+      }
+      document.getElementById('selected-practitioner-name').innerText = practitioner.name;
+
+      state.date = null;
+      state.time = null;
+      updateProgressSteps(3);
       initWeeklyCalendar();
     };
 
@@ -725,7 +884,8 @@
           await new Promise(r => setTimeout(r, 500));
           weeklyData = generateMockWeeklyData(currentWeekStart);
         } else {
-          const res = await fetch(`${API_BASE_URL}/api/weekly-availability?startDate=${startDateStr}&minutes=${state.menu.minutes}`);
+          // Include practitionerId in API call
+          const res = await fetch(`${API_BASE_URL}/api/weekly-availability?startDate=${startDateStr}&minutes=${state.menu.minutes}&practitionerId=${state.practitioner.id}`);
           weeklyData = await res.json();
         }
 
@@ -796,9 +956,10 @@
       state.time = time;
       document.getElementById('step-date').classList.add('hidden');
       document.getElementById('step-confirm').classList.remove('hidden');
-      updateProgressSteps(3);
+      updateProgressSteps(4);  // Now step 4 (was 3)
 
       document.getElementById('confirm-menu').innerText = state.menu.name;
+      document.getElementById('confirm-practitioner').innerText = state.practitioner.name;
       document.getElementById('confirm-date').innerText = state.date;
 
       // Calculate end time
@@ -869,7 +1030,8 @@
             name: state.menu.name,
             minutes: state.menu.minutes
           },
-          phone: document.getElementById('user-phone-input')?.value || '', // Added phone just in case, though not in input yet
+          practitionerId: state.practitioner.id,  // 施術者IDを追加
+          phone: document.getElementById('user-phone-input')?.value || '',
           date: state.date,
           time: state.time
         };
@@ -987,24 +1149,165 @@
     window.switchAdminTab = (tab) => {
       const tabReservations = document.getElementById('admin-tab-reservations');
       const tabMenus = document.getElementById('admin-tab-menus');
+      const tabPractitioners = document.getElementById('admin-tab-practitioners');
       const sectionReservations = document.getElementById('admin-reservations');
       const sectionMenus = document.getElementById('admin-menus');
+      const sectionPractitioners = document.getElementById('admin-practitioners');
 
       const activeClasses = 'flex-1 py-3 text-sm font-bold text-white bg-enji transition-colors';
       const inactiveClasses = 'flex-1 py-3 text-sm font-bold text-gray-500 bg-gray-50 hover:bg-gray-100 transition-colors';
 
+      // Reset all tabs
+      [tabReservations, tabMenus, tabPractitioners].forEach(t => t.className = inactiveClasses);
+      [sectionReservations, sectionMenus, sectionPractitioners].forEach(s => s.classList.add('hidden'));
+
       if (tab === 'reservations') {
         tabReservations.className = activeClasses;
-        tabMenus.className = inactiveClasses;
         sectionReservations.classList.remove('hidden');
-        sectionMenus.classList.add('hidden');
         loadAdminReservations();
-      } else {
+      } else if (tab === 'menus') {
         tabMenus.className = activeClasses;
-        tabReservations.className = inactiveClasses;
         sectionMenus.classList.remove('hidden');
-        sectionReservations.classList.add('hidden');
         loadAdminMenus();
+      } else if (tab === 'practitioners') {
+        tabPractitioners.className = activeClasses;
+        sectionPractitioners.classList.remove('hidden');
+        loadAdminPractitioners();
+      }
+    };
+
+    // ====================
+    // Admin Practitioner Management
+    // ====================
+
+    async function loadAdminPractitioners() {
+      const container = document.getElementById('admin-practitioner-list');
+      container.innerHTML = '<div class="flex justify-center py-8 text-enji"><i class="fas fa-spinner fa-spin fa-2x"></i></div>';
+
+      try {
+        let practitioners = [];
+        if (location.hostname === 'localhost' || location.hostname === '127.0.0.1') {
+          await new Promise(r => setTimeout(r, 500));
+          practitioners = [
+            { id: '1', name: '田中 花子', calendarId: 'ichibi2025@gmail.com' },
+            { id: '2', name: '山田 太郎', calendarId: 'satellite0712@gmail.com' }
+          ];
+        } else {
+          const res = await fetch(`${API_BASE_URL}/api/practitioners`);
+          practitioners = await res.json();
+        }
+
+        if (practitioners.length === 0) {
+          container.innerHTML = '<div class="text-center text-gray-400 py-8">施術者が登録されていません</div>';
+          return;
+        }
+
+        container.innerHTML = practitioners.map(p => `
+          <div class="bg-white shadow-sm border border-gray-100 rounded-xl p-4 flex justify-between items-center">
+            <div class="flex items-center gap-3">
+              <div class="w-10 h-10 rounded-full bg-gray-200 flex items-center justify-center">
+                <i class="fas fa-user text-gray-400"></i>
+              </div>
+              <div>
+                <h3 class="font-bold text-gray-800">${p.name}</h3>
+                <p class="text-xs text-gray-400">${p.calendarId}</p>
+              </div>
+            </div>
+            <button onclick='showEditPractitionerModal(${JSON.stringify(p)})' class="text-enji hover:text-enji-dark">
+              <i class="fas fa-edit"></i>
+            </button>
+          </div>
+        `).join('');
+      } catch (e) {
+        console.error(e);
+        container.innerHTML = '<div class="text-center text-red-400 py-8">読み込みエラー</div>';
+      }
+    }
+
+    window.showAddPractitionerModal = () => {
+      document.getElementById('practitioner-modal-title').innerText = '施術者追加';
+      document.getElementById('practitioner-edit-id').value = '';
+      document.getElementById('practitioner-edit-name').value = '';
+      document.getElementById('practitioner-edit-calendarId').value = '';
+      document.getElementById('practitioner-delete-btn').classList.add('hidden');
+      document.getElementById('practitioner-modal').classList.remove('hidden');
+    };
+
+    window.showEditPractitionerModal = (practitioner) => {
+      document.getElementById('practitioner-modal-title').innerText = '施術者編集';
+      document.getElementById('practitioner-edit-id').value = practitioner.id;
+      document.getElementById('practitioner-edit-name').value = practitioner.name;
+      document.getElementById('practitioner-edit-calendarId').value = practitioner.calendarId;
+      document.getElementById('practitioner-delete-btn').classList.remove('hidden');
+      document.getElementById('practitioner-modal').classList.remove('hidden');
+    };
+
+    window.closePractitionerModal = () => {
+      document.getElementById('practitioner-modal').classList.add('hidden');
+    };
+
+    window.savePractitioner = async () => {
+      const id = document.getElementById('practitioner-edit-id').value;
+      const name = document.getElementById('practitioner-edit-name').value;
+      const calendarId = document.getElementById('practitioner-edit-calendarId').value;
+
+      if (!name || !calendarId) {
+        alert('名前とカレンダーIDを入力してください');
+        return;
+      }
+
+      document.getElementById('loading').classList.remove('hidden');
+      try {
+        const practitioner = { name, calendarId };
+
+        if (!(location.hostname === 'localhost' || location.hostname === '127.0.0.1')) {
+          if (id) {
+            await fetch(`${API_BASE_URL}/api/practitioners/${id}`, {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ adminId: state.user.userId, practitioner })
+            });
+          } else {
+            await fetch(`${API_BASE_URL}/api/practitioners`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ adminId: state.user.userId, practitioner })
+            });
+          }
+        }
+
+        closePractitionerModal();
+        loadAdminPractitioners();
+        alert('保存しました');
+      } catch (e) {
+        console.error(e);
+        alert('保存に失敗しました');
+      } finally {
+        document.getElementById('loading').classList.remove('hidden');
+      }
+    };
+
+    window.deletePractitionerFromModal = async () => {
+      if (!confirm('この施術者を削除しますか？')) return;
+
+      const id = document.getElementById('practitioner-edit-id').value;
+      document.getElementById('loading').classList.remove('hidden');
+
+      try {
+        if (!(location.hostname === 'localhost' || location.hostname === '127.0.0.1')) {
+          await fetch(`${API_BASE_URL}/api/practitioners/${id}?adminId=${state.user.userId}`, {
+            method: 'DELETE'
+          });
+        }
+
+        closePractitionerModal();
+        loadAdminPractitioners();
+        alert('削除しました');
+      } catch (e) {
+        console.error(e);
+        alert('削除に失敗しました');
+      } finally {
+        document.getElementById('loading').classList.remove('hidden');
       }
     };
 

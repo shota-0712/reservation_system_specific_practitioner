@@ -106,14 +106,79 @@ router.delete('/menus/:id', async (req, res, next) => {
 });
 
 // ====================
+// 施術者関連
+// ====================
+
+// GET /api/practitioners - 施術者一覧取得
+router.get('/practitioners', async (req, res, next) => {
+    try {
+        const practitioners = await sheetsService.getPractitioners();
+        res.json(practitioners);
+    } catch (err) {
+        next(err);
+    }
+});
+
+// POST /api/practitioners - 施術者追加 (管理者のみ)
+router.post('/practitioners', async (req, res, next) => {
+    try {
+        const { adminId, practitioner } = req.body;
+        if (!isAdmin(adminId)) {
+            return res.status(403).json({ status: 'error', message: '権限がありません' });
+        }
+        const result = await sheetsService.addPractitioner(practitioner);
+        res.json(result);
+    } catch (err) {
+        next(err);
+    }
+});
+
+// PUT /api/practitioners/:id - 施術者更新 (管理者のみ)
+router.put('/practitioners/:id', async (req, res, next) => {
+    try {
+        const { adminId, practitioner } = req.body;
+        const practitionerId = req.params.id;
+        if (!isAdmin(adminId)) {
+            return res.status(403).json({ status: 'error', message: '権限がありません' });
+        }
+        const result = await sheetsService.updatePractitioner(practitionerId, practitioner);
+        res.json(result);
+    } catch (err) {
+        next(err);
+    }
+});
+
+// DELETE /api/practitioners/:id - 施術者削除 (管理者のみ)
+router.delete('/practitioners/:id', async (req, res, next) => {
+    try {
+        const adminId = req.query.adminId || (req.body && req.body.adminId);
+        const practitionerId = req.params.id;
+        if (!isAdmin(adminId)) {
+            return res.status(403).json({ status: 'error', message: '権限がありません' });
+        }
+        const result = await sheetsService.deletePractitioner(practitionerId);
+        res.json(result);
+    } catch (err) {
+        next(err);
+    }
+});
+
+// ====================
 // 予約スロット関連
 // ====================
 
 // GET /api/slots - 指定日の空き時間取得
 router.get('/slots', async (req, res, next) => {
     try {
-        const { date, minutes } = req.query;
-        const slots = await calendarService.getAvailableSlots(date, parseInt(minutes));
+        const { date, minutes, practitionerId } = req.query;
+        if (!practitionerId) {
+            return res.status(400).json({ error: '施術者を選択してください' });
+        }
+        const practitioner = await sheetsService.getPractitionerById(practitionerId);
+        if (!practitioner) {
+            return res.status(404).json({ error: '施術者が見つかりません' });
+        }
+        const slots = await calendarService.getAvailableSlots(date, parseInt(minutes), practitioner.calendarId);
         res.json(slots);
     } catch (err) {
         next(err);
@@ -123,8 +188,15 @@ router.get('/slots', async (req, res, next) => {
 // GET /api/weekly-availability - 週間空き状況取得
 router.get('/weekly-availability', async (req, res, next) => {
     try {
-        const { startDate, minutes } = req.query;
-        const availability = await calendarService.getWeeklyAvailability(startDate, parseInt(minutes));
+        const { startDate, minutes, practitionerId } = req.query;
+        if (!practitionerId) {
+            return res.status(400).json({ error: '施術者を選択してください' });
+        }
+        const practitioner = await sheetsService.getPractitionerById(practitionerId);
+        if (!practitioner) {
+            return res.status(404).json({ error: '施術者が見つかりません' });
+        }
+        const availability = await calendarService.getWeeklyAvailability(startDate, parseInt(minutes), practitioner.calendarId);
         res.json(availability);
     } catch (err) {
         next(err);
@@ -165,11 +237,20 @@ router.post('/reservations', async (req, res, next) => {
     try {
         const data = req.body;
 
+        // 施術者情報を取得
+        if (!data.practitionerId) {
+            return res.json({ status: 'error', message: '施術者を選択してください' });
+        }
+        const practitioner = await sheetsService.getPractitionerById(data.practitionerId);
+        if (!practitioner) {
+            return res.json({ status: 'error', message: '施術者が見つかりません' });
+        }
+
         // カレンダーで重複チェック
         const dateTime = new Date(`${data.date.replace(/\//g, '-')}T${data.time}:00+09:00`);
         const endTime = new Date(dateTime.getTime() + data.menu.minutes * 60000);
 
-        const hasConflict = await calendarService.checkConflict(dateTime, endTime);
+        const hasConflict = await calendarService.checkConflict(dateTime, endTime, practitioner.calendarId);
         if (hasConflict) {
             return res.json({ status: 'error', message: '指定された時間は既に予約が入っています' });
         }
@@ -179,13 +260,16 @@ router.post('/reservations', async (req, res, next) => {
             `【予約】${data.name}様 (${data.menu.name})`,
             dateTime,
             endTime,
-            `電話番号: ${data.phone || ''}\nLINE ID: ${data.userId}`
+            `電話番号: ${data.phone || ''}\nLINE ID: ${data.userId}\n担当: ${practitioner.name}`,
+            practitioner.calendarId
         );
 
         // スプレッドシートに予約を記録
         await sheetsService.addReservation({
             ...data,
-            eventId
+            eventId,
+            practitionerId: practitioner.id,
+            practitionerName: practitioner.name,
         });
 
         // LINE通知 (ユーザーへ)
@@ -195,6 +279,7 @@ ${data.name}様
 
 📅 日時: ${data.date} ${data.time}
 💆‍♀️ メニュー: ${data.menu.name}
+👤 担当: ${practitioner.name}
 ---------------
 ${SALON_INFO}
 ---------------
@@ -208,6 +293,7 @@ ${PRECAUTIONS}
 👤 名前: ${data.name} 様
 📅 日時: ${data.date} ${data.time}
 💆‍♀️ メニュー: ${data.menu.name}
+👤 担当: ${practitioner.name}
 📱 電話: ${data.phone || 'なし'}
 `.trim();
         await notifyAdmins(adminMessage);
@@ -230,9 +316,12 @@ router.delete('/reservations/:id', async (req, res, next) => {
             return res.json({ status: 'error', message: '予約が見つかりませんでした' });
         }
 
-        // カレンダーから削除
-        if (reservation.eventId) {
-            await calendarService.deleteEvent(reservation.eventId);
+        // 施術者のカレンダーからイベント削除
+        if (reservation.eventId && reservation.practitionerId) {
+            const practitioner = await sheetsService.getPractitionerById(reservation.practitionerId);
+            if (practitioner) {
+                await calendarService.deleteEvent(reservation.eventId, practitioner.calendarId);
+            }
         }
 
         // スプレッドシートのステータスを更新
@@ -245,6 +334,7 @@ ${reservation.name}様
 
 📅 日時: ${reservation.date} ${reservation.time}
 💆‍♀️ メニュー: ${reservation.menu}
+${reservation.practitionerName ? `👤 担当: ${reservation.practitionerName}` : ''}
 ---------------
 ${SALON_INFO}
 ---------------
@@ -258,6 +348,7 @@ ${SALON_INFO}
 👤 名前: ${reservation.name} 様
 📅 日時: ${reservation.date} ${reservation.time}
 💆‍♀️ メニュー: ${reservation.menu}
+${reservation.practitionerName ? `👤 担当: ${reservation.practitionerName}` : ''}
 `.trim();
         await notifyAdmins(adminMessage);
 

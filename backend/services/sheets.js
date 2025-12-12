@@ -172,7 +172,7 @@ async function getUserReservations(userId) {
     const sheets = await getSheetsClient();
     const response = await sheets.spreadsheets.values.get({
         spreadsheetId: SHEET_ID,
-        range: 'reservations!A2:I',
+        range: 'reservations!A2:K',  // J:施術者ID, K:施術者名を含む
     });
 
     const rows = response.data.values || [];
@@ -188,6 +188,8 @@ async function getUserReservations(userId) {
                 menu: row[4],
                 date: row[5],
                 time: row[6],
+                practitionerId: row[9] || '',
+                practitionerName: row[10] || '',
             });
         }
     }
@@ -199,7 +201,7 @@ async function getAllReservations() {
     const sheets = await getSheetsClient();
     const response = await sheets.spreadsheets.values.get({
         spreadsheetId: SHEET_ID,
-        range: 'reservations!A2:I',
+        range: 'reservations!A2:K',
     });
 
     const rows = response.data.values || [];
@@ -213,6 +215,8 @@ async function getAllReservations() {
         time: row[6],
         status: row[7],
         calEventId: row[8],
+        practitionerId: row[9] || '',
+        practitionerName: row[10] || '',
     }));
 
     // 日付順でソート（新しい順）
@@ -230,7 +234,7 @@ async function addReservation(data) {
 
     await sheets.spreadsheets.values.append({
         spreadsheetId: SHEET_ID,
-        range: 'reservations!A:I',
+        range: 'reservations!A:K',
         valueInputOption: 'USER_ENTERED',
         requestBody: {
             values: [[
@@ -243,6 +247,8 @@ async function addReservation(data) {
                 data.time,
                 'reserved',
                 data.eventId,
+                data.practitionerId || '',
+                data.practitionerName || '',
             ]],
         },
     });
@@ -254,7 +260,7 @@ async function getReservationById(reservationId, userId) {
     const sheets = await getSheetsClient();
     const response = await sheets.spreadsheets.values.get({
         spreadsheetId: SHEET_ID,
-        range: 'reservations!A2:I',
+        range: 'reservations!A2:K',
     });
 
     const rows = response.data.values || [];
@@ -267,6 +273,8 @@ async function getReservationById(reservationId, userId) {
                 date: row[5],
                 time: row[6],
                 eventId: row[8],
+                practitionerId: row[9] || '',
+                practitionerName: row[10] || '',
             };
         }
     }
@@ -351,4 +359,169 @@ module.exports = {
     getReservationById,
     cancelReservation,
     getTomorrowReservations,
+    // 施術者関連
+    getPractitioners,
+    getPractitionerById,
+    addPractitioner,
+    updatePractitioner,
+    deletePractitioner,
 };
+
+// ====================
+// 施術者関連
+// ====================
+
+async function getPractitioners() {
+    const sheets = await getSheetsClient();
+    const response = await sheets.spreadsheets.values.get({
+        spreadsheetId: SHEET_ID,
+        range: 'practitioners!A2:E',  // A:id, B:name, C:calendarId, D:imageUrl, E:active
+    });
+
+    const rows = response.data.values || [];
+    return rows
+        .filter(row => row[4] !== 'FALSE')  // active が FALSE でないものだけ
+        .map(row => ({
+            id: row[0],
+            name: row[1] || '',
+            calendarId: row[2] || '',
+            imageUrl: row[3] || '',
+            active: row[4] !== 'FALSE',
+        }));
+}
+
+async function getPractitionerById(practitionerId) {
+    const sheets = await getSheetsClient();
+    const response = await sheets.spreadsheets.values.get({
+        spreadsheetId: SHEET_ID,
+        range: 'practitioners!A2:E',
+    });
+
+    const rows = response.data.values || [];
+    for (const row of rows) {
+        if (String(row[0]) === String(practitionerId)) {
+            return {
+                id: row[0],
+                name: row[1] || '',
+                calendarId: row[2] || '',
+                imageUrl: row[3] || '',
+                active: row[4] !== 'FALSE',
+            };
+        }
+    }
+    return null;
+}
+
+async function addPractitioner(data) {
+    const sheets = await getSheetsClient();
+
+    // 既存の施術者を取得して最大IDを見つける
+    const practitioners = await getPractitioners();
+    let maxId = 0;
+    practitioners.forEach(p => {
+        const id = parseInt(p.id);
+        if (id > maxId) maxId = id;
+    });
+    const newId = maxId + 1;
+
+    await sheets.spreadsheets.values.append({
+        spreadsheetId: SHEET_ID,
+        range: 'practitioners!A:E',
+        valueInputOption: 'USER_ENTERED',
+        requestBody: {
+            values: [[
+                newId,
+                data.name,
+                data.calendarId,
+                data.imageUrl || '',
+                'TRUE',
+            ]],
+        },
+    });
+
+    return { status: 'success', practitionerId: newId };
+}
+
+async function updatePractitioner(practitionerId, data) {
+    const sheets = await getSheetsClient();
+
+    // 対象行を見つける
+    const response = await sheets.spreadsheets.values.get({
+        spreadsheetId: SHEET_ID,
+        range: 'practitioners!A:E',
+    });
+
+    const rows = response.data.values || [];
+    let targetRowIndex = -1;
+
+    for (let i = 1; i < rows.length; i++) {
+        if (String(rows[i][0]) === String(practitionerId)) {
+            targetRowIndex = i + 1; // 1-indexed
+            break;
+        }
+    }
+
+    if (targetRowIndex === -1) {
+        return { status: 'error', message: '施術者が見つかりませんでした' };
+    }
+
+    await sheets.spreadsheets.values.update({
+        spreadsheetId: SHEET_ID,
+        range: `practitioners!B${targetRowIndex}:E${targetRowIndex}`,
+        valueInputOption: 'USER_ENTERED',
+        requestBody: {
+            values: [[
+                data.name,
+                data.calendarId,
+                data.imageUrl || '',
+                data.active !== false ? 'TRUE' : 'FALSE',
+            ]],
+        },
+    });
+
+    return { status: 'success' };
+}
+
+async function deletePractitioner(practitionerId) {
+    const sheets = await getSheetsClient();
+
+    // 対象行を見つける
+    const response = await sheets.spreadsheets.values.get({
+        spreadsheetId: SHEET_ID,
+        range: 'practitioners!A:E',
+    });
+
+    const rows = response.data.values || [];
+    let targetRowIndex = -1;
+
+    for (let i = 1; i < rows.length; i++) {
+        if (String(rows[i][0]) === String(practitionerId)) {
+            targetRowIndex = i + 1;
+            break;
+        }
+    }
+
+    if (targetRowIndex === -1) {
+        return { status: 'error', message: '施術者が見つかりませんでした' };
+    }
+
+    // 行を削除
+    const sheetId = await getSheetId('practitioners');
+    await sheets.spreadsheets.batchUpdate({
+        spreadsheetId: SHEET_ID,
+        requestBody: {
+            requests: [{
+                deleteDimension: {
+                    range: {
+                        sheetId: sheetId,
+                        dimension: 'ROWS',
+                        startIndex: targetRowIndex - 1,
+                        endIndex: targetRowIndex,
+                    },
+                },
+            }],
+        },
+    });
+
+    return { status: 'success' };
+}
