@@ -414,6 +414,11 @@ async function updateSettings(settingsData) {
     });
 
     // 既存データをクリアして新しいデータを書き込む
+    await sheets.spreadsheets.values.clear({
+        spreadsheetId: SHEET_ID,
+        range: 'settings!A2:B',
+    });
+
     await sheets.spreadsheets.values.update({
         spreadsheetId: SHEET_ID,
         range: 'settings!A2:B',
