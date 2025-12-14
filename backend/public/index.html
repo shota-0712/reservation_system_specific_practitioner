@@ -1811,16 +1811,15 @@
           }
         }
 
-        if (!(location.hostname === 'localhost' || location.hostname === '127.0.0.1')) {
-          await fetch(`${API_BASE_URL}/api/settings`, {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              adminId: state.user.userId,
-              settings: { salonName, address, station, logoUrl, businessStartHour, businessEndHour, holidays, temporaryBusinessDays, regularHolidays, salonInfo, precautions }
-            })
-          });
-        }
+        // Localhostでもバックエンドに保存を試みる (API_BASE_URLが設定されている、または相対パスの場合)
+        await fetch(`${API_BASE_URL}/api/settings`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            adminId: state.user.userId,
+            settings: { salonName, address, station, logoUrl, businessStartHour, businessEndHour, holidays, temporaryBusinessDays, regularHolidays, salonInfo, precautions }
+          })
+        });
 
         // Apply changes to header immediately
         applySettingsToHeader({ salonName, address, station, logoUrl });

@@ -401,8 +401,11 @@ async function updateSettings(settingsData) {
     const sheets = await getSheetsClient();
     console.log('[Debug] updateSettings called with:', JSON.stringify(settingsData, null, 2));
 
-    // 設定データを配列形式に変換
-    const values = Object.entries(settingsData).map(([key, value]) => [key, value]);
+    // 設定データを配列形式に変換 (オブジェクトや配列はJSON文字列にする)
+    const values = Object.entries(settingsData).map(([key, value]) => {
+        const stringValue = (typeof value === 'object' && value !== null) ? JSON.stringify(value) : String(value);
+        return [key, stringValue];
+    });
     console.log('[Debug] Transformed values for update:', JSON.stringify(values, null, 2));
 
     // まずヘッダー行を設定
