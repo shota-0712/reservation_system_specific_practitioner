@@ -157,6 +157,7 @@ router.get('/settings', async (req, res, next) => {
 // PUT /api/settings - 設定更新 (管理者のみ)
 router.put('/settings', async (req, res, next) => {
     try {
+        console.log('[Debug] PUT /settings payload:', JSON.stringify(req.body, null, 2));
         const { adminId, settings } = req.body;
         if (!isAdmin(adminId)) {
             return res.status(403).json({ status: 'error', message: '管理者権限が必要です' });
