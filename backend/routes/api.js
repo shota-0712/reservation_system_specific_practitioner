@@ -75,6 +75,21 @@ router.post('/menus', async (req, res, next) => {
     }
 });
 
+// PUT /api/menus/reorder - メニュー並び替え (管理者のみ)
+// 注意: :id パラメータより先に定義する必要がある
+router.put('/menus/reorder', async (req, res, next) => {
+    try {
+        const { adminId, orderedIds } = req.body;
+        if (!isAdmin(adminId)) {
+            return res.status(403).json({ status: 'error', message: '権限がありません' });
+        }
+        const result = await sheetsService.reorderMenus(orderedIds);
+        res.json(result);
+    } catch (err) {
+        next(err);
+    }
+});
+
 // PUT /api/menus/:id - メニュー更新 (管理者のみ)
 router.put('/menus/:id', async (req, res, next) => {
     try {

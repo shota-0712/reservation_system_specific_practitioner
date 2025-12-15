@@ -20,11 +20,11 @@ async function getMenus() {
     const sheets = await getSheetsClient();
     const response = await sheets.spreadsheets.values.get({
         spreadsheetId: SHEET_ID,
-        range: 'menus!A2:G',  // A:id, B:category, C:name, D:minutes, E:price, F:description, G:imageUrl
+        range: 'menus!A2:H',  // A:id, B:category, C:name, D:minutes, E:price, F:description, G:imageUrl, H:sortOrder
     });
 
     const rows = response.data.values || [];
-    return rows.map(row => ({
+    const menus = rows.map(row => ({
         id: row[0],
         category: row[1] || '',
         name: row[2],
@@ -32,24 +32,34 @@ async function getMenus() {
         price: row[4],
         description: row[5] || '',
         imageUrl: row[6] || '',
+        sortOrder: row[7] ? parseInt(row[7]) : 9999, // デフォルトは末尾
     }));
+
+    // sortOrderでソート
+    return menus.sort((a, b) => a.sortOrder - b.sortOrder);
 }
 
 async function addMenu(menuData) {
     const sheets = await getSheetsClient();
 
-    // 既存のメニューを取得して最大IDを見つける
+    // 既存のメニューを取得して最大IDと最大順序を見つける
     const menus = await getMenus();
     let maxId = 0;
+    let maxOrder = 0;
     menus.forEach(menu => {
         const id = parseInt(menu.id);
         if (id > maxId) maxId = id;
+        if (menu.sortOrder && menu.sortOrder < 9999 && menu.sortOrder > maxOrder) {
+            maxOrder = menu.sortOrder;
+        }
     });
+
     const newId = maxId + 1;
+    const newOrder = maxOrder + 1;
 
     await sheets.spreadsheets.values.append({
         spreadsheetId: SHEET_ID,
-        range: 'menus!A:G',
+        range: 'menus!A:H',
         valueInputOption: 'USER_ENTERED',
         requestBody: {
             values: [[
@@ -60,11 +70,54 @@ async function addMenu(menuData) {
                 menuData.price,
                 menuData.description || '',
                 menuData.imageUrl || '',
+                newOrder
             ]],
         },
     });
 
     return { status: 'success', menuId: newId };
+}
+
+async function reorderMenus(orderedIds) {
+    const sheets = await getSheetsClient();
+
+    // 全データを取得して、IDと行番号のマッピングを作成
+    const response = await sheets.spreadsheets.values.get({
+        spreadsheetId: SHEET_ID,
+        range: 'menus!A2:A', // ID列のみ取得
+    });
+
+    const rows = response.data.values || [];
+    const idRowMap = new Map(); // ID -> RowIndex (2-based for A2 start, so +2)
+    rows.forEach((row, index) => {
+        idRowMap.set(String(row[0]), index + 2);
+    });
+
+    const requests = [];
+    orderedIds.forEach((id, index) => {
+        const rowIndex = idRowMap.get(String(id));
+        if (rowIndex) {
+            // H列(sortOrder)を更新
+            requests.push({
+                range: `menus!H${rowIndex}`,
+                values: [[index + 1]]
+            });
+        }
+    });
+
+    // Batch update is efficient but sheets API value update is per range.
+    // batchUpdate with ValueRange is 'spreadsheets.values.batchUpdate'
+    if (requests.length > 0) {
+        await sheets.spreadsheets.values.batchUpdate({
+            spreadsheetId: SHEET_ID,
+            requestBody: {
+                valueInputOption: 'USER_ENTERED',
+                data: requests
+            }
+        });
+    }
+
+    return { status: 'success' };
 }
 
 async function updateMenu(menuId, menuData) {
@@ -353,6 +406,7 @@ module.exports = {
     addMenu,
     updateMenu,
     deleteMenu,
+    reorderMenus,
     getUserReservations,
     getAllReservations,
     addReservation,
