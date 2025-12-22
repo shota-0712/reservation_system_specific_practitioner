@@ -371,16 +371,17 @@
     // Initialization
     // ==============================================
     window.onload = async () => {
-      if (!location.hostname || location.hostname === 'localhost' || location.hostname === '127.0.0.1') {
-        state.user = { userId: MOCK_ADMIN ? 'U7859f282793bcc5d142d78b1675d17e1' : 'mock_user', displayName: 'Guest User', pictureUrl: 'https://placehold.co/100' };
-        state.isAdmin = MOCK_ADMIN;
-        updateUserDisplay();
-        if (state.isAdmin) showAdminTab();
-        loadMenus();
-        return;
-      }
-
+      showLoading();
       try {
+        if (!location.hostname || location.hostname === 'localhost' || location.hostname === '127.0.0.1') {
+          state.user = { userId: MOCK_ADMIN ? 'U7859f282793bcc5d142d78b1675d17e1' : 'mock_user', displayName: 'Guest User', pictureUrl: 'https://placehold.co/100' };
+          state.isAdmin = MOCK_ADMIN;
+          updateUserDisplay();
+          if (state.isAdmin) showAdminTab();
+          await loadMenus(); // loadMenus handles its own loading, but here we cover the initial check too
+          return;
+        }
+
         await liff.init({ liffId: LIFF_ID });
         if (!liff.isLoggedIn()) {
           liff.login();
@@ -396,10 +397,12 @@
         state.isAdmin = adminData.isAdmin;
         if (state.isAdmin) showAdminTab();
 
-        loadMenus();
+        await loadMenus(); // await to ensure loading stays up if loadMenus starts immediately
       } catch (err) {
         console.error('LIFF Init Error', err);
         alert('LIFF Error: ' + err.message);
+      } finally {
+        hideLoading();
       }
     };
 
@@ -461,9 +464,19 @@
       document.getElementById(stepId).classList.remove('hidden');
     };
 
+    // Loading Helpers
+    function showLoading() {
+      document.getElementById('loading').classList.remove('hidden');
+    }
+
+    function hideLoading() {
+      document.getElementById('loading').classList.add('hidden');
+    }
+
     // Logic
     async function loadMenus() {
       const container = document.getElementById('menu-list');
+      showLoading();
       try {
         let menus = [];
         if (location.hostname === 'localhost' || location.hostname === '127.0.0.1') {
@@ -499,6 +512,8 @@
       } catch (e) {
         console.error(e);
         container.innerHTML = '<div class="text-center text-red-400">メニュー読み込みエラー</div>';
+      } finally {
+        hideLoading();
       }
     }
 
@@ -537,12 +552,12 @@
 
       const headerRow = document.getElementById('weekly-header');
       const body = document.getElementById('weekly-body');
-      const loading = document.getElementById('weekly-loading');
       const table = document.querySelector('#step-date table');
 
       // Show loading
-      loading.classList.remove('hidden');
-      table.classList.add('hidden');
+      showLoading();
+      // loading.classList.remove('hidden'); // Removed specific loading
+      // table.classList.add('hidden'); // Optional: keep table visible behind overlay or hide it. Let's keep it visible for smoother feel behind overlay.
 
       try {
         let weeklyData = [];
@@ -612,8 +627,9 @@
         console.error(e);
         body.innerHTML = '<tr><td colspan="8" class="text-red-500 py-4">読み込みエラー</td></tr>';
       } finally {
-        loading.classList.add('hidden');
-        table.classList.remove('hidden');
+        hideLoading();
+        // loading.classList.add('hidden');
+        // table.classList.remove('hidden');
       }
     }
 
@@ -685,7 +701,7 @@
       const name = document.getElementById('user-name-input').value;
       if (!name) return alert('お名前を入力してください');
 
-      document.getElementById('loading').classList.remove('hidden');
+      showLoading();
       try {
         const payload = {
           userId: state.user.userId,
@@ -720,13 +736,14 @@
       } catch (e) {
         alert('通信エラー');
       } finally {
-        document.getElementById('loading').classList.add('hidden');
+        hideLoading();
       }
     };
 
     async function loadHistory() {
       const container = document.getElementById('reservation-history');
-      container.innerHTML = '<div class="flex justify-center py-8 text-enji"><i class="fas fa-spinner fa-spin fa-2x"></i></div>';
+      // container.innerHTML = '<div class="flex justify-center py-8 text-enji"><i class="fas fa-spinner fa-spin fa-2x"></i></div>'; // Removed local spinner
+      showLoading();
 
       try {
         let history = [];
@@ -757,6 +774,8 @@
         `).join('');
       } catch (e) {
         container.innerHTML = `<div class="text-center text-red-400 py-8">読み込みエラー</div>`;
+      } finally {
+        hideLoading();
       }
     }
 
@@ -780,7 +799,7 @@
     window.cancelReservation = async (reservationId) => {
       if (!confirm('本当にキャンセルしますか？')) return;
 
-      document.getElementById('loading').classList.remove('hidden');
+      showLoading();
       try {
         let result = { status: 'success' };
         if (!(location.hostname === 'localhost' || location.hostname === '127.0.0.1')) {
@@ -801,7 +820,7 @@
       } catch (e) {
         alert('通信エラー');
       } finally {
-        document.getElementById('loading').classList.add('hidden');
+        hideLoading();
       }
     };
 
@@ -836,7 +855,8 @@
 
     async function loadAdminReservations() {
       const container = document.getElementById('admin-reservation-list');
-      container.innerHTML = '<div class="flex justify-center py-8 text-enji"><i class="fas fa-spinner fa-spin fa-2x"></i></div>';
+      // container.innerHTML = '<div class="flex justify-center py-8 text-enji"><i class="fas fa-spinner fa-spin fa-2x"></i></div>';
+      showLoading();
 
       try {
         let reservations = [];
@@ -877,12 +897,15 @@
       } catch (e) {
         console.error(e);
         container.innerHTML = '<div class="text-center text-red-400 py-8">読み込みエラー</div>';
+      } finally {
+        hideLoading();
       }
     }
 
     async function loadAdminMenus() {
       const container = document.getElementById('admin-menu-list');
-      container.innerHTML = '<div class="flex justify-center py-8 text-enji"><i class="fas fa-spinner fa-spin fa-2x"></i></div>';
+      // container.innerHTML = '<div class="flex justify-center py-8 text-enji"><i class="fas fa-spinner fa-spin fa-2x"></i></div>';
+      showLoading();
 
       try {
         let menus = [];
@@ -917,6 +940,8 @@
       } catch (e) {
         console.error(e);
         container.innerHTML = '<div class="text-center text-red-400 py-8">読み込みエラー</div>';
+      } finally {
+        hideLoading();
       }
     }
 
@@ -1027,7 +1052,7 @@
         return;
       }
 
-      document.getElementById('loading').classList.remove('hidden');
+      showLoading();
       try {
         // Upload new image if selected
         if (imageFile && !(location.hostname === 'localhost' || location.hostname === '127.0.0.1')) {
@@ -1071,7 +1096,7 @@
         console.error('saveMenu error:', e);
         alert('通信エラー: ' + e.message);
       } finally {
-        document.getElementById('loading').classList.add('hidden');
+        hideLoading();
       }
     };
 
@@ -1081,7 +1106,7 @@
 
       if (!confirm('このメニューを削除しますか？')) return;
 
-      document.getElementById('loading').classList.remove('hidden');
+      showLoading();
       try {
         let result = { status: 'success' };
 
@@ -1105,7 +1130,7 @@
       } catch (e) {
         alert('通信エラー');
       } finally {
-        document.getElementById('loading').classList.add('hidden');
+        hideLoading();
       }
     };
   </script>
