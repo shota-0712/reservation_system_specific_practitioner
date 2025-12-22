@@ -96,7 +96,7 @@
 <body class="bg-gray-50 text-gray-800 select-none">
 
   <!-- App Container -->
-  <div id="app" class="min-h-screen pb-24">
+  <div id="app" class="min-h-screen pb-24 hidden">
     <!-- Header -->
     <header class="bg-white shadow-sm sticky top-0 z-40">
       <div class="max-w-md mx-auto px-4 py-3 flex items-center gap-4">
@@ -376,7 +376,7 @@
   </div>
 
   <!-- Loading Overlay -->
-  <div id="loading" class="fixed inset-0 bg-white/80 flex justify-center items-center z-50 hidden">
+  <div id="loading" class="fixed inset-0 bg-white flex justify-center items-center z-50">
     <div class="text-enji"><i class="fas fa-spinner fa-spin fa-3x"></i></div>
   </div>
 
@@ -757,14 +757,14 @@
       }, duration);
     }
 
-    // Loading with custom text
-    function showLoading(text = '読み込み中...') {
-      document.getElementById('loading-text').textContent = text;
+    // Loading spinner
+    function showLoading() {
       document.getElementById('loading').classList.remove('hidden');
     }
 
     function hideLoading() {
       document.getElementById('loading').classList.add('hidden');
+      document.getElementById('app').classList.remove('hidden');
     }
 
     // ==============================================
@@ -776,7 +776,8 @@
         state.isAdmin = MOCK_ADMIN;
         updateUserDisplay();
         if (state.isAdmin) showAdminTab();
-        loadMenus();
+        await loadMenus();
+        hideLoading();
         return;
       }
 
@@ -810,11 +811,16 @@
           console.log('[DEBUG] User is NOT admin');
         }
 
-        loadAndApplySettings();  // Apply header customization
-        loadMenus();
+        // Load settings and menus, then show UI
+        await Promise.all([
+          loadAndApplySettings(),
+          loadMenus()
+        ]);
+        hideLoading();
       } catch (err) {
         console.error('LIFF Init Error', err);
         alert('LIFF Error: ' + err.message);
+        hideLoading(); // Still show UI on error
       }
     };
 
