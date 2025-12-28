@@ -471,6 +471,22 @@
     </nav>
   </div>
 
+  <!-- Confirm Modal -->
+  <div id="confirm-modal"
+    class="fixed inset-0 bg-black/50 flex justify-center items-center z-[70] hidden opacity-0 transition-opacity duration-300">
+    <div class="bg-white rounded-xl shadow-xl w-full max-w-sm p-6 transform scale-95 transition-transform duration-300"
+      id="confirm-modal-content">
+      <h3 class="font-bold text-lg text-gray-800 mb-2">確認</h3>
+      <p id="confirm-message" class="text-gray-600 mb-6">本当に実行しますか？</p>
+      <div class="flex justify-end gap-3">
+        <button id="confirm-cancel-btn"
+          class="px-4 py-2 text-gray-500 hover:bg-gray-100 rounded-lg transition-colors">キャンセル</button>
+        <button id="confirm-ok-btn"
+          class="px-4 py-2 bg-enji text-white rounded-lg hover:opacity-90 transition-opacity">OK</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Loading Overlay -->
   <div id="loading" class="fixed inset-0 bg-white flex justify-center items-center z-50">
     <div class="text-enji"><i class="fas fa-spinner fa-spin fa-3x"></i></div>
@@ -937,6 +953,53 @@
       document.getElementById('loading').classList.remove('hidden');
     }
 
+    // Custom Confirm Modal
+    function showConfirm(message) {
+      return new Promise((resolve) => {
+        const modal = document.getElementById('confirm-modal');
+        const content = document.getElementById('confirm-modal-content');
+        const msgEl = document.getElementById('confirm-message');
+        const okBtn = document.getElementById('confirm-ok-btn');
+        const cancelBtn = document.getElementById('confirm-cancel-btn');
+
+        // Set content
+        msgEl.textContent = message;
+
+        // Show modal
+        modal.classList.remove('hidden');
+        // Small delay for transition
+        setTimeout(() => {
+          modal.classList.remove('opacity-0');
+          content.classList.remove('scale-95');
+          content.classList.add('scale-100');
+        }, 10);
+
+        // Handlers
+        const cleanup = () => {
+          modal.classList.add('opacity-0');
+          content.classList.remove('scale-100');
+          content.classList.add('scale-95');
+          setTimeout(() => modal.classList.add('hidden'), 300);
+
+          okBtn.removeEventListener('click', onOk);
+          cancelBtn.removeEventListener('click', onCancel);
+        };
+
+        const onOk = () => {
+          cleanup();
+          resolve(true);
+        };
+
+        const onCancel = () => {
+          cleanup();
+          resolve(false);
+        };
+
+        okBtn.addEventListener('click', onOk);
+        cancelBtn.addEventListener('click', onCancel);
+      });
+    }
+
     function hideLoading() {
       document.getElementById('loading').classList.add('hidden');
       document.getElementById('app').classList.remove('hidden');
@@ -994,7 +1057,7 @@
         hideLoading();
       } catch (err) {
         console.error('LIFF Init Error', err);
-        alert('LIFF Error: ' + err.message);
+        showToast('LIFF Error: ' + err.message, 'error');
         hideLoading(); // Still show UI on error
       }
     };
@@ -1692,7 +1755,8 @@
     };
 
     window.cancelReservation = async (reservationId) => {
-      if (!confirm('本当にキャンセルしますか？')) return;
+      const isConfirmed = await showConfirm('本当にキャンセルしますか？');
+      if (!isConfirmed) return;
 
       document.getElementById('loading').classList.remove('hidden');
       try {
@@ -1880,7 +1944,8 @@
       const optionId = document.getElementById('option-edit-id').value;
       if (!optionId) return;
 
-      if (!confirm('このオプションを削除しますか？')) return;
+      const isConfirmed = await showConfirm('このオプションを削除しますか？');
+      if (!isConfirmed) return;
 
       showLoading();
       try {
@@ -2081,7 +2146,8 @@
     };
 
     window.deletePractitionerFromModal = async () => {
-      if (!confirm('この施術者を削除しますか？')) return;
+      const isConfirmed = await showConfirm('この施術者を削除しますか？');
+      if (!isConfirmed) return;
 
       const id = document.getElementById('practitioner-edit-id').value;
       document.getElementById('loading').classList.remove('hidden');
@@ -2759,7 +2825,7 @@
         }
 
         if (result.status === 'success') {
-          alert(id ? 'メニューを更新しました' : 'メニューを追加しました');
+          showToast(id ? 'メニューを更新しました' : 'メニューを追加しました');
           closeMenuModal();
           loadAdminMenus();
           loadMenus(); // Refresh public menu list
@@ -2778,7 +2844,8 @@
       const id = document.getElementById('menu-edit-id').value;
       if (!id) return;
 
-      if (!confirm('このメニューを削除しますか？')) return;
+      const isConfirmed = await showConfirm('このメニューを削除しますか？');
+      if (!isConfirmed) return;
 
       document.getElementById('loading').classList.remove('hidden');
       try {
