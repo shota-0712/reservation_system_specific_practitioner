@@ -244,6 +244,64 @@ router.delete('/practitioners/:id', async (req, res, next) => {
 });
 
 // ====================
+// オプション関連
+// ====================
+
+// GET /api/options - オプション一覧取得
+router.get('/options', async (req, res, next) => {
+    try {
+        const options = await sheetsService.getOptions();
+        res.json(options);
+    } catch (err) {
+        next(err);
+    }
+});
+
+// POST /api/options - オプション追加 (管理者のみ)
+router.post('/options', async (req, res, next) => {
+    try {
+        const { adminId, option } = req.body;
+        if (!isAdmin(adminId)) {
+            return res.status(403).json({ status: 'error', message: '権限がありません' });
+        }
+        const result = await sheetsService.addOption(option);
+        res.json(result);
+    } catch (err) {
+        next(err);
+    }
+});
+
+// PUT /api/options/:id - オプション更新 (管理者のみ)
+router.put('/options/:id', async (req, res, next) => {
+    try {
+        const { adminId, option } = req.body;
+        const optionId = req.params.id;
+        if (!isAdmin(adminId)) {
+            return res.status(403).json({ status: 'error', message: '権限がありません' });
+        }
+        const result = await sheetsService.updateOption(optionId, option);
+        res.json(result);
+    } catch (err) {
+        next(err);
+    }
+});
+
+// DELETE /api/options/:id - オプション削除 (管理者のみ)
+router.delete('/options/:id', async (req, res, next) => {
+    try {
+        const adminId = req.query.adminId || (req.body && req.body.adminId);
+        const optionId = req.params.id;
+        if (!isAdmin(adminId)) {
+            return res.status(403).json({ status: 'error', message: '権限がありません' });
+        }
+        const result = await sheetsService.deleteOption(optionId);
+        res.json(result);
+    } catch (err) {
+        next(err);
+    }
+});
+
+// ====================
 // 予約スロット関連
 // ====================
 
@@ -337,21 +395,38 @@ router.post('/reservations', async (req, res, next) => {
             return res.json({ status: 'error', message: '施術者が見つかりません' });
         }
 
-        // カレンダーで重複チェック
+        // 合計施術時間を計算（メニュー＋オプション）
+        const totalMinutes = data.totalMinutes || data.menu.minutes;
+        const totalPrice = data.totalPrice || data.menu.price;
+
+        // オプション名の文字列を準備
+        const optionNames = data.selectedOptions && data.selectedOptions.length > 0
+            ? data.selectedOptions.map(o => o.name).join('、')
+            : '';
+
+        // カレンダーで重複チェック（合計施術時間を使用）
         const dateTime = new Date(`${data.date.replace(/\//g, '-')}T${data.time}:00+09:00`);
-        const endTime = new Date(dateTime.getTime() + data.menu.minutes * 60000);
+        const endTime = new Date(dateTime.getTime() + totalMinutes * 60000);
 
         const hasConflict = await calendarService.checkConflict(dateTime, endTime, practitioner.calendarId);
         if (hasConflict) {
             return res.json({ status: 'error', message: '指定された時間は既に予約が入っています' });
         }
 
-        // カレンダーに予約を追加
+        // カレンダーに予約を追加（オプション情報も含める）
+        const eventTitle = optionNames
+            ? `【予約】${data.name}様 (${data.menu.name} + ${optionNames})`
+            : `【予約】${data.name}様 (${data.menu.name})`;
+
+        const eventDescription = optionNames
+            ? `電話番号: ${data.phone || ''}\nLINE ID: ${data.userId}\n担当: ${practitioner.name}\nオプション: ${optionNames}\n合計時間: ${totalMinutes}分 / ¥${Number(totalPrice).toLocaleString()}`
+            : `電話番号: ${data.phone || ''}\nLINE ID: ${data.userId}\n担当: ${practitioner.name}`;
+
         const eventId = await calendarService.createEvent(
-            `【予約】${data.name}様 (${data.menu.name})`,
+            eventTitle,
             dateTime,
             endTime,
-            `電話番号: ${data.phone || ''}\nLINE ID: ${data.userId}\n担当: ${practitioner.name}`,
+            eventDescription,
             practitioner.calendarId
         );
 
@@ -361,21 +436,27 @@ router.post('/reservations', async (req, res, next) => {
             eventId,
             practitionerId: practitioner.id,
             practitionerName: practitioner.name,
+            totalMinutes,
+            totalPrice,
         });
 
         // LINE通知 (ユーザーへ)
+        const optionLine = optionNames ? `✨ オプション: ${optionNames}` : '';
         const userMessage = `
 ${data.name}様
 ご予約ありがとうございます。
 
 📅 日時: ${data.date} ${data.time}
 💆‍♀️ メニュー: ${data.menu.name}
+${optionLine}
+⏱️ 合計時間: ${totalMinutes}分
+💰 合計料金: ¥${Number(totalPrice).toLocaleString()}
 👤 担当: ${practitioner.name}
 ---------------
 ${SALON_INFO}
 ---------------
 ${PRECAUTIONS}
-`.trim();
+`.trim().replace(/\n\n+/g, '\n');  // 空行を削除
         await lineService.pushMessage(data.userId, userMessage);
 
         // LINE通知 (管理者へ)
@@ -384,9 +465,11 @@ ${PRECAUTIONS}
 👤 名前: ${data.name} 様
 📅 日時: ${data.date} ${data.time}
 💆‍♀️ メニュー: ${data.menu.name}
+${optionLine}
+⏱️ 合計: ${totalMinutes}分 / ¥${Number(totalPrice).toLocaleString()}
 👤 担当: ${practitioner.name}
 📱 電話: ${data.phone || 'なし'}
-`.trim();
+`.trim().replace(/\n\n+/g, '\n');
         await notifyAdmins(adminMessage);
 
         res.json({ status: 'success' });

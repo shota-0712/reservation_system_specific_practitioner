@@ -20,7 +20,7 @@ async function getMenus() {
     const sheets = await getSheetsClient();
     const response = await sheets.spreadsheets.values.get({
         spreadsheetId: SHEET_ID,
-        range: 'menus!A2:H',  // A:id, B:category, C:name, D:minutes, E:price, F:description, G:imageUrl, H:sortOrder
+        range: 'menus!A2:I',  // A:id, B:category, C:name, D:minutes, E:price, F:description, G:imageUrl, H:sortOrder, I:optionIds
     });
 
     const rows = response.data.values || [];
@@ -32,7 +32,8 @@ async function getMenus() {
         price: row[4],
         description: row[5] || '',
         imageUrl: row[6] || '',
-        sortOrder: row[7] ? parseInt(row[7]) : 9999, // デフォルトは末尾
+        sortOrder: row[7] ? parseInt(row[7]) : 9999,
+        optionIds: row[8] || '',  // オプションID（カンマ区切り）
     }));
 
     // sortOrderでソート
@@ -59,7 +60,7 @@ async function addMenu(menuData) {
 
     await sheets.spreadsheets.values.append({
         spreadsheetId: SHEET_ID,
-        range: 'menus!A:H',
+        range: 'menus!A:I',
         valueInputOption: 'USER_ENTERED',
         requestBody: {
             values: [[
@@ -70,7 +71,8 @@ async function addMenu(menuData) {
                 menuData.price,
                 menuData.description || '',
                 menuData.imageUrl || '',
-                newOrder
+                newOrder,
+                menuData.optionIds || ''  // オプションID
             ]],
         },
     });
@@ -126,7 +128,7 @@ async function updateMenu(menuId, menuData) {
     // 対象行を見つける
     const response = await sheets.spreadsheets.values.get({
         spreadsheetId: SHEET_ID,
-        range: 'menus!A:G',
+        range: 'menus!A:I',
     });
 
     const rows = response.data.values || [];
@@ -145,7 +147,7 @@ async function updateMenu(menuId, menuData) {
 
     await sheets.spreadsheets.values.update({
         spreadsheetId: SHEET_ID,
-        range: `menus!B${targetRowIndex}:G${targetRowIndex}`,
+        range: `menus!B${targetRowIndex}:I${targetRowIndex}`,
         valueInputOption: 'USER_ENTERED',
         requestBody: {
             values: [[
@@ -155,6 +157,8 @@ async function updateMenu(menuId, menuData) {
                 menuData.price,
                 menuData.description || '',
                 menuData.imageUrl || '',
+                rows[targetRowIndex - 1][7] || '',  // sortOrderはそのまま
+                menuData.optionIds || ''  // オプションID
             ]],
         },
     });
@@ -254,7 +258,7 @@ async function getAllReservations() {
     const sheets = await getSheetsClient();
     const response = await sheets.spreadsheets.values.get({
         spreadsheetId: SHEET_ID,
-        range: 'reservations!A2:K',
+        range: 'reservations!A2:O',  // A-O列まで読み取り（オプション情報含む）
     });
 
     const rows = response.data.values || [];
@@ -270,6 +274,10 @@ async function getAllReservations() {
         calEventId: row[8],
         practitionerId: row[9] || '',
         practitionerName: row[10] || '',
+        optionIds: row[11] || '',        // L: オプションID（カンマ区切り）
+        optionNames: row[12] || '',      // M: オプション名（カンマ区切り）
+        totalMinutes: row[13] ? parseInt(row[13]) : null,  // N: 合計時間
+        totalPrice: row[14] ? parseInt(row[14]) : null,    // O: 合計料金
     }));
 
     // 日付順でソート（新しい順）
@@ -285,9 +293,13 @@ async function getAllReservations() {
 async function addReservation(data) {
     const sheets = await getSheetsClient();
 
+    // オプション情報を準備
+    const optionIds = data.selectedOptions ? data.selectedOptions.map(o => o.id).join(',') : '';
+    const optionNames = data.selectedOptions ? data.selectedOptions.map(o => o.name).join(',') : '';
+
     await sheets.spreadsheets.values.append({
         spreadsheetId: SHEET_ID,
-        range: 'reservations!A:K',
+        range: 'reservations!A:O',  // A-O列まで拡張 (L:optionIds, M:optionNames, N:totalMinutes, O:totalPrice)
         valueInputOption: 'USER_ENTERED',
         requestBody: {
             values: [[
@@ -302,6 +314,10 @@ async function addReservation(data) {
                 data.eventId,
                 data.practitionerId || '',
                 data.practitionerName || '',
+                optionIds,                    // L: option IDs
+                optionNames,                  // M: option Names
+                data.totalMinutes || data.menu.minutes,  // N: 合計施術時間
+                data.totalPrice || data.menu.price,       // O: 合計料金
             ]],
         },
     });
@@ -422,6 +438,11 @@ module.exports = {
     // 設定関連
     getSettings,
     updateSettings,
+    // オプション関連
+    getOptions,
+    addOption,
+    updateOption,
+    deleteOption,
 };
 
 // ====================
@@ -639,6 +660,159 @@ async function deletePractitioner(practitionerId) {
                         sheetId: sheetId,
                         dimension: 'ROWS',
                         startIndex: targetRowIndex - 1,
+                        endIndex: targetRowIndex,
+                    },
+                },
+            }],
+        },
+    });
+
+    return { status: 'success' };
+}
+
+// ====================
+// オプション関連
+// ====================
+
+async function getOptions() {
+    const sheets = await getSheetsClient();
+    try {
+        const response = await sheets.spreadsheets.values.get({
+            spreadsheetId: SHEET_ID,
+            range: 'options!A2:F',  // A:id, B:name, C:minutes, D:price, E:description, F:isActive
+        });
+
+        const rows = response.data.values || [];
+        return rows
+            .map(row => ({
+                id: row[0],
+                name: row[1],
+                minutes: parseInt(row[2]) || 0,
+                price: parseInt(row[3]) || 0,
+                description: row[4] || '',
+                isActive: row[5] !== 'FALSE',  // デフォルトはtrue
+            }))
+            .filter(opt => opt.isActive);  // アクティブなもののみ返す
+    } catch (err) {
+        console.log('Options sheet not found or error:', err.message);
+        return [];
+    }
+}
+
+async function addOption(optionData) {
+    const sheets = await getSheetsClient();
+
+    // 既存のオプションを取得して最大IDを見つける
+    let maxId = 0;
+    try {
+        const response = await sheets.spreadsheets.values.get({
+            spreadsheetId: SHEET_ID,
+            range: 'options!A:A',
+        });
+        const rows = response.data.values || [];
+        for (let i = 1; i < rows.length; i++) {
+            const id = parseInt(rows[i][0]);
+            if (id > maxId) maxId = id;
+        }
+    } catch (err) {
+        console.log('Options sheet not found, will create:', err.message);
+    }
+    const newId = maxId + 1;
+
+    await sheets.spreadsheets.values.append({
+        spreadsheetId: SHEET_ID,
+        range: 'options!A:F',
+        valueInputOption: 'USER_ENTERED',
+        requestBody: {
+            values: [[
+                newId,
+                optionData.name,
+                optionData.minutes || 0,
+                optionData.price || 0,
+                optionData.description || '',
+                'TRUE',
+            ]],
+        },
+    });
+
+    return { status: 'success', optionId: newId };
+}
+
+async function updateOption(optionId, optionData) {
+    const sheets = await getSheetsClient();
+
+    // 対象行を見つける
+    const response = await sheets.spreadsheets.values.get({
+        spreadsheetId: SHEET_ID,
+        range: 'options!A:F',
+    });
+
+    const rows = response.data.values || [];
+    let targetRowIndex = -1;
+
+    for (let i = 1; i < rows.length; i++) {
+        if (String(rows[i][0]) === String(optionId)) {
+            targetRowIndex = i + 1; // 1-indexed
+            break;
+        }
+    }
+
+    if (targetRowIndex === -1) {
+        return { status: 'error', message: 'オプションが見つかりませんでした' };
+    }
+
+    await sheets.spreadsheets.values.update({
+        spreadsheetId: SHEET_ID,
+        range: `options!B${targetRowIndex}:F${targetRowIndex}`,
+        valueInputOption: 'USER_ENTERED',
+        requestBody: {
+            values: [[
+                optionData.name,
+                optionData.minutes || 0,
+                optionData.price || 0,
+                optionData.description || '',
+                optionData.isActive !== false ? 'TRUE' : 'FALSE',
+            ]],
+        },
+    });
+
+    return { status: 'success' };
+}
+
+async function deleteOption(optionId) {
+    const sheets = await getSheetsClient();
+
+    // 対象行を見つける
+    const response = await sheets.spreadsheets.values.get({
+        spreadsheetId: SHEET_ID,
+        range: 'options!A:F',
+    });
+
+    const rows = response.data.values || [];
+    let targetRowIndex = -1;
+
+    for (let i = 1; i < rows.length; i++) {
+        if (String(rows[i][0]) === String(optionId)) {
+            targetRowIndex = i + 1; // 1-indexed
+            break;
+        }
+    }
+
+    if (targetRowIndex === -1) {
+        return { status: 'error', message: 'オプションが見つかりませんでした' };
+    }
+
+    // 行を削除
+    const sheetId = await getSheetId('options');
+    await sheets.spreadsheets.batchUpdate({
+        spreadsheetId: SHEET_ID,
+        requestBody: {
+            requests: [{
+                deleteDimension: {
+                    range: {
+                        sheetId: sheetId,
+                        dimension: 'ROWS',
+                        startIndex: targetRowIndex - 1, // 0-indexed
                         endIndex: targetRowIndex,
                     },
                 },
