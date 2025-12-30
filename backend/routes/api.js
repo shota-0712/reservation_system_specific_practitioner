@@ -330,10 +330,6 @@ router.get('/weekly-availability', async (req, res, next) => {
         if (!practitionerId) {
             return res.status(400).json({ error: '施術者を選択してください' });
         }
-        const practitioner = await sheetsService.getPractitionerById(practitionerId);
-        if (!practitioner) {
-            return res.status(404).json({ error: '施術者が見つかりません' });
-        }
 
         // Get business settings
         const settings = await sheetsService.getSettings();
@@ -345,8 +341,22 @@ router.get('/weekly-availability', async (req, res, next) => {
             temporaryBusinessDays: settings.temporaryBusinessDays ? settings.temporaryBusinessDays.split(',').map(d => d.trim()) : [],
         };
 
-        const availability = await calendarService.getWeeklyAvailability(startDate, parseInt(minutes), practitioner.calendarId, businessSettings);
-        res.json(availability);
+        // 「指名なし」の場合は全施術者のカレンダーを統合
+        if (practitionerId === 'all') {
+            const practitioners = await sheetsService.getPractitioners();
+            if (practitioners.length === 0) {
+                return res.status(404).json({ error: '施術者が登録されていません' });
+            }
+            const availability = await calendarService.getMergedWeeklyAvailability(startDate, parseInt(minutes), practitioners, businessSettings);
+            res.json(availability);
+        } else {
+            const practitioner = await sheetsService.getPractitionerById(practitionerId);
+            if (!practitioner) {
+                return res.status(404).json({ error: '施術者が見つかりません' });
+            }
+            const availability = await calendarService.getWeeklyAvailability(startDate, parseInt(minutes), practitioner.calendarId, businessSettings);
+            res.json(availability);
+        }
     } catch (err) {
         next(err);
     }
@@ -386,32 +396,51 @@ router.post('/reservations', async (req, res, next) => {
     try {
         const data = req.body;
 
-        // 施術者情報を取得
-        if (!data.practitionerId) {
-            return res.json({ status: 'error', message: '施術者を選択してください' });
-        }
-        const practitioner = await sheetsService.getPractitionerById(data.practitionerId);
-        if (!practitioner) {
-            return res.json({ status: 'error', message: '施術者が見つかりません' });
-        }
-
         // 合計施術時間を計算（メニュー＋オプション）
         const totalMinutes = data.totalMinutes || data.menu.minutes;
         const totalPrice = data.totalPrice || data.menu.price;
+
+        // カレンダーで重複チェック用の時間
+        const dateTime = new Date(`${data.date.replace(/\//g, '-')}T${data.time}:00+09:00`);
+        const endTime = new Date(dateTime.getTime() + totalMinutes * 60000);
+
+        let practitioner;
+
+        // 「指名なし」の場合: availablePractitionersからランダムに選択
+        if (data.availablePractitioners && data.availablePractitioners.length > 0) {
+            // 空いている施術者からランダムに選択
+            const selected = calendarService.selectRandomPractitioner(data.availablePractitioners);
+            if (!selected) {
+                return res.json({ status: 'error', message: '予約可能な施術者が見つかりません' });
+            }
+            practitioner = await sheetsService.getPractitionerById(selected.id);
+            if (!practitioner) {
+                return res.json({ status: 'error', message: '施術者が見つかりません' });
+            }
+            // 念のため再度重複チェック
+            const hasConflict = await calendarService.checkConflict(dateTime, endTime, practitioner.calendarId);
+            if (hasConflict) {
+                return res.json({ status: 'error', message: '選択された時間は既に予約が入っています。再度お試しください。' });
+            }
+        } else {
+            // 通常の指名予約
+            if (!data.practitionerId) {
+                return res.json({ status: 'error', message: '施術者を選択してください' });
+            }
+            practitioner = await sheetsService.getPractitionerById(data.practitionerId);
+            if (!practitioner) {
+                return res.json({ status: 'error', message: '施術者が見つかりません' });
+            }
+            const hasConflict = await calendarService.checkConflict(dateTime, endTime, practitioner.calendarId);
+            if (hasConflict) {
+                return res.json({ status: 'error', message: '指定された時間は既に予約が入っています' });
+            }
+        }
 
         // オプション名の文字列を準備
         const optionNames = data.selectedOptions && data.selectedOptions.length > 0
             ? data.selectedOptions.map(o => o.name).join('、')
             : '';
-
-        // カレンダーで重複チェック（合計施術時間を使用）
-        const dateTime = new Date(`${data.date.replace(/\//g, '-')}T${data.time}:00+09:00`);
-        const endTime = new Date(dateTime.getTime() + totalMinutes * 60000);
-
-        const hasConflict = await calendarService.checkConflict(dateTime, endTime, practitioner.calendarId);
-        if (hasConflict) {
-            return res.json({ status: 'error', message: '指定された時間は既に予約が入っています' });
-        }
 
         // カレンダーに予約を追加（オプション情報も含める）
         const eventTitle = optionNames

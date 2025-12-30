@@ -251,10 +251,153 @@ async function deleteEvent(eventId, calendarId) {
     }
 }
 
+// 全施術者の統合空き状況を取得（指名なし用）
+// practitioners: [{id, name, calendarId}, ...]
+async function getMergedWeeklyAvailability(startDateStr, menuMinutes, practitioners, businessSettings = {}) {
+    const calendar = await getCalendarClient();
+    const result = [];
+
+    // Default business hours
+    const startHour = businessSettings.startHour || 10;
+    const endHour = businessSettings.endHour || 20;
+    const holidays = businessSettings.holidays || [];
+    const regularHolidays = businessSettings.regularHolidays || [];
+    const temporaryBusinessDays = businessSettings.temporaryBusinessDays || [];
+
+    // 1週間分ループ
+    for (let i = 0; i < 7; i++) {
+        // JSTで日付を作成
+        const [year, month, day] = startDateStr.split('/').map(Number);
+        const targetDate = new Date(year, month - 1, day + i);
+
+        const dateStr = `${targetDate.getFullYear()}/${String(targetDate.getMonth() + 1).padStart(2, '0')}/${String(targetDate.getDate()).padStart(2, '0')}`;
+        const dayOfWeek = ['日', '月', '火', '水', '木', '金', '土'][targetDate.getDay()];
+
+        // 営業日判定ロジック
+        let isClosed = false;
+        if (holidays.includes(dateStr)) {
+            isClosed = true;
+        } else if (temporaryBusinessDays.includes(dateStr)) {
+            isClosed = false;
+        } else if (regularHolidays.includes(targetDate.getDay())) {
+            isClosed = true;
+        }
+
+        if (isClosed) {
+            const slots = [];
+            for (let hour = startHour; hour < endHour; hour++) {
+                for (let minute = 0; minute < 60; minute += 30) {
+                    const timeStr = `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
+                    slots.push({ time: timeStr, status: '休', availablePractitioners: [] });
+                }
+            }
+            result.push({ date: dateStr, day: dayOfWeek, slots: slots });
+            continue;
+        }
+
+        // その日のイベントを全施術者分取得
+        const dayStartJST = new Date(targetDate);
+        dayStartJST.setHours(0, 0, 0, 0);
+        const dayEndJST = new Date(targetDate);
+        dayEndJST.setHours(23, 59, 59, 999);
+
+        // 各施術者のイベントを並列取得
+        const practitionerEvents = await Promise.all(
+            practitioners.map(async (p) => {
+                try {
+                    const eventsResponse = await calendar.events.list({
+                        calendarId: p.calendarId,
+                        timeMin: dayStartJST.toISOString(),
+                        timeMax: dayEndJST.toISOString(),
+                        singleEvents: true,
+                        orderBy: 'startTime',
+                    });
+                    return { practitioner: p, events: eventsResponse.data.items || [] };
+                } catch (err) {
+                    console.error(`Failed to get events for ${p.name}:`, err.message);
+                    return { practitioner: p, events: [] };
+                }
+            })
+        );
+
+        const slots = [];
+
+        // 営業開始〜終了まで30分刻み (JST)
+        for (let hour = startHour; hour < endHour; hour++) {
+            for (let minute = 0; minute < 60; minute += 30) {
+                const timeStr = `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
+
+                // JSTでスロットの開始・終了時間を作成
+                const slotStart = new Date(targetDate);
+                slotStart.setHours(hour, minute, 0, 0);
+                const slotEnd = new Date(slotStart.getTime() + (menuMinutes * 60000));
+
+                const now = new Date();
+                const closingTime = new Date(targetDate);
+                closingTime.setHours(endHour, 0, 0, 0);
+
+                // 過去または営業時間外の場合
+                if (slotStart < now) {
+                    slots.push({ time: timeStr, status: '-', availablePractitioners: [] });
+                    continue;
+                }
+                if (slotEnd > closingTime) {
+                    slots.push({ time: timeStr, status: '×', availablePractitioners: [] });
+                    continue;
+                }
+
+                // 各施術者の空き状況をチェック
+                const availablePractitioners = [];
+                for (const { practitioner, events } of practitionerEvents) {
+                    let isAvailable = true;
+                    for (const event of events) {
+                        const eventStart = new Date(event.start.dateTime || event.start.date);
+                        const eventEnd = new Date(event.end.dateTime || event.end.date);
+                        if (slotStart < eventEnd && slotEnd > eventStart) {
+                            isAvailable = false;
+                            break;
+                        }
+                    }
+                    if (isAvailable) {
+                        availablePractitioners.push({
+                            id: practitioner.id,
+                            name: practitioner.name,
+                            calendarId: practitioner.calendarId
+                        });
+                    }
+                }
+
+                // 誰か空いていれば「⚪︎」、全員埋まっていれば「×」
+                const status = availablePractitioners.length > 0 ? '⚪︎' : '×';
+                slots.push({ time: timeStr, status: status, availablePractitioners: availablePractitioners });
+            }
+        }
+
+        result.push({
+            date: dateStr,
+            day: dayOfWeek,
+            slots: slots,
+        });
+    }
+
+    return result;
+}
+
+// 空いている施術者からランダムに1人選択
+function selectRandomPractitioner(availablePractitioners) {
+    if (!availablePractitioners || availablePractitioners.length === 0) {
+        return null;
+    }
+    const randomIndex = Math.floor(Math.random() * availablePractitioners.length);
+    return availablePractitioners[randomIndex];
+}
+
 module.exports = {
     getWeeklyAvailability,
+    getMergedWeeklyAvailability,
     getAvailableSlots,
     checkConflict,
     createEvent,
     deleteEvent,
+    selectRandomPractitioner,
 };
