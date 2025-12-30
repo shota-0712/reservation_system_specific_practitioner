@@ -519,7 +519,7 @@ async function getPractitioners() {
     const sheets = await getSheetsClient();
     const response = await sheets.spreadsheets.values.get({
         spreadsheetId: SHEET_ID,
-        range: 'practitioners!A2:E',  // A:id, B:name, C:calendarId, D:imageUrl, E:active
+        range: 'practitioners!A2:K',  // A:id, B:name, C:calendarId, D:imageUrl, E:active, F:title, G:sns, H:experience, I:nominationFee, J:prTitle, K:description
     });
 
     const rows = response.data.values || [];
@@ -531,6 +531,12 @@ async function getPractitioners() {
             calendarId: row[2] || '',
             imageUrl: row[3] || '',
             active: row[4] !== 'FALSE',
+            title: row[5] || '',           // 役職/肩書き
+            sns: row[6] || '',             // SNS/Instagram
+            experience: row[7] || '',       // 経歴
+            nominationFee: row[8] || '',    // 指名料
+            prTitle: row[9] || '',          // PRタイトル
+            description: row[10] || '',     // 詳細コメント
         }));
 }
 
@@ -538,7 +544,7 @@ async function getPractitionerById(practitionerId) {
     const sheets = await getSheetsClient();
     const response = await sheets.spreadsheets.values.get({
         spreadsheetId: SHEET_ID,
-        range: 'practitioners!A2:E',
+        range: 'practitioners!A2:K',
     });
 
     const rows = response.data.values || [];
@@ -550,6 +556,12 @@ async function getPractitionerById(practitionerId) {
                 calendarId: row[2] || '',
                 imageUrl: row[3] || '',
                 active: row[4] !== 'FALSE',
+                title: row[5] || '',           // 役職/肩書き
+                sns: row[6] || '',             // SNS/Instagram
+                experience: row[7] || '',       // 経歴
+                nominationFee: row[8] || '',    // 指名料
+                prTitle: row[9] || '',          // PRタイトル
+                description: row[10] || '',     // 詳細コメント
             };
         }
     }
@@ -570,7 +582,7 @@ async function addPractitioner(data) {
 
     await sheets.spreadsheets.values.append({
         spreadsheetId: SHEET_ID,
-        range: 'practitioners!A:E',
+        range: 'practitioners!A:K',
         valueInputOption: 'USER_ENTERED',
         requestBody: {
             values: [[
@@ -579,6 +591,12 @@ async function addPractitioner(data) {
                 data.calendarId,
                 data.imageUrl || '',
                 'TRUE',
+                data.title || '',           // 役職/肩書き
+                data.sns || '',             // SNS/Instagram
+                data.experience || '',       // 経歴
+                data.nominationFee || '',    // 指名料
+                data.prTitle || '',          // PRタイトル
+                data.description || '',      // 詳細コメント
             ]],
         },
     });
@@ -592,7 +610,7 @@ async function updatePractitioner(practitionerId, data) {
     // 対象行を見つける
     const response = await sheets.spreadsheets.values.get({
         spreadsheetId: SHEET_ID,
-        range: 'practitioners!A:E',
+        range: 'practitioners!A:K',
     });
 
     const rows = response.data.values || [];
@@ -611,7 +629,7 @@ async function updatePractitioner(practitionerId, data) {
 
     await sheets.spreadsheets.values.update({
         spreadsheetId: SHEET_ID,
-        range: `practitioners!B${targetRowIndex}:E${targetRowIndex}`,
+        range: `practitioners!B${targetRowIndex}:K${targetRowIndex}`,
         valueInputOption: 'USER_ENTERED',
         requestBody: {
             values: [[
@@ -619,6 +637,12 @@ async function updatePractitioner(practitionerId, data) {
                 data.calendarId,
                 data.imageUrl || '',
                 data.active !== false ? 'TRUE' : 'FALSE',
+                data.title || '',           // 役職/肩書き
+                data.sns || '',             // SNS/Instagram
+                data.experience || '',       // 経歴
+                data.nominationFee || '',    // 指名料
+                data.prTitle || '',          // PRタイトル
+                data.description || '',      // 詳細コメント
             ]],
         },
     });
@@ -632,7 +656,7 @@ async function deletePractitioner(practitionerId) {
     // 対象行を見つける
     const response = await sheets.spreadsheets.values.get({
         spreadsheetId: SHEET_ID,
-        range: 'practitioners!A:E',
+        range: 'practitioners!A:K',
     });
 
     const rows = response.data.values || [];
