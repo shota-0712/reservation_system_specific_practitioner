@@ -8,7 +8,7 @@ const storageService = require('../services/storage');  // Google Cloud Storage
 // 店舗情報 (環境変数から読み込み、未設定時はデフォルト値を使用)
 const SALON_INFO = process.env.SALON_INFO || `
 【店舗情報】
-サロン名: demoサロン
+サロン名: LinCal【東京】
 最寄り駅: 東京駅
 住所: 〒123-4567 東京都千代田区1-1-1
 営業時間: 10:00〜19:00 (完全予約制)
@@ -129,14 +129,15 @@ router.get('/settings', async (req, res, next) => {
     try {
         const adminId = req.query.adminId;
         const settings = await sheetsService.getSettings();
+        console.log('[Debug] Settings loaded from sheet:', JSON.stringify(settings));
 
         // Public access - header customization only
         if (adminId === 'public') {
             return res.json({
                 logoUrl: settings.logoUrl || '',
-                salonName: settings.salonName || '',
-                address: settings.address || '',
-                station: settings.station || '',
+                salonName: settings.salonName || 'LinCal【東京】',
+                address: settings.address || '〒123-4567 東京都千代田区1-1-1',
+                station: settings.station || '東京駅',
             });
         }
 

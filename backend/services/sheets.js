@@ -461,7 +461,8 @@ async function getSettings() {
         const settings = {};
         rows.forEach(row => {
             if (row[0]) {
-                settings[row[0]] = row[1] || '';
+                const key = row[0].trim();
+                settings[key] = row[1] || '';
             }
         });
         return settings;

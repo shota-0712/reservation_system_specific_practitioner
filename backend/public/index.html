@@ -112,9 +112,11 @@
       -webkit-box-orient: vertical;
       overflow: hidden;
     }
+
     .line-clamp-3 {
       display: -webkit-box;
       -webkit-line-clamp: 3;
+      line-clamp: 3;
       -webkit-box-orient: vertical;
       overflow: hidden;
     }
@@ -137,7 +139,7 @@
             class="h-12 w-12 rounded-full object-cover flex-shrink-0 hidden">
         </div>
         <div class="flex-1 min-w-0">
-          <h1 id="header-salon-name" class="font-bold text-gray-800 text-sm truncate">demoサロン</h1>
+          <h1 id="header-salon-name" class="font-bold text-gray-800 text-sm truncate">LinCal【東京】</h1>
           <p id="header-address" class="text-xs text-gray-500 truncate">〒123-4567 東京都千代田区1-1-1</p>
           <p class="text-xs text-gray-400 flex items-center gap-1">
             <i class="fas fa-train text-xs"></i>
@@ -293,10 +295,12 @@
               <!-- Pills will be injected here -->
             </div>
             <!-- Selected Practitioner Card -->
-            <div id="selected-practitioner-card" class="hidden bg-white rounded-xl shadow-sm border border-gray-100 p-3">
-              <div class="flex gap-3">
+            <div id="selected-practitioner-card"
+              class="hidden bg-white rounded-xl shadow-sm border border-gray-100 p-4">
+              <div class="flex gap-4">
                 <div id="selected-practitioner-image-container" class="flex-shrink-0 hidden">
-                  <img id="selected-practitioner-image" src="" alt="" class="w-14 h-18 rounded-lg object-cover border border-gray-200">
+                  <img id="selected-practitioner-image" src="" alt=""
+                    class="w-16 h-16 rounded-full object-cover border-2 border-enji">
                 </div>
                 <div class="flex-1 min-w-0">
                   <div class="flex items-center gap-2 flex-wrap">
@@ -310,13 +314,15 @@
                   </div>
                 </div>
               </div>
-              <div id="selected-practitioner-pr" class="mt-2 pt-2 border-t border-gray-100 hidden">
-                <p id="selected-practitioner-prTitle" class="font-bold text-gray-700 text-sm"></p>
-                <p id="selected-practitioner-description" class="text-xs text-gray-500 leading-relaxed line-clamp-2 mt-1"></p>
+              <div id="selected-practitioner-pr" class="mt-3 pt-3 border-t border-gray-100 hidden">
+                <p id="selected-practitioner-prTitle" class="font-bold text-gray-700 text-sm mb-1"></p>
+                <p id="selected-practitioner-description" class="text-xs text-gray-500 leading-relaxed line-clamp-3">
+                </p>
                 <button id="toggle-description-btn" class="hidden text-xs text-enji mt-1 hover:underline">詳細を見る</button>
               </div>
             </div>
           </div>
+
 
           <!-- Weekly Calendar Controls -->
           <div class="bg-white rounded-xl shadow-sm p-2 mb-4">
@@ -669,7 +675,7 @@
           <label class="text-xs text-gray-400 block mb-1">役職/肩書き</label>
           <input type="text" id="practitioner-edit-title"
             class="w-full p-2 border border-gray-300 rounded focus:outline-none focus:border-enji focus:ring-1 focus:ring-enji"
-            placeholder="例: Stylist×Aujua【立川】">
+            placeholder="例: LinCal【東京】">
         </div>
         <div class="flex gap-3">
           <div class="flex-1">
@@ -1537,9 +1543,9 @@
       const allOptions = [noPreference, ...practitioners];
 
       container.innerHTML = allOptions.map(p => {
-        const isSelected = (state.practitioner && state.practitioner.id === p.id) || 
-                          (state.practitioner === null && p.id === null) ||
-                          (state.practitioner && state.practitioner.id === null && p.id === null);
+        const isSelected = (state.practitioner && state.practitioner.id === p.id) ||
+          (state.practitioner === null && p.id === null) ||
+          (state.practitioner && state.practitioner.id === null && p.id === null);
         const selectedClass = isSelected
           ? 'bg-enji text-white border-enji'
           : 'bg-white text-gray-700 border-gray-300 hover:border-enji';
@@ -1558,7 +1564,7 @@
 
     function updateSelectedPractitionerCard(p) {
       const card = document.getElementById('selected-practitioner-card');
-      
+
       // 「指名なし」または施術者がない場合はカードを非表示
       if (!p || p.id === null) {
         card.classList.add('hidden');
@@ -1601,7 +1607,8 @@
       // SNS
       const snsEl = document.getElementById('selected-practitioner-sns');
       if (p.sns) {
-        snsEl.innerHTML = `<i class="fab fa-instagram mr-1"></i>${p.sns}`;
+        const username = p.sns.replace(/^@/, '');
+        snsEl.innerHTML = `<a href="https://www.instagram.com/${username}" target="_blank" class="hover:text-enji transition-colors flex items-center"><i class="fab fa-instagram mr-1"></i>${p.sns}</a>`;
         snsEl.classList.remove('hidden');
       } else {
         snsEl.classList.add('hidden');
@@ -2474,10 +2481,10 @@
       try {
         if (location.hostname === 'localhost' || location.hostname === '127.0.0.1') {
           // Mock data
-          document.getElementById('settings-salonName').value = 'テストサロン';
-          document.getElementById('settings-address').value = '〒123-4567 テスト住所';
-          document.getElementById('settings-station').value = 'テスト駅';
-          document.getElementById('settings-salonInfo').value = '【店舗情報】\nサロン名: テストサロン';
+          document.getElementById('settings-salonName').value = 'LinCal【東京】';
+          document.getElementById('settings-address').value = '〒123-4567 東京都千代田区1-1-1';
+          document.getElementById('settings-station').value = '東京駅';
+          document.getElementById('settings-salonInfo').value = '【店舗情報】\nサロン名: LinCal【東京】';
           document.getElementById('settings-precautions').value = '【注意事項】\nテスト注意事項';
         } else {
           const res = await fetch(`${API_BASE_URL}/api/settings?adminId=${state.user.userId}`);
