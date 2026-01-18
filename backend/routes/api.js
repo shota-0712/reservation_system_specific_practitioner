@@ -471,6 +471,11 @@ router.post('/reservations', async (req, res, next) => {
         });
 
         // LINE通知 (ユーザーへ)
+        // スプレッドシートから保存された設定を取得
+        const settings = await sheetsService.getSettings();
+        const salonInfo = settings.salonInfo || SALON_INFO;
+        const precautions = settings.precautions || PRECAUTIONS;
+
         const optionLine = optionNames ? `✨ オプション: ${optionNames}` : '';
         const userMessage = `
 ${data.name}様
@@ -483,9 +488,9 @@ ${optionLine}
 💰 合計料金: ¥${Number(totalPrice).toLocaleString()}
 👤 担当: ${practitioner.name}
 ---------------
-${SALON_INFO}
+${salonInfo}
 ---------------
-${PRECAUTIONS}
+${precautions}
 `.trim().replace(/\n\n+/g, '\n');  // 空行を削除
         await lineService.pushMessage(data.userId, userMessage);
 
@@ -532,6 +537,10 @@ router.delete('/reservations/:id', async (req, res, next) => {
         await sheetsService.cancelReservation(reservationId);
 
         // LINE通知 (ユーザーへ)
+        // スプレッドシートから保存された設定を取得
+        const settings = await sheetsService.getSettings();
+        const salonInfo = settings.salonInfo || SALON_INFO;
+
         const userMessage = `
 ${reservation.name}様
 ご予約のキャンセルを承りました。
@@ -540,7 +549,7 @@ ${reservation.name}様
 💆‍♀️ メニュー: ${reservation.menu}
 ${reservation.practitionerName ? `👤 担当: ${reservation.practitionerName}` : ''}
 ---------------
-${SALON_INFO}
+${salonInfo}
 ---------------
 またのご来店を心よりお待ちしております。
 `.trim();
@@ -613,6 +622,12 @@ router.post('/batch/reminders', async (req, res, next) => {
         }
 
         console.log('[Batch] Starting reminder batch...');
+
+        // スプレッドシートから保存された設定を取得
+        const settings = await sheetsService.getSettings();
+        const salonInfo = settings.salonInfo || SALON_INFO;
+        const precautions = settings.precautions || PRECAUTIONS;
+
         const reservations = await sheetsService.getTomorrowReservations();
         console.log(`[Batch] Found ${reservations.length} reservations for tomorrow`);
 
@@ -625,10 +640,10 @@ ${r.name}様
 📅 日時: ${r.date} ${r.time}
 💆‍♀️ メニュー: ${r.menu}
 
-${PRECAUTIONS.trim()}
+${precautions.trim()}
 
 ---------------
-${SALON_INFO.trim()}
+${salonInfo.trim()}
 ---------------
 
 ご来店を心よりお待ちしております。
