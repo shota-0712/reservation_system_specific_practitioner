@@ -159,9 +159,9 @@ router.get('/settings', async (req, res, next) => {
             holidays: settings.holidays || '',
             regularHolidays: JSON.parse(settings.regularHolidays || '[]'),
             temporaryBusinessDays: settings.temporaryBusinessDays || '',
-            // Reservation info
-            salonInfo: settings.salonInfo || SALON_INFO,
-            precautions: settings.precautions || PRECAUTIONS,
+            // Reservation info (空の場合は空のまま、フォールバックしない)
+            salonInfo: settings.salonInfo || '',
+            precautions: settings.precautions || '',
         };
 
         res.json(result);
@@ -471,12 +471,16 @@ router.post('/reservations', async (req, res, next) => {
         });
 
         // LINE通知 (ユーザーへ)
-        // スプレッドシートから保存された設定を取得
+        // スプレッドシートから保存された設定を取得 (空の場合は空のまま)
         const settings = await sheetsService.getSettings();
-        const salonInfo = settings.salonInfo || SALON_INFO;
-        const precautions = settings.precautions || PRECAUTIONS;
+        const salonInfo = settings.salonInfo || '';
+        const precautions = settings.precautions || '';
 
         const optionLine = optionNames ? `✨ オプション: ${optionNames}` : '';
+        // 店舗情報・注意事項のセクションを動的に構築
+        const salonInfoSection = salonInfo ? `---------------\n${salonInfo}` : '';
+        const precautionsSection = precautions ? `---------------\n${precautions}` : '';
+
         const userMessage = `
 ${data.name}様
 ご予約ありがとうございます。
@@ -487,10 +491,8 @@ ${optionLine}
 ⏱️ 合計時間: ${totalMinutes}分
 💰 合計料金: ¥${Number(totalPrice).toLocaleString()}
 👤 担当: ${practitioner.name}
----------------
-${salonInfo}
----------------
-${precautions}
+${salonInfoSection}
+${precautionsSection}
 `.trim().replace(/\n\n+/g, '\n');  // 空行を削除
         await lineService.pushMessage(data.userId, userMessage);
 
@@ -537,9 +539,10 @@ router.delete('/reservations/:id', async (req, res, next) => {
         await sheetsService.cancelReservation(reservationId);
 
         // LINE通知 (ユーザーへ)
-        // スプレッドシートから保存された設定を取得
+        // スプレッドシートから保存された設定を取得 (空の場合は空のまま)
         const settings = await sheetsService.getSettings();
-        const salonInfo = settings.salonInfo || SALON_INFO;
+        const salonInfo = settings.salonInfo || '';
+        const salonInfoSection = salonInfo ? `---------------\n${salonInfo}\n---------------` : '';
 
         const userMessage = `
 ${reservation.name}様
@@ -548,11 +551,9 @@ ${reservation.name}様
 📅 日時: ${reservation.date} ${reservation.time}
 💆‍♀️ メニュー: ${reservation.menu}
 ${reservation.practitionerName ? `👤 担当: ${reservation.practitionerName}` : ''}
----------------
-${salonInfo}
----------------
+${salonInfoSection}
 またのご来店を心よりお待ちしております。
-`.trim();
+`.trim().replace(/\n\n+/g, '\n');
         await lineService.pushMessage(userId, userMessage);
 
         // LINE通知 (管理者へ)
@@ -623,31 +624,31 @@ router.post('/batch/reminders', async (req, res, next) => {
 
         console.log('[Batch] Starting reminder batch...');
 
-        // スプレッドシートから保存された設定を取得
+        // スプレッドシートから保存された設定を取得 (空の場合は空のまま)
         const settings = await sheetsService.getSettings();
-        const salonInfo = settings.salonInfo || SALON_INFO;
-        const precautions = settings.precautions || PRECAUTIONS;
+        const salonInfo = settings.salonInfo || '';
+        const precautions = settings.precautions || '';
 
         const reservations = await sheetsService.getTomorrowReservations();
         console.log(`[Batch] Found ${reservations.length} reservations for tomorrow`);
 
         let sentCount = 0;
         for (const r of reservations) {
+            // 注意事項・店舗情報セクションを動的に構築
+            const precautionsSection = precautions ? `\n${precautions.trim()}` : '';
+            const salonInfoSection = salonInfo ? `\n---------------\n${salonInfo.trim()}\n---------------` : '';
+
             const message = `
 ${r.name}様
 明日、ご予約の日時となりましたのでご連絡差し上げました。
 
 📅 日時: ${r.date} ${r.time}
 💆‍♀️ メニュー: ${r.menu}
-
-${precautions.trim()}
-
----------------
-${salonInfo.trim()}
----------------
+${precautionsSection}
+${salonInfoSection}
 
 ご来店を心よりお待ちしております。
-`.trim();
+`.trim().replace(/\n\n+/g, '\n');
 
             await lineService.pushMessage(r.lineId, message);
             sentCount++;
