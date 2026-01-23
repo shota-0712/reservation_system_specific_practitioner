@@ -579,7 +579,7 @@
         }
 
         // Render Header
-        headerRow.innerHTML = '<th class="py-2 w-16 bg-gray-50 sticky left-0 z-10 border-r border-gray-100">日時</th>';
+        headerRow.innerHTML = '<th class="py-2 w-12 bg-gray-50 sticky left-0 z-10 border-r border-gray-100">日時</th>';
         weeklyData.forEach(day => {
           const isSat = day.day === '土';
           const isSun = day.day === '日';
@@ -587,7 +587,7 @@
           // Extract day number from date string (yyyy/MM/dd)
           const dayNum = day.date.split('/')[2];
           headerRow.innerHTML += `
-            <th class="py-2 min-w-[50px]">
+            <th class="py-1 px-1">
               <div class="text-xs ${colorClass}">${dayNum}</div>
               <div class="text-xs ${colorClass}">(${day.day})</div>
             </th>
