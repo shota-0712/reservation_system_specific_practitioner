@@ -48,6 +48,17 @@ async function notifyAdmins(text) {
 }
 
 // ====================
+// アプリ設定関連
+// ====================
+
+// GET /api/config - フロントエンド用設定取得 (LIFF_ID等)
+router.get('/config', (req, res) => {
+    res.json({
+        liffId: process.env.LIFF_ID || '',
+    });
+});
+
+// ====================
 // メニュー関連
 // ====================
 

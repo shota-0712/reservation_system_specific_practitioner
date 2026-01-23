@@ -45,13 +45,6 @@ jobs:
           THEME_COLOR_LIGHT: ${{ secrets.THEME_COLOR_LIGHT }}
           THEME_COLOR_DARK: ${{ secrets.THEME_COLOR_DARK }}
 
-      - name: Inject LIFF ID
-        if: ${{ env.LIFF_ID != '' }}
-        env:
-          LIFF_ID: ${{ secrets.LIFF_ID }}
-        run: |
-          sed -i 's/const LIFF_ID = ".*"/const LIFF_ID = "${{ env.LIFF_ID }}"/g' backend/public/index.html
-
       - name: Build and Push Container
         run: |
           cd backend
@@ -68,6 +61,7 @@ jobs:
             --service-account reservation-system-api@${{ env.PROJECT_ID }}.iam.gserviceaccount.com \
             --set-env-vars "GOOGLE_SHEET_ID=${{ secrets.GOOGLE_SHEET_ID }}" \
             --set-env-vars "LINE_ACCESS_TOKEN=${{ secrets.LINE_ACCESS_TOKEN }}" \
+            --set-env-vars "LIFF_ID=${{ secrets.LIFF_ID }}" \
             --set-env-vars "^@^ADMIN_LINE_ID=${{ secrets.ADMIN_LINE_ID }}" \
             --set-env-vars "SCHEDULER_SECRET=${{ secrets.SCHEDULER_SECRET }}" \
             --set-env-vars "GCS_BUCKET_NAME=${{ env.PROJECT_ID }}-images" \

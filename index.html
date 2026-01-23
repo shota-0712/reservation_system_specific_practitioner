@@ -352,7 +352,7 @@
     const API_BASE_URL = "https://reservation-system-api-871370633398.asia-northeast1.run.app";
     // GAS API URL (deprecated - keeping for reference)
     // const GAS_API_URL = "https://script.google.com/macros/s/AKfycbwQxUWc5tcRHiYNAy34a7qPfiSvDx9nYCIn1LCLyuGc_VLAw9sd3nRqUGFADWD3gqEd/exec";
-    const LIFF_ID = "2008591418-6eRNAepa";
+    let LIFF_ID = null;
     const MOCK_ADMIN = true; // ★ ローカルテスト用: trueで管理者モード
 
     // ==============================================
@@ -381,6 +381,10 @@
       }
 
       try {
+        const configRes = await fetch(`${API_BASE_URL}/api/config`);
+        const config = await configRes.json();
+        LIFF_ID = config.liffId;
+
         await liff.init({ liffId: LIFF_ID });
         if (!liff.isLoggedIn()) {
           liff.login();

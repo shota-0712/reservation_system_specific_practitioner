@@ -973,7 +973,7 @@
     const API_BASE_URL = "";
     // For local development, uncomment below:
     // const API_BASE_URL = "http://localhost:8080";
-    const LIFF_ID = "2008591418-6eRNAepa";
+    let LIFF_ID = null;
     const MOCK_ADMIN = true; // ★ ローカルテスト用: trueで管理者モード
 
     // ==============================================
@@ -1103,6 +1103,12 @@
       }
 
       try {
+        // 設定APIからLIFF_IDを取得
+        console.log('[DEBUG] Fetching config...');
+        const configRes = await fetch(`${API_BASE_URL}/api/config`);
+        const config = await configRes.json();
+        LIFF_ID = config.liffId;
+
         console.log('[DEBUG] Starting LIFF init with ID:', LIFF_ID);
         await liff.init({ liffId: LIFF_ID });
         console.log('[DEBUG] LIFF init success, isLoggedIn:', liff.isLoggedIn());
