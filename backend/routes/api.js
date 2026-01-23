@@ -506,7 +506,7 @@ ${optionLine}
 // DELETE /api/reservations/:id - 予約キャンセル
 router.delete('/reservations/:id', async (req, res, next) => {
     try {
-        const { userId } = req.body;
+        const userId = req.query.userId || req.body?.userId;
         const reservationId = req.params.id;
 
         // 予約情報を取得
