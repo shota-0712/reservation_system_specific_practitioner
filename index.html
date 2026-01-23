@@ -16,9 +16,9 @@
         extend: {
           colors: {
             enji: {
-              DEFAULT: '#9b1c2c',
-              light: '#b92b3d',
-              dark: '#7a1522',
+              DEFAULT: 'var(--color-enji)',
+              light: 'var(--color-enji-light)',
+              dark: 'var(--color-enji-dark)',
             },
           },
           fontFamily: {
@@ -29,6 +29,13 @@
     }
   </script>
   <style>
+    :root {
+      /* Theme Color Default (Fallback) */
+      --color-enji: #9b1c2c;
+      --color-enji-light: #b92b3d;
+      --color-enji-dark: #7a1522;
+    }
+
     body {
       font-family: 'Helvetica Neue', Arial, sans-serif;
       -webkit-font-smoothing: antialiased;
@@ -348,10 +355,8 @@
     // ==============================================
     // Configuration (設定エリア)
     // ==============================================
-    // Cloud Run API URL
-    const API_BASE_URL = "https://reservation-system-api-871370633398.asia-northeast1.run.app";
-    // GAS API URL (deprecated - keeping for reference)
-    // const GAS_API_URL = "https://script.google.com/macros/s/AKfycbwQxUWc5tcRHiYNAy34a7qPfiSvDx9nYCIn1LCLyuGc_VLAw9sd3nRqUGFADWD3gqEd/exec";
+    // ローカル開発時は backend を起動して使用 (cd backend && npm run dev)
+    const API_BASE_URL = "http://localhost:8080";
     let LIFF_ID = null;
     const MOCK_ADMIN = true; // ★ ローカルテスト用: trueで管理者モード
 
@@ -372,7 +377,7 @@
     // ==============================================
     window.onload = async () => {
       if (!location.hostname || location.hostname === 'localhost' || location.hostname === '127.0.0.1') {
-        state.user = { userId: MOCK_ADMIN ? 'U7859f282793bcc5d142d78b1675d17e1' : 'mock_user', displayName: 'Guest User', pictureUrl: 'https://placehold.co/100' };
+        state.user = { userId: 'mock_admin', displayName: 'Guest User', pictureUrl: 'https://placehold.co/100' };
         state.isAdmin = MOCK_ADMIN;
         updateUserDisplay();
         if (state.isAdmin) showAdminTab();
@@ -384,6 +389,20 @@
         const configRes = await fetch(`${API_BASE_URL}/api/config`);
         const config = await configRes.json();
         LIFF_ID = config.liffId;
+
+        // Apply Theme Settings
+        if (config.theme) {
+          const root = document.documentElement;
+          if (config.theme.color) root.style.setProperty('--color-enji', config.theme.color);
+          if (config.theme.light) root.style.setProperty('--color-enji-light', config.theme.light);
+          if (config.theme.dark) root.style.setProperty('--color-enji-dark', config.theme.dark);
+        }
+
+        // Apply Site Title
+        if (config.siteTitle) {
+          document.title = config.siteTitle;
+          // headerのロゴ周りがテキストならここも更新するが画像なのでスキップ、必要ならalt属性などを更新
+        }
 
         await liff.init({ liffId: LIFF_ID });
         if (!liff.isLoggedIn()) {

@@ -7,7 +7,7 @@ on:
 
 env:
   PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
-  SERVICE_NAME: reservation-system-api
+  SERVICE_NAME: ${{ secrets.SERVICE_NAME }}
   REGION: asia-northeast1
 
 jobs:
@@ -34,16 +34,6 @@ jobs:
       - name: Configure Docker
         run: gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev
       
-      - name: Inject Theme Color
-        if: env.THEME_COLOR != ''
-        run: |
-          sed -i 's/#9b1c2c/${{ env.THEME_COLOR }}/g' backend/public/index.html
-          sed -i 's/#b92b3d/${{ env.THEME_COLOR_LIGHT }}/g' backend/public/index.html
-          sed -i 's/#7a1522/${{ env.THEME_COLOR_DARK }}/g' backend/public/index.html
-        env:
-          THEME_COLOR: ${{ secrets.THEME_COLOR }}
-          THEME_COLOR_LIGHT: ${{ secrets.THEME_COLOR_LIGHT }}
-          THEME_COLOR_DARK: ${{ secrets.THEME_COLOR_DARK }}
 
       - name: Build and Push Container
         run: |
@@ -67,5 +57,7 @@ jobs:
             --set-env-vars "SCHEDULER_SECRET=${{ secrets.SCHEDULER_SECRET }}" \
             --set-env-vars "GCS_BUCKET_NAME=${{ env.PROJECT_ID }}-images" \
             --set-env-vars "TZ=Asia/Tokyo" \
-            --set-env-vars "^|^SALON_INFO=${{ secrets.SALON_INFO }}" \
-            --set-env-vars "^|^PRECAUTIONS=${{ secrets.PRECAUTIONS }}"
+            --set-env-vars "THEME_COLOR=${{ secrets.THEME_COLOR }}" \
+            --set-env-vars "THEME_COLOR_LIGHT=${{ secrets.THEME_COLOR_LIGHT }}" \
+            --set-env-vars "THEME_COLOR_DARK=${{ secrets.THEME_COLOR_DARK }}" \
+            --set-env-vars "SERVICE_NAME=${{ env.SERVICE_NAME }}"

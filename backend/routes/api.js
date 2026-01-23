@@ -5,35 +5,6 @@ const calendarService = require('../services/calendar');
 const lineService = require('../services/line');
 const storageService = require('../services/storage');  // Google Cloud Storage
 
-// 店舗情報 (環境変数から読み込み、未設定時はデフォルト値を使用)
-const SALON_INFO = process.env.SALON_INFO || `
-【店舗情報】
-サロン名: LinCal【東京】
-最寄り駅: 東京駅
-住所: 〒123-4567 東京都千代田区1-1-1
-営業時間: 10:00〜19:00 (完全予約制)
-定休日: 不定休
-駐車場: 有り
-支払い方法: 現金又はクレジットカード
-`;
-
-const PRECAUTIONS = process.env.PRECAUTIONS || `
-【ご来店に際しての注意点】
-
-⏰ 遅刻について
-5分以上遅れる際は、必ずご連絡下さい。
-お時間によっては、次のご予約に差し支える際は、施術の短縮・お日にち・お時間のご変更をさせていただく場合が御座います。
-
-⚠️ キャンセルについて
-無断・当日キャンセルを2回以上されますと、サロンのご利用をお控え頂く場合が御座います。
-
-📅 サロン都合の変更について
-やむを得ずお日にち・お時間をご変更させて頂く場合が御座います。
-その際は、ご連絡にてご対応させて頂きます。
-
-ご迷惑をお掛けしてしまいますが、予めご了承下さいませ。
-`;
-
 const ADMIN_LINE_IDS = (process.env.ADMIN_LINE_ID || '').split(',').map(id => id.trim()).filter(id => id);
 
 // ヘルパー: 管理者チェック
@@ -51,10 +22,16 @@ async function notifyAdmins(text) {
 // アプリ設定関連
 // ====================
 
-// GET /api/config - フロントエンド用設定取得 (LIFF_ID等)
+// GET /api/config - フロントエンド用設定取得 (LIFF_ID, テーマカラー等)
 router.get('/config', (req, res) => {
     res.json({
         liffId: process.env.LIFF_ID || '',
+        theme: {
+            color: process.env.THEME_COLOR || '#9b1c2c',
+            light: process.env.THEME_COLOR_LIGHT || '#b92b3d',
+            dark: process.env.THEME_COLOR_DARK || '#7a1522',
+        },
+        siteTitle: process.env.SERVICE_NAME ? `${process.env.SERVICE_NAME}-予約サイト` : '',
     });
 });
 
@@ -578,6 +555,143 @@ ${reservation.practitionerName ? `👤 担当: ${reservation.practitionerName}` 
         await notifyAdmins(adminMessage);
 
         res.json({ status: 'success' });
+    } catch (err) {
+        next(err);
+    }
+});
+
+// PUT /api/reservations/:id - 予約変更
+router.put('/reservations/:id', async (req, res, next) => {
+    try {
+        const { userId, menu, selectedOptions, newDate, newTime, practitionerId, totalMinutes, totalPrice } = req.body;
+        const reservationId = req.params.id;
+
+        // 1. 現在の予約情報を取得
+        const reservation = await sheetsService.getReservationById(reservationId, userId);
+        if (!reservation) {
+            return res.json({ status: 'error', message: '予約が見つかりませんでした' });
+        }
+
+        // 2. 24時間前チェック
+        const reservationDateTime = new Date(`${reservation.date.replace(/\//g, '-')}T${reservation.time}:00+09:00`);
+        const now = new Date();
+        const hoursUntilReservation = (reservationDateTime - now) / (1000 * 60 * 60);
+        if (hoursUntilReservation < 24) {
+            return res.json({ status: 'error', message: '予約日時の24時間前を過ぎているため変更できません' });
+        }
+
+        // 3. 施術者情報を取得
+        const practitioner = await sheetsService.getPractitionerById(practitionerId);
+        if (!practitioner) {
+            return res.json({ status: 'error', message: '施術者が見つかりません' });
+        }
+
+        // 4. 新しい日時で重複チェック
+        const newDateTime = new Date(`${newDate.replace(/\//g, '-')}T${newTime}:00+09:00`);
+        const newEndTime = new Date(newDateTime.getTime() + totalMinutes * 60000);
+
+        const hasConflict = await calendarService.checkConflict(newDateTime, newEndTime, practitioner.calendarId);
+        if (hasConflict) {
+            return res.json({ status: 'error', message: '指定された時間は既に予約が入っています' });
+        }
+
+        // 5. 旧カレンダーイベント削除
+        if (reservation.eventId && reservation.practitionerId) {
+            const oldPractitioner = await sheetsService.getPractitionerById(reservation.practitionerId);
+            if (oldPractitioner) {
+                await calendarService.deleteEvent(reservation.eventId, oldPractitioner.calendarId);
+            }
+        }
+
+        // 6. 新カレンダーイベント作成
+        const optionNames = selectedOptions && selectedOptions.length > 0
+            ? selectedOptions.map(o => o.name).join('、')
+            : '';
+
+        const eventTitle = optionNames
+            ? `【予約】${reservation.name}様 (${menu.name} + ${optionNames})`
+            : `【予約】${reservation.name}様 (${menu.name})`;
+
+        const eventDescription = optionNames
+            ? `LINE ID: ${userId}\n担当: ${practitioner.name}\nオプション: ${optionNames}\n合計時間: ${totalMinutes}分 / ¥${Number(totalPrice).toLocaleString()}`
+            : `LINE ID: ${userId}\n担当: ${practitioner.name}`;
+
+        const newEventId = await calendarService.createEvent(
+            eventTitle,
+            newDateTime,
+            newEndTime,
+            eventDescription,
+            practitioner.calendarId
+        );
+
+        // 7. スプレッドシート更新
+        const optionIds = selectedOptions ? selectedOptions.map(o => o.id).join(',') : '';
+        const optionNamesStr = selectedOptions ? selectedOptions.map(o => o.name).join(',') : '';
+
+        await sheetsService.updateReservation(reservationId, userId, {
+            menu: menu.name,
+            date: newDate,
+            time: newTime,
+            eventId: newEventId,
+            practitionerId: practitioner.id,
+            practitionerName: practitioner.name,
+            optionIds,
+            optionNames: optionNamesStr,
+            totalMinutes,
+            totalPrice,
+        });
+
+        // 8. LINE通知（ユーザーへ）
+        const oldOptionLine = reservation.optionNames ? `✨ オプション: ${reservation.optionNames.replace(/,/g, '、')}` : '';
+        const newOptionLine = optionNames ? `✨ オプション: ${optionNames}` : '';
+
+        const userMessage = `
+${reservation.name}様
+ご予約が変更されました。
+
+【変更前】
+📅 日時: ${reservation.date} ${reservation.time}
+💆‍♀️ メニュー: ${reservation.menu}
+${oldOptionLine}
+👤 担当: ${reservation.practitionerName || '指名なし'}
+
+【変更後】
+📅 日時: ${newDate} ${newTime}
+💆‍♀️ メニュー: ${menu.name}
+${newOptionLine}
+⏱️ 合計時間: ${totalMinutes}分
+💰 合計料金: ¥${Number(totalPrice).toLocaleString()}
+👤 担当: ${practitioner.name}
+`.trim().replace(/\n\n+/g, '\n');
+        await lineService.pushMessage(userId, userMessage);
+
+        // 9. LINE通知（管理者へ）
+        const adminMessage = `
+【予約変更がありました】
+👤 名前: ${reservation.name} 様
+【変更前】📅 ${reservation.date} ${reservation.time} / ${reservation.menu}
+【変更後】📅 ${newDate} ${newTime} / ${menu.name}
+${newOptionLine}
+⏱️ 合計: ${totalMinutes}分 / ¥${Number(totalPrice).toLocaleString()}
+👤 担当: ${practitioner.name}
+`.trim().replace(/\n\n+/g, '\n');
+        await notifyAdmins(adminMessage);
+
+        res.json({
+            status: 'success',
+            oldReservation: {
+                date: reservation.date,
+                time: reservation.time,
+                menu: reservation.menu,
+                practitionerName: reservation.practitionerName
+            },
+            newReservation: {
+                date: newDate,
+                time: newTime,
+                menu: menu.name,
+                practitionerName: practitioner.name
+            }
+        });
     } catch (err) {
         next(err);
     }

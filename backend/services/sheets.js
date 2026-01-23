@@ -229,7 +229,7 @@ async function getUserReservations(userId) {
     const sheets = await getSheetsClient();
     const response = await sheets.spreadsheets.values.get({
         spreadsheetId: SHEET_ID,
-        range: 'reservations!A2:K',  // J:施術者ID, K:施術者名を含む
+        range: 'reservations!A2:O',  // A-O列まで読み取り（オプション情報含む）
     });
 
     const rows = response.data.values || [];
@@ -247,6 +247,10 @@ async function getUserReservations(userId) {
                 time: row[6],
                 practitionerId: row[9] || '',
                 practitionerName: row[10] || '',
+                optionIds: row[11] || '',
+                optionNames: row[12] || '',
+                totalMinutes: row[13] ? parseInt(row[13]) : null,
+                totalPrice: row[14] ? parseInt(row[14]) : null,
             });
         }
     }
@@ -329,7 +333,7 @@ async function getReservationById(reservationId, userId) {
     const sheets = await getSheetsClient();
     const response = await sheets.spreadsheets.values.get({
         spreadsheetId: SHEET_ID,
-        range: 'reservations!A2:K',
+        range: 'reservations!A2:O',  // オプション・合計情報まで拡張
     });
 
     const rows = response.data.values || [];
@@ -341,9 +345,14 @@ async function getReservationById(reservationId, userId) {
                 menu: row[4],
                 date: row[5],
                 time: row[6],
+                status: row[7],
                 eventId: row[8],
                 practitionerId: row[9] || '',
                 practitionerName: row[10] || '',
+                optionIds: row[11] || '',
+                optionNames: row[12] || '',
+                totalMinutes: row[13] ? parseInt(row[13]) : null,
+                totalPrice: row[14] ? parseInt(row[14]) : null,
             };
         }
     }
@@ -417,6 +426,68 @@ async function cancelReservation(reservationId) {
     return { status: 'success' };
 }
 
+async function updateReservation(reservationId, userId, updateData) {
+    const sheets = await getSheetsClient();
+
+    // 対象行を見つける
+    const response = await sheets.spreadsheets.values.get({
+        spreadsheetId: SHEET_ID,
+        range: 'reservations!A2:O',
+    });
+
+    const rows = response.data.values || [];
+    let targetRowIndex = -1;
+    let originalReservation = null;
+
+    for (let i = 0; i < rows.length; i++) {
+        if (rows[i][0] === reservationId && rows[i][2] === userId) {
+            targetRowIndex = i + 2; // 1-indexed + header
+            originalReservation = {
+                id: rows[i][0],
+                name: rows[i][3],
+                menu: rows[i][4],
+                date: rows[i][5],
+                time: rows[i][6],
+                eventId: rows[i][8],
+                practitionerId: rows[i][9] || '',
+                practitionerName: rows[i][10] || '',
+                optionIds: rows[i][11] || '',
+                optionNames: rows[i][12] || '',
+                totalMinutes: rows[i][13] ? parseInt(rows[i][13]) : null,
+                totalPrice: rows[i][14] ? parseInt(rows[i][14]) : null,
+            };
+            break;
+        }
+    }
+
+    if (targetRowIndex === -1) {
+        return { status: 'error', message: '予約が見つかりません' };
+    }
+
+    // E列(menu), F列(date), G列(time), I列(eventId), J列(practitionerId), K列(practitionerName),
+    // L列(optionIds), M列(optionNames), N列(totalMinutes), O列(totalPrice)を更新
+    await sheets.spreadsheets.values.batchUpdate({
+        spreadsheetId: SHEET_ID,
+        requestBody: {
+            valueInputOption: 'USER_ENTERED',
+            data: [
+                { range: `reservations!E${targetRowIndex}`, values: [[updateData.menu]] },
+                { range: `reservations!F${targetRowIndex}`, values: [[updateData.date]] },
+                { range: `reservations!G${targetRowIndex}`, values: [[updateData.time]] },
+                { range: `reservations!I${targetRowIndex}`, values: [[updateData.eventId]] },
+                { range: `reservations!J${targetRowIndex}`, values: [[updateData.practitionerId]] },
+                { range: `reservations!K${targetRowIndex}`, values: [[updateData.practitionerName]] },
+                { range: `reservations!L${targetRowIndex}`, values: [[updateData.optionIds || '']] },
+                { range: `reservations!M${targetRowIndex}`, values: [[updateData.optionNames || '']] },
+                { range: `reservations!N${targetRowIndex}`, values: [[updateData.totalMinutes]] },
+                { range: `reservations!O${targetRowIndex}`, values: [[updateData.totalPrice]] },
+            ]
+        }
+    });
+
+    return { status: 'success', originalReservation };
+}
+
 module.exports = {
     getMenus,
     addMenu,
@@ -428,6 +499,7 @@ module.exports = {
     addReservation,
     getReservationById,
     cancelReservation,
+    updateReservation,
     getTomorrowReservations,
     // 施術者関連
     getPractitioners,
