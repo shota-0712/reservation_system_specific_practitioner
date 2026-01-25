@@ -575,8 +575,7 @@
   </div>
 
   <!-- Reschedule Modal -->
-  <div id="reschedule-modal"
-    class="fixed inset-0 bg-black/50 flex flex-col z-50 hidden animate-fade-in">
+  <div id="reschedule-modal" class="fixed inset-0 bg-black/50 flex flex-col z-50 hidden animate-fade-in">
     <div class="bg-white w-full h-full flex flex-col">
       <!-- Header -->
       <div class="bg-enji text-white p-4 flex justify-between items-center flex-shrink-0">
@@ -1882,7 +1881,7 @@
             let cellContent = '';
             let cellClass = '';
 
-            if (slot.status === '⚪︎') {
+            if (slot.status === '○') {
               cellContent = '<i class="far fa-circle text-enji text-lg"></i>'; // Using FontAwesome circle for better look, or just text
               cellClass = 'cursor-pointer hover:bg-red-50 transition-colors';
             } else if (slot.status === '×') {
@@ -1894,7 +1893,7 @@
             }
 
             // Onclick only for available slots
-            const clickHandler = slot.status === '⚪︎' ? `onclick="selectWeeklySlot('${day.date}', '${time}')"` : '';
+            const clickHandler = slot.status === '○' ? `onclick="selectWeeklySlot('${day.date}', '${time}')"` : '';
 
             rowHtml += `<td class="py-2 ${cellClass}" ${clickHandler}>${cellContent}</td>`;
           });
@@ -1978,7 +1977,7 @@
           const time = `${String(current.getHours()).padStart(2, '0')}:${String(current.getMinutes()).padStart(2, '0')}`;
           // Random status
           const rand = Math.random();
-          let status = '⚪︎';
+          let status = '○';
           if (rand < 0.3) status = '×';
           if (rand < 0.1) status = '-';
 
@@ -2381,7 +2380,7 @@
             let cellContent = '';
             let cellClass = '';
 
-            if (slot.status === '⚪︎') {
+            if (slot.status === '○') {
               cellContent = '<i class="far fa-circle text-enji text-lg"></i>';
               cellClass = 'cursor-pointer hover:bg-red-50 transition-colors';
             } else if (slot.status === '×') {
@@ -2392,7 +2391,7 @@
               cellClass = 'bg-gray-50';
             }
 
-            const clickHandler = slot.status === '⚪︎' ? `onclick="selectRescheduleSlot('${day.date}', '${time}')"` : '';
+            const clickHandler = slot.status === '○' ? `onclick="selectRescheduleSlot('${day.date}', '${time}')"` : '';
             rowHtml += `<td class="py-2 ${cellClass}" ${clickHandler}>${cellContent}</td>`;
           });
 
@@ -3198,11 +3197,35 @@
         }
 
         container.innerHTML = reservations.map(item => {
-          const statusColor = item.status === 'reserved' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500';
-          const statusText = item.status === 'reserved' ? '予約中' : 'キャンセル';
-          const optionInfo = item.optionNames ? `<div class="text-xs text-enji mt-1">+ ${item.optionNames}</div>` : '';
+          // 予約日時が過去かどうかを判定
+          const now = new Date();
+          const reservationDateTime = new Date(`${item.date.replace(/\//g, '-')}T${item.time}:00+09:00`);
+          const isPast = reservationDateTime < now;
+
+          // ステータス判定: キャンセル済み / 来店済み（過去の予約中） / 予約中（未来の予約中）
+          let statusColor, statusText;
+          if (item.status === 'canceled') {
+            statusColor = 'bg-gray-100 text-gray-500';
+            statusText = 'キャンセル';
+          } else if (isPast && item.status === 'reserved') {
+            statusColor = 'bg-blue-100 text-blue-700';
+            statusText = '来店済';
+          } else {
+            statusColor = 'bg-green-100 text-green-700';
+            statusText = '予約中';
+          }
+
+          const optionInfo = item.optionNames ? `<div class="text-xs text-enji mt-1">+ ${item.optionNames.replace(/,/g, '、')}</div>` : '';
           const totalInfo = item.totalMinutes ? `<div class="text-xs text-gray-500 mt-1">${item.totalMinutes}分 / ¥${Number(item.totalPrice).toLocaleString()}</div>` : '';
           const practitionerInfo = item.practitionerName ? `<div class="text-xs text-gray-400">担当: ${item.practitionerName}</div>` : '';
+
+          // キャンセルボタンは未来の予約中のみ表示
+          const cancelBtn = (!isPast && item.status === 'reserved') ? `
+            <button onclick="event.stopPropagation(); adminCancelReservation('${item.id}', '${item.name}')"
+              class="mt-2 px-3 py-1.5 text-xs bg-red-50 text-red-600 rounded-lg hover:bg-red-100 transition-colors font-medium flex items-center gap-1">
+              <i class="fas fa-times-circle"></i> キャンセル
+            </button>` : '';
+
           return `
           <div class="bg-white shadow-sm border border-gray-100 p-4 rounded-xl">
             <div class="flex justify-between items-start gap-2">
@@ -3213,6 +3236,7 @@
                 ${optionInfo}
                 ${totalInfo}
                 ${practitionerInfo}
+                ${cancelBtn}
               </div>
               <span class="px-2 py-0.5 rounded-full text-[10px] font-bold whitespace-nowrap flex-shrink-0 ${statusColor}">${statusText}</span>
             </div>
@@ -3224,6 +3248,39 @@
         container.innerHTML = '<div class="text-center text-red-400 py-8">読み込みエラー</div>';
       }
     }
+
+    // 管理者用: 予約キャンセル
+    window.adminCancelReservation = async (reservationId, customerName) => {
+      if (!await showConfirm(`${customerName}様の予約をキャンセルしますか？\n\nお客様にLINEでキャンセル通知が送信されます。`)) {
+        return;
+      }
+
+      document.getElementById('loading').classList.remove('hidden');
+      try {
+        let result = { status: 'success' };
+        if (!(location.hostname === 'localhost' || location.hostname === '127.0.0.1')) {
+          const res = await fetch(`${API_BASE_URL}/api/admin/reservations/${reservationId}?adminId=${state.user.userId}`, {
+            method: 'DELETE'
+          });
+          result = await res.json();
+        } else {
+          // Mock: ローカルでは0.5秒待つだけ
+          await new Promise(r => setTimeout(r, 500));
+        }
+
+        if (result.status === 'success') {
+          showToast('予約をキャンセルしました', 'success');
+          loadAdminReservations(); // リストを再読み込み
+        } else {
+          showToast('キャンセルに失敗しました: ' + (result.message || ''), 'error');
+        }
+      } catch (e) {
+        console.error(e);
+        showToast('通信エラーが発生しました', 'error');
+      } finally {
+        document.getElementById('loading').classList.add('hidden');
+      }
+    };
 
     // Admin menu management with category filter
     let allAdminMenus = [];

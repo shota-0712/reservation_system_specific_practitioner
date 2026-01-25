@@ -610,7 +610,7 @@
             let cellContent = '';
             let cellClass = '';
 
-            if (slot.status === '⚪︎') {
+            if (slot.status === '○') {
               cellContent = '<i class="far fa-circle text-enji text-lg"></i>'; // Using FontAwesome circle for better look, or just text
               cellClass = 'cursor-pointer hover:bg-red-50 transition-colors';
             } else if (slot.status === '×') {
@@ -622,7 +622,7 @@
             }
 
             // Onclick only for available slots
-            const clickHandler = slot.status === '⚪︎' ? `onclick="selectWeeklySlot('${day.date}', '${time}')"` : '';
+            const clickHandler = slot.status === '○' ? `onclick="selectWeeklySlot('${day.date}', '${time}')"` : '';
 
             rowHtml += `<td class="py-2 ${cellClass}" ${clickHandler}>${cellContent}</td>`;
           });
@@ -691,7 +691,7 @@
           const time = `${String(current.getHours()).padStart(2, '0')}:${String(current.getMinutes()).padStart(2, '0')}`;
           // Random status
           const rand = Math.random();
-          let status = '⚪︎';
+          let status = '○';
           if (rand < 0.3) status = '×';
           if (rand < 0.1) status = '-';
 

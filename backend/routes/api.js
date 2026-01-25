@@ -707,6 +707,75 @@ router.get('/check-admin', (req, res) => {
     res.json({ isAdmin: isAdmin(userId) });
 });
 
+// DELETE /api/admin/reservations/:id - 管理者による予約キャンセル
+router.delete('/admin/reservations/:id', async (req, res, next) => {
+    try {
+        const adminId = req.query.adminId || (req.body && req.body.adminId);
+        const reservationId = req.params.id;
+
+        if (!isAdmin(adminId)) {
+            return res.status(403).json({ status: 'error', message: '権限がありません' });
+        }
+
+        // 予約情報を取得（管理者用）
+        const reservation = await sheetsService.getReservationByIdForAdmin(reservationId);
+        if (!reservation) {
+            return res.json({ status: 'error', message: '予約が見つかりませんでした' });
+        }
+
+        if (reservation.status === 'canceled') {
+            return res.json({ status: 'error', message: 'この予約は既にキャンセル済みです' });
+        }
+
+        // 施術者のカレンダーからイベント削除
+        if (reservation.eventId && reservation.practitionerId) {
+            const practitioner = await sheetsService.getPractitionerById(reservation.practitionerId);
+            if (practitioner) {
+                await calendarService.deleteEvent(reservation.eventId, practitioner.calendarId);
+            }
+        }
+
+        // スプレッドシートのステータスを更新
+        await sheetsService.cancelReservation(reservationId);
+
+        // 設定からサロン情報を取得
+        const settings = await sheetsService.getSettings();
+        const salonInfo = settings.salonInfo || '';
+
+        // LINE通知 (ユーザーへ) - lineIdが存在する場合のみ
+        if (reservation.lineId) {
+            const salonInfoSection = salonInfo ? `\n---------------\n${salonInfo}\n---------------` : '';
+            const userMessage = `
+${reservation.name}様
+
+誠に申し訳ございませんが、ご予約をキャンセルさせていただきました。
+
+📅 日時: ${reservation.date} ${reservation.time}
+💆‍♀️ メニュー: ${reservation.menu}
+${reservation.practitionerName ? `👤 担当: ${reservation.practitionerName}` : ''}
+${salonInfoSection}
+
+ご不明な点がございましたら、お気軽にお問い合わせください。
+`.trim().replace(/\n\n+/g, '\n');
+            await lineService.pushMessage(reservation.lineId, userMessage);
+        }
+
+        // LINE通知 (管理者へ)
+        const adminMessage = `
+【管理者によるキャンセル】
+👤 名前: ${reservation.name} 様
+📅 日時: ${reservation.date} ${reservation.time}
+💆‍♀️ メニュー: ${reservation.menu}
+${reservation.practitionerName ? `👤 担当: ${reservation.practitionerName}` : ''}
+`.trim();
+        await notifyAdmins(adminMessage);
+
+        res.json({ status: 'success' });
+    } catch (err) {
+        next(err);
+    }
+});
+
 // ====================
 // 画像アップロード
 // ====================

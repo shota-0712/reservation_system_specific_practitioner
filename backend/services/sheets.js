@@ -360,6 +360,38 @@ async function getReservationById(reservationId, userId) {
     return null;
 }
 
+// 管理者用: userIdに関係なく予約を取得
+async function getReservationByIdForAdmin(reservationId) {
+    const sheets = await getSheetsClient();
+    const response = await sheets.spreadsheets.values.get({
+        spreadsheetId: SHEET_ID,
+        range: 'reservations!A2:O',  // Extended to include option columns
+    });
+
+    const rows = response.data.values || [];
+    for (const row of rows) {
+        if (row[0] === reservationId) {
+            return {
+                id: row[0],
+                lineId: row[2],
+                name: row[3],
+                menu: row[4],
+                date: row[5],
+                time: row[6],
+                status: row[7],
+                eventId: row[8],
+                practitionerId: row[9] || '',
+                practitionerName: row[10] || '',
+                optionIds: row[11] || '',
+                optionNames: row[12] || '',
+                totalMinutes: row[13] ? parseInt(row[13]) : 0,
+                totalPrice: row[14] ? parseInt(row[14]) : 0,
+            };
+        }
+    }
+    return null;
+}
+
 async function getTomorrowReservations() {
     const sheets = await getSheetsClient();
     const response = await sheets.spreadsheets.values.get({
@@ -498,6 +530,7 @@ module.exports = {
     getAllReservations,
     addReservation,
     getReservationById,
+    getReservationByIdForAdmin,
     cancelReservation,
     updateReservation,
     getTomorrowReservations,
