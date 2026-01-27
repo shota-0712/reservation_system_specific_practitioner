@@ -1121,6 +1121,9 @@
           let url = `${API_BASE_URL}/api/weekly-availability?startDate=${startDateStr}&minutes=${totalMinutes}`;
           if (state.selectedPractitioner) {
             url += `&practitionerId=${state.selectedPractitioner.id}`;
+          } else {
+            // 指名なしの場合は 'all' を送信して全施術者の統合空き状況を取得
+            url += `&practitionerId=all`;
           }
           const res = await fetch(url);
           weeklyData = await res.json();
