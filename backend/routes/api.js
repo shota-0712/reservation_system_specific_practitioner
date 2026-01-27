@@ -515,6 +515,14 @@ router.delete('/reservations/:id', async (req, res, next) => {
             return res.json({ status: 'error', message: '予約が見つかりませんでした' });
         }
 
+        // 24時間前チェック
+        const reservationDateTime = new Date(`${reservation.date.replace(/\//g, '-')}T${reservation.time}:00+09:00`);
+        const now = new Date();
+        const hoursUntilReservation = (reservationDateTime - now) / (1000 * 60 * 60);
+        if (hoursUntilReservation < 24) {
+            return res.json({ status: 'error', message: '予約日時の24時間前を過ぎているためキャンセルできません' });
+        }
+
         // 施術者のカレンダーからイベント削除
         if (reservation.eventId && reservation.practitionerId) {
             const practitioner = await sheetsService.getPractitionerById(reservation.practitionerId);
@@ -590,7 +598,9 @@ router.put('/reservations/:id', async (req, res, next) => {
         const newDateTime = new Date(`${newDate.replace(/\//g, '-')}T${newTime}:00+09:00`);
         const newEndTime = new Date(newDateTime.getTime() + totalMinutes * 60000);
 
-        const hasConflict = await calendarService.checkConflict(newDateTime, newEndTime, practitioner.calendarId);
+        // 同じ施術者の場合は自身のイベントを除外してチェック
+        const excludeEventId = String(reservation.practitionerId) === String(practitionerId) ? reservation.eventId : null;
+        const hasConflict = await calendarService.checkConflict(newDateTime, newEndTime, practitioner.calendarId, excludeEventId);
         if (hasConflict) {
             return res.json({ status: 'error', message: '指定された時間は既に予約が入っています' });
         }

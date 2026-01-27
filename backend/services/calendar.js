@@ -199,7 +199,8 @@ async function getAvailableSlots(dateStr, menuMinutes, calendarId) {
 }
 
 // 予約の重複チェック
-async function checkConflict(startTime, endTime, calendarId) {
+// excludeEventId: 除外するイベントID（予約変更時に自身のイベントを除外するため）
+async function checkConflict(startTime, endTime, calendarId, excludeEventId = null) {
     const calendar = await getCalendarClient();
 
     const eventsResponse = await calendar.events.list({
@@ -209,7 +210,12 @@ async function checkConflict(startTime, endTime, calendarId) {
         singleEvents: true,
     });
 
-    return (eventsResponse.data.items || []).length > 0;
+    const events = eventsResponse.data.items || [];
+    // excludeEventId が指定されている場合、そのイベントを除外してチェック
+    const conflictingEvents = excludeEventId
+        ? events.filter(e => e.id !== excludeEventId)
+        : events;
+    return conflictingEvents.length > 0;
 }
 
 // カレンダーにイベント作成

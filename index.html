@@ -61,6 +61,23 @@
       animation: fadeIn 0.3s ease-out forwards;
     }
 
+    /* Line clamp utility */
+    .line-clamp-2 {
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+
+    .line-clamp-3 {
+      display: -webkit-box;
+      -webkit-line-clamp: 3;
+      line-clamp: 3;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+
     /* Hide scrollbar for clean UI */
     ::-webkit-scrollbar {
       width: 0px;
@@ -75,8 +92,23 @@
   <div id="app" class="min-h-screen pb-24">
     <!-- Header -->
     <header class="bg-white shadow-sm sticky top-0 z-40">
-      <div class="max-w-md mx-auto px-4 h-16 flex items-center justify-center">
-        <img src="en_logo.jpeg" alt="En Salon" class="h-10 w-auto">
+      <div class="max-w-md mx-auto px-4 py-3 flex items-center gap-4">
+        <div id="header-logo-container">
+          <div id="header-logo-placeholder"
+            class="h-12 w-12 rounded-full bg-gray-200 flex items-center justify-center flex-shrink-0">
+            <i class="fas fa-store text-gray-400 text-xl"></i>
+          </div>
+          <img id="header-logo" src="" alt="Salon Logo"
+            class="h-12 w-12 rounded-full object-cover flex-shrink-0 hidden">
+        </div>
+        <div class="flex-1 min-w-0">
+          <h1 id="header-salon-name" class="font-bold text-gray-800 text-sm truncate">Loading...</h1>
+          <p id="header-address" class="text-xs text-gray-500 truncate"></p>
+          <p class="text-xs text-gray-400 flex items-center gap-1">
+            <i class="fas fa-train text-xs"></i>
+            <span id="header-station"></span>
+          </p>
+        </div>
       </div>
     </header>
 
@@ -86,9 +118,62 @@
       <!-- HOME VIEW -->
       <div id="home-view" class="block">
 
+        <!-- Progress Steps Indicator (Compact) - 5 Steps -->
+        <div id="progress-steps" class="bg-white rounded-xl shadow-sm p-3 mb-4">
+          <div class="flex items-center justify-between">
+            <div class="flex flex-col items-center">
+              <div id="step-icon-1"
+                class="w-6 h-6 rounded-full bg-enji text-white flex items-center justify-center text-xs font-bold">1
+              </div>
+              <span class="text-[10px] text-gray-600 mt-1 whitespace-nowrap">メニュー</span>
+            </div>
+            <div class="flex-1 h-0.5 bg-gray-200 mx-1" id="step-line-1"></div>
+            <div class="flex flex-col items-center">
+              <div id="step-icon-2"
+                class="w-6 h-6 rounded-full bg-gray-200 text-gray-400 flex items-center justify-center text-xs font-bold">
+                2</div>
+              <span class="text-[10px] text-gray-400 mt-1 whitespace-nowrap">オプション</span>
+            </div>
+            <div class="flex-1 h-0.5 bg-gray-200 mx-1" id="step-line-2"></div>
+            <div class="flex flex-col items-center">
+              <div id="step-icon-3"
+                class="w-6 h-6 rounded-full bg-gray-200 text-gray-400 flex items-center justify-center text-xs font-bold">
+                3</div>
+              <span class="text-[10px] text-gray-400 mt-1 whitespace-nowrap">日時選択</span>
+            </div>
+            <div class="flex-1 h-0.5 bg-gray-200 mx-1" id="step-line-3"></div>
+            <div class="flex flex-col items-center">
+              <div id="step-icon-4"
+                class="w-6 h-6 rounded-full bg-gray-200 text-gray-400 flex items-center justify-center text-xs font-bold">
+                4</div>
+              <span class="text-[10px] text-gray-400 mt-1 whitespace-nowrap">確認</span>
+            </div>
+            <div class="flex-1 h-0.5 bg-gray-200 mx-1" id="step-line-4"></div>
+            <div class="flex flex-col items-center">
+              <div id="step-icon-5"
+                class="w-6 h-6 rounded-full bg-gray-200 text-gray-400 flex items-center justify-center text-xs font-bold">
+                5</div>
+              <span class="text-[10px] text-gray-400 mt-1 whitespace-nowrap">完了</span>
+            </div>
+          </div>
+        </div>
+
         <!-- Step 1: Menu Selection -->
         <div id="step-menu" class="animate-fade-in">
-          <h2 class="text-lg font-bold text-gray-800 mb-4 border-l-4 border-enji pl-3">メニュー選択</h2>
+          <!-- Category Tabs -->
+          <div id="category-tabs" class="flex flex-wrap gap-2 mb-4">
+            <button onclick="filterByCategory('all')"
+              class="category-tab px-3 py-1.5 rounded-full text-sm font-medium bg-enji text-white transition-colors"
+              data-category="all">すべて</button>
+            <!-- Other category tabs will be dynamically added -->
+          </div>
+
+          <!-- Menu Count -->
+          <div class="flex items-center mb-4">
+            <h2 class="text-lg font-bold text-gray-800 border-l-4 border-enji pl-3">メニュー選択</h2>
+            <span id="menu-count" class="ml-2 text-sm text-gray-500"></span>
+          </div>
+
           <div id="menu-list" class="space-y-4">
             <div class="animate-pulse space-y-4">
               <div class="h-24 bg-gray-200 rounded-lg"></div>
@@ -97,12 +182,109 @@
           </div>
         </div>
 
-        <!-- Step 2: Date Selection (Weekly View) -->
-        <div id="step-date" class="hidden animate-fade-in">
+        <!-- Step 2: Option Selection -->
+        <div id="step-options" class="hidden animate-fade-in">
           <button onclick="goBack('step-menu')" class="btn-ghost mb-2 text-gray-500 text-sm flex items-center gap-1">
             <i class="fas fa-arrow-left"></i> 戻る
           </button>
+          <h2 class="text-lg font-bold text-gray-800 mb-4 border-l-4 border-enji pl-3">オプション選択</h2>
+
+          <!-- Selected Menu Info -->
+          <div class="bg-white rounded-xl shadow-sm p-4 mb-4 border border-gray-100">
+            <p class="text-xs text-gray-400 mb-1">選択中のメニュー</p>
+            <p id="options-selected-menu" class="font-bold text-gray-800"></p>
+          </div>
+
+          <!-- Option List -->
+          <div id="option-list" class="space-y-3 mb-4">
+            <div class="animate-pulse space-y-3">
+              <div class="h-16 bg-gray-200 rounded-lg"></div>
+              <div class="h-16 bg-gray-200 rounded-lg"></div>
+            </div>
+          </div>
+
+          <!-- Selected Options Summary -->
+          <div id="options-summary" class="bg-enji/10 rounded-xl p-4 mb-4 hidden">
+            <div class="flex justify-between items-center">
+              <div>
+                <p class="text-xs text-gray-500">追加オプション</p>
+                <p id="options-summary-names" class="font-medium text-gray-800 text-sm"></p>
+              </div>
+              <div class="text-right">
+                <p class="text-xs text-gray-500">追加時間・料金</p>
+                <p id="options-summary-info" class="font-bold text-enji"></p>
+              </div>
+            </div>
+          </div>
+
+          <!-- Total Summary -->
+          <div class="bg-white rounded-xl shadow-sm p-4 mb-4 border-2 border-enji">
+            <div class="flex justify-between items-center">
+              <div>
+                <p class="text-xs text-gray-500">合計</p>
+                <p id="total-summary-menu" class="font-bold text-gray-800"></p>
+              </div>
+              <div class="text-right">
+                <p id="total-time" class="text-sm text-gray-600"></p>
+                <p id="total-price" class="font-bold text-enji text-xl"></p>
+              </div>
+            </div>
+          </div>
+
+          <!-- Action Buttons -->
+          <div class="space-y-2">
+            <button onclick="proceedWithOptions()"
+              class="w-full bg-enji hover:bg-enji-dark text-white font-bold py-3 rounded-lg shadow-md transition-colors">
+              <span id="options-button-text">日時選択へ進む</span>
+            </button>
+            <button onclick="skipOptions()"
+              class="w-full bg-white border border-gray-300 text-gray-600 font-medium py-3 rounded-lg hover:bg-gray-50 transition-colors">
+              オプションなしで進む
+            </button>
+          </div>
+        </div>
+
+        <!-- Step 3: Date Selection (Weekly View) -->
+        <div id="step-date" class="hidden animate-fade-in">
+          <button onclick="goBackFromDate()" class="btn-ghost mb-2 text-gray-500 text-sm flex items-center gap-1">
+            <i class="fas fa-arrow-left"></i> 戻る
+          </button>
           <h2 class="text-lg font-bold text-gray-800 mb-4 border-l-4 border-enji pl-3">日時選択</h2>
+
+          <!-- Practitioner Pills (Inline) -->
+          <div class="mb-4">
+            <p class="text-sm text-gray-500 mb-2">施術者を指名</p>
+            <div id="practitioner-pills" class="flex flex-wrap gap-2 mb-3">
+              <!-- Pills will be injected here -->
+            </div>
+            <!-- Selected Practitioner Card -->
+            <div id="selected-practitioner-card"
+              class="hidden bg-white rounded-xl shadow-sm border border-gray-100 p-4">
+              <div class="flex gap-4">
+                <div id="selected-practitioner-image-container" class="flex-shrink-0 hidden">
+                  <img id="selected-practitioner-image" src="" alt=""
+                    class="w-16 h-16 rounded-full object-cover border-2 border-enji">
+                </div>
+                <div class="flex-1 min-w-0">
+                  <div class="flex items-center gap-2 flex-wrap">
+                    <h4 id="selected-practitioner-name" class="font-bold text-gray-800"></h4>
+                    <span id="selected-practitioner-fee" class="hidden text-sm text-enji font-bold"></span>
+                  </div>
+                  <p id="selected-practitioner-title" class="text-xs text-gray-500 hidden"></p>
+                  <div class="flex items-center gap-2 text-xs text-gray-400 mt-1">
+                    <span id="selected-practitioner-sns" class="hidden"></span>
+                    <span id="selected-practitioner-experience" class="hidden"></span>
+                  </div>
+                </div>
+              </div>
+              <div id="selected-practitioner-pr" class="mt-3 pt-3 border-t border-gray-100 hidden">
+                <p id="selected-practitioner-prTitle" class="font-bold text-gray-700 text-sm mb-1"></p>
+                <p id="selected-practitioner-description" class="text-xs text-gray-500 leading-relaxed line-clamp-3">
+                </p>
+                <button id="toggle-description-btn" class="hidden text-xs text-enji mt-1 hover:underline">詳細を見る</button>
+              </div>
+            </div>
+          </div>
 
           <!-- Weekly Calendar Controls -->
           <div class="bg-white rounded-xl shadow-sm p-2 mb-4">
@@ -137,7 +319,7 @@
           </div>
         </div>
 
-        <!-- Step 3: Confirmation -->
+        <!-- Step 4: Confirmation -->
         <div id="step-confirm" class="hidden animate-fade-in">
           <button onclick="goBack('step-date')" class="btn-ghost mb-2 text-gray-500 text-sm flex items-center gap-1">
             <i class="fas fa-arrow-left"></i> 戻る
@@ -152,6 +334,10 @@
               <div>
                 <label class="text-xs text-gray-400 block">メニュー</label>
                 <p id="confirm-menu" class="font-bold text-gray-800 text-lg"></p>
+              </div>
+              <div>
+                <label class="text-xs text-gray-400 block">担当施術者</label>
+                <p id="confirm-practitioner" class="font-bold text-gray-800"></p>
               </div>
               <div class="flex gap-4">
                 <div>
@@ -168,6 +354,12 @@
                 <input type="text" id="user-name-input"
                   class="w-full mt-1 p-2 border border-gray-300 rounded focus:outline-none focus:border-enji focus:ring-1 focus:ring-enji"
                   placeholder="お名前を入力">
+              </div>
+              <div>
+                <label class="text-xs text-gray-400 block">電話番号</label>
+                <input type="tel" id="user-phone-input"
+                  class="w-full mt-1 p-2 border border-gray-300 rounded focus:outline-none focus:border-enji focus:ring-1 focus:ring-enji"
+                  placeholder="090-1234-5678">
               </div>
             </div>
             <div class="p-4 bg-gray-50">
@@ -276,9 +468,11 @@
           <label class="text-xs text-gray-400 block">メニュー</label>
           <p id="modal-menu" class="font-bold text-gray-800"></p>
         </div>
-        <div class="pt-4 border-t border-gray-100">
+        <div class="pt-4 border-t border-gray-100 flex gap-3">
           <button id="modal-cancel-btn"
-            class="w-full border border-red-500 text-red-500 font-bold py-3 rounded-lg hover:bg-red-50 transition-colors">予約をキャンセルする</button>
+            class="flex-1 border border-red-500 text-red-500 font-bold py-3 rounded-lg hover:bg-red-50 transition-colors">キャンセル</button>
+          <button id="modal-change-btn"
+            class="flex-1 bg-enji text-white font-bold py-3 rounded-lg hover:bg-enji-dark transition-colors">日時変更</button>
         </div>
       </div>
     </div>
@@ -369,7 +563,18 @@
       date: null,
       time: null,
       currentTab: 'home',
-      isAdmin: false
+      isAdmin: false,
+      // New state properties
+      selectedPractitioner: null,
+      selectedOptions: [],
+      practitioners: [],
+      options: [],
+      menus: [],
+      siteConfig: {
+        siteTitle: 'En Salon',
+        salonInfo: '',
+        precautions: ''
+      }
     };
 
     // ==============================================
@@ -390,7 +595,7 @@
         const config = await configRes.json();
         LIFF_ID = config.liffId;
 
-        // Apply Theme Settings
+        // Apply Theme and Header Settings
         if (config.theme) {
           const root = document.documentElement;
           if (config.theme.color) root.style.setProperty('--color-enji', config.theme.color);
@@ -398,10 +603,38 @@
           if (config.theme.dark) root.style.setProperty('--color-enji-dark', config.theme.dark);
         }
 
-        // Apply Site Title
-        if (config.siteTitle) {
-          document.title = config.siteTitle;
-          // headerのロゴ周りがテキストならここも更新するが画像なのでスキップ、必要ならalt属性などを更新
+        // Apply Header Customization
+        // MOCK_ADMINがfalseの場合のみ有効（本番想定）
+        try {
+          const settingsRes = await fetch(`${API_BASE_URL}/api/settings?adminId=public`);
+          const settings = await settingsRes.json();
+
+          if (settings.siteTitle) {
+            document.title = settings.siteTitle;
+            document.getElementById('header-salon-name').innerText = settings.siteTitle;
+          }
+          if (settings.salonAddress) {
+            document.getElementById('header-address').innerText = settings.salonAddress;
+          }
+          if (settings.salonStation) {
+            document.getElementById('header-station').parentElement.classList.remove('hidden');
+            document.getElementById('header-station').innerText = settings.salonStation;
+          } else {
+            document.getElementById('header-station').parentElement.classList.add('hidden');
+          }
+          if (settings.logoUrl) {
+            document.getElementById('header-logo').src = settings.logoUrl;
+            document.getElementById('header-logo').classList.remove('hidden');
+            document.getElementById('header-logo-placeholder').classList.add('hidden');
+          }
+
+          // Store salon info for later use
+          state.siteConfig.salonInfo = settings.salonInfo || '';
+          state.siteConfig.precautions = settings.precautions || '';
+
+        } catch (e) {
+          console.error('Failed to load settings', e);
+          document.getElementById('header-salon-name').innerText = 'En Salon';
         }
 
         await liff.init({ liffId: LIFF_ID });
@@ -490,48 +723,353 @@
       try {
         let menus = [];
         if (location.hostname === 'localhost' || location.hostname === '127.0.0.1') {
+          // Mock data
           menus = [
-            { id: '1', name: 'フェイシャル基本コース', minutes: 60, price: 8000, description: '基本のフェイシャルコースです。' },
-            { id: '2', name: '全身アロマオイル', minutes: 90, price: 12000, description: '全身のリラックス効果が高いアロマオイルマッサージです。' },
-            { id: '3', name: 'クイックマッサージ', minutes: 30, price: 4000, description: 'お急ぎの方におすすめのクイックコース。' }
+            { id: '1', name: 'フェイシャル基本コース', minutes: 60, price: 8000, description: '基本のフェイシャルコースです。', category: 'フェイシャル' },
+            { id: '2', name: '全身アロマオイル', minutes: 90, price: 12000, description: '全身のリラックス効果が高いアロマオイルマッサージです。', category: 'ボディ' },
+            { id: '3', name: 'クイックマッサージ', minutes: 30, price: 4000, description: 'お急ぎの方におすすめのクイックコース。', category: 'ボディ' }
           ];
         } else {
           const res = await fetch(`${API_BASE_URL}/api/menus`);
           menus = await res.json();
         }
+        state.menus = menus;
+        renderMenus(menus);
+        updateMenuCount(menus.length);
 
-        container.innerHTML = menus.map(menu => {
-          const imageHtml = menu.imageUrl
-            ? `<img src="${menu.imageUrl}" alt="${menu.name}" class="w-full h-32 object-cover rounded-t-xl mb-3">`
-            : '';
-          return `
-          <div onclick='selectMenu(${JSON.stringify(menu)})' class="bg-white shadow-sm border border-gray-100 rounded-xl cursor-pointer hover:border-enji transition-all active:scale-95 overflow-hidden">
-            ${imageHtml}
-            <div class="p-4">
-              <div class="flex justify-between items-center">
-                <div>
-                  <h3 class="font-bold text-gray-800">${menu.name}</h3>
-                  <p class="text-xs text-gray-500 mt-1 mb-1">${menu.description || ''}</p>
-                  <p class="text-sm text-gray-400 mt-1"><i class="far fa-clock"></i> ${menu.minutes}分</p>
-                </div>
-                <div class="text-enji font-bold text-lg">¥${menu.price.toLocaleString()}</div>
-              </div>
-            </div>
-          </div>
-        `}).join('');
+        // Load practitioners and options in background
+        loadPractitioners();
+        loadOptions();
+
       } catch (e) {
         console.error(e);
         container.innerHTML = '<div class="text-center text-red-400">メニュー読み込みエラー</div>';
       }
     }
 
+    function renderMenus(menus) {
+      const container = document.getElementById('menu-list');
+      if (menus.length === 0) {
+        container.innerHTML = '<div class="text-center text-gray-400 py-8">該当するメニューがありません</div>';
+        return;
+      }
+      container.innerHTML = menus.map(menu => {
+        const imageHtml = menu.imageUrl
+          ? `<img src="${menu.imageUrl}" alt="${menu.name}" class="w-full h-32 object-cover rounded-t-xl mb-3">`
+          : '';
+        return `
+        <div onclick='selectMenu(${JSON.stringify(menu)})' class="bg-white shadow-sm border border-gray-100 rounded-xl cursor-pointer hover:border-enji transition-all active:scale-95 overflow-hidden">
+          ${imageHtml}
+          <div class="p-4">
+            <div class="flex justify-between items-center">
+              <div>
+                <div class="flex items-center gap-2 mb-1">
+                   <span class="text-[10px] bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full">${menu.category || 'その他'}</span>
+                </div>
+                <h3 class="font-bold text-gray-800">${menu.name}</h3>
+                <p class="text-xs text-gray-500 mt-1 mb-1 line-clamp-2">${menu.description || ''}</p>
+                <p class="text-sm text-gray-400 mt-1"><i class="far fa-clock"></i> ${menu.minutes}分</p>
+              </div>
+              <div class="text-enji font-bold text-lg">¥${menu.price.toLocaleString()}</div>
+            </div>
+          </div>
+        </div>
+      `}).join('');
+    }
+
+    function updateMenuCount(count) {
+      document.getElementById('menu-count').innerText = `${count}件`;
+    }
+
+    window.filterByCategory = (category) => {
+      // Update active tab
+      document.querySelectorAll('.category-tab').forEach(btn => {
+        if (btn.dataset.category === category) {
+          btn.classList.add('bg-enji', 'text-white');
+          btn.classList.remove('bg-gray-100', 'text-gray-600');
+        } else {
+          btn.classList.remove('bg-enji', 'text-white');
+          btn.classList.add('bg-gray-100', 'text-gray-600');
+        }
+      });
+
+      if (category === 'all') {
+        renderMenus(state.menus);
+        updateMenuCount(state.menus.length);
+      } else {
+        const filtered = state.menus.filter(m => (m.category || 'その他') === category);
+        renderMenus(filtered);
+        updateMenuCount(filtered.length);
+      }
+    };
+
+    async function loadPractitioners() {
+      try {
+        if (location.hostname === 'localhost' || location.hostname === '127.0.0.1') {
+          // Mock
+          state.practitioners = [
+            { id: '1', name: '山田 花子', title: '店長', imageUrl: 'https://placehold.co/100', nominationFee: 500, active: true },
+            { id: '2', name: '佐藤 次郎', title: 'スタッフ', imageUrl: 'https://placehold.co/100', nominationFee: 0, active: true }
+          ];
+        } else {
+          const res = await fetch(`${API_BASE_URL}/api/practitioners`);
+          state.practitioners = await res.json();
+        }
+      } catch (e) {
+        console.error('Failed to load practitioners', e);
+      }
+    }
+
+    async function loadOptions() {
+      try {
+        if (location.hostname === 'localhost' || location.hostname === '127.0.0.1') {
+          // Mock
+          state.options = [
+            { id: '1', name: '延長10分', minutes: 10, price: 1000 },
+            { id: '2', name: '指名料', minutes: 0, price: 500 }
+          ];
+        } else {
+          const res = await fetch(`${API_BASE_URL}/api/options`);
+          state.options = await res.json();
+        }
+      } catch (e) {
+        console.error('Failed to load options', e);
+      }
+    }
+
     window.selectMenu = (menu) => {
       state.menu = menu;
+      state.selectedOptions = []; // Reset options
+      state.selectedPractitioner = null; // Reset practitioner
+
+      // Update UI for Option Selection Step
+      document.getElementById('options-selected-menu').innerText = menu.name;
+      document.getElementById('total-summary-menu').innerText = menu.name;
+      updateTotalSummary(); // Initial calculation
+
+      renderOptions();
+
+      // Update Step UI
+      updateStepIndicator(2);
+
       document.getElementById('step-menu').classList.add('hidden');
+      document.getElementById('step-options').classList.remove('hidden');
+      window.scrollTo(0, 0);
+    };
+
+    function updateStepIndicator(step) {
+      for (let i = 1; i <= 5; i++) {
+        const icon = document.getElementById(`step-icon-${i}`);
+        const line = document.getElementById(`step-line-${i}`);
+
+        if (i < step) {
+          // Completed
+          icon.className = "w-6 h-6 rounded-full bg-enji text-white flex items-center justify-center text-xs font-bold";
+          icon.innerHTML = '<i class="fas fa-check"></i>';
+          if (line) line.className = "flex-1 h-0.5 bg-enji mx-1";
+        } else if (i === step) {
+          // Current
+          icon.className = "w-6 h-6 rounded-full bg-enji text-white flex items-center justify-center text-xs font-bold";
+          icon.innerText = i;
+          if (line) line.className = "flex-1 h-0.5 bg-gray-200 mx-1";
+        } else {
+          // Future
+          icon.className = "w-6 h-6 rounded-full bg-gray-200 text-gray-400 flex items-center justify-center text-xs font-bold";
+          icon.innerText = i;
+          if (line) line.className = "flex-1 h-0.5 bg-gray-200 mx-1";
+        }
+      }
+    }
+
+    function renderOptions() {
+      const container = document.getElementById('option-list');
+      // メニューに関連付けられたオプションのみ表示するロジックがあればここでフィルタリング
+      // 現状は全オプション表示とする（またはメニューにoptionIdsがあればそれを使う）
+
+      let targetOptions = state.options;
+      if (state.menu.optionIds) {
+        const allowedIds = String(state.menu.optionIds).split(',').map(s => s.trim());
+        targetOptions = state.options.filter(opt => allowedIds.includes(String(opt.id)));
+      }
+
+      if (targetOptions.length === 0) {
+        container.innerHTML = '<div class="text-center text-gray-400 py-4">利用可能なオプションはありません</div>';
+        document.getElementById('options-button-text').innerText = '日時選択へ進む';
+        return;
+      }
+
+      container.innerHTML = targetOptions.map(opt => `
+            <div onclick="toggleOption('${opt.id}')" id="option-card-${opt.id}" 
+                 class="bg-white p-4 rounded-xl border border-gray-100 shadow-sm cursor-pointer transition-all hover:border-gray-300 flex justify-between items-center group">
+                <div class="flex items-center gap-3">
+                    <div class="w-5 h-5 rounded border border-gray-300 flex items-center justify-center text-white transition-colors group-hover:border-gray-400" id="option-check-${opt.id}">
+                        <i class="fas fa-check text-xs opacity-0"></i>
+                    </div>
+                    <div>
+                        <p class="font-bold text-gray-800 text-sm">${opt.name}</p>
+                        <p class="text-xs text-gray-500">${opt.description || ''}</p>
+                    </div>
+                </div>
+                <div class="text-right">
+                    <p class="font-bold text-gray-700">¥${opt.price.toLocaleString()}</p>
+                    <p class="text-xs text-gray-400">+${opt.minutes}分</p>
+                </div>
+            </div>
+        `).join('');
+    }
+
+    window.toggleOption = (optionId) => {
+      const option = state.options.find(o => String(o.id) === String(optionId));
+      if (!option) return;
+
+      const index = state.selectedOptions.findIndex(o => String(o.id) === String(optionId));
+      if (index === -1) {
+        // Add
+        state.selectedOptions.push(option);
+        document.getElementById(`option-card-${optionId}`).classList.add('border-enji', 'bg-red-50');
+        document.getElementById(`option-card-${optionId}`).classList.remove('border-gray-100', 'bg-white');
+        const check = document.getElementById(`option-check-${optionId}`);
+        check.classList.add('bg-enji', 'border-enji');
+        check.classList.remove('border-gray-300');
+        check.querySelector('i').classList.remove('opacity-0');
+      } else {
+        // Remove
+        state.selectedOptions.splice(index, 1);
+        document.getElementById(`option-card-${optionId}`).classList.remove('border-enji', 'bg-red-50');
+        document.getElementById(`option-card-${optionId}`).classList.add('border-gray-100', 'bg-white');
+        const check = document.getElementById(`option-check-${optionId}`);
+        check.classList.remove('bg-enji', 'border-enji');
+        check.classList.add('border-gray-300');
+        check.querySelector('i').classList.add('opacity-0');
+      }
+      updateTotalSummary();
+    };
+
+    function updateTotalSummary() {
+      if (!state.menu) return;
+
+      let totalMinutes = state.menu.minutes;
+      let totalPrice = state.menu.price;
+
+      state.selectedOptions.forEach(opt => {
+        totalMinutes += opt.minutes;
+        totalPrice += opt.price;
+      });
+
+      // Update Option Summary Box
+      const optionsSummary = document.getElementById('options-summary');
+      if (state.selectedOptions.length > 0) {
+        optionsSummary.classList.remove('hidden');
+        const names = state.selectedOptions.map(o => o.name).join(' / ');
+        document.getElementById('options-summary-names').innerText = names;
+
+        let addedPrice = 0;
+        let addedMins = 0;
+        state.selectedOptions.forEach(o => { addedPrice += o.price; addedMins += o.minutes; });
+        document.getElementById('options-summary-info').innerText = `+¥${addedPrice.toLocaleString()} / +${addedMins}分`;
+
+        document.getElementById('options-button-text').innerText = `オプションを追加して日時選択へ`;
+      } else {
+        optionsSummary.classList.add('hidden');
+        document.getElementById('options-button-text').innerText = '日時選択へ進む';
+      }
+
+      // Update Total Box
+      document.getElementById('total-time').innerText = `所要時間: 約${totalMinutes}分`;
+      document.getElementById('total-price').innerText = `¥${totalPrice.toLocaleString()}`;
+    }
+
+    window.proceedWithOptions = () => {
+      moveToDateSelection();
+    };
+
+    window.skipOptions = () => {
+      state.selectedOptions = [];
+      moveToDateSelection();
+    };
+
+    function moveToDateSelection() {
+      document.getElementById('step-options').classList.add('hidden');
       document.getElementById('step-date').classList.remove('hidden');
+      updateStepIndicator(3);
+
+      // Render Practitioners
+      renderPractitionerPills();
+
+      // Initialize Calendar
       state.date = null;
       state.time = null;
       initWeeklyCalendar();
+      window.scrollTo(0, 0);
+    }
+
+    function renderPractitionerPills() {
+      const container = document.getElementById('practitioner-pills');
+      container.innerHTML = `
+            <button onclick="selectPractitioner(null)" id="pill-no-nomination" 
+                class="px-4 py-2 rounded-full text-sm font-bold border transition-colors bg-enji text-white border-enji shadow-sm">
+                指名なし
+            </button>
+        ` + state.practitioners.map(p => `
+            <button onclick="selectPractitioner('${p.id}')" id="pill-practitioner-${p.id}"
+                class="px-4 py-2 rounded-full text-sm font-medium border border-gray-200 bg-white text-gray-600 hover:border-gray-300 transition-colors">
+                ${p.name}
+            </button>
+        `).join('');
+
+      // Default to no nomination logic updates
+      selectPractitioner(null);
+    }
+
+    window.selectPractitioner = (practitionerId) => {
+      // Update selection state
+      if (practitionerId) {
+        state.selectedPractitioner = state.practitioners.find(p => String(p.id) === String(practitionerId));
+      } else {
+        state.selectedPractitioner = null;
+      }
+
+      // Update UI Pills
+      document.querySelectorAll('#practitioner-pills button').forEach(btn => {
+        btn.classList.remove('bg-enji', 'text-white', 'border-enji', 'font-bold', 'shadow-sm');
+        btn.classList.add('bg-white', 'text-gray-600', 'border-gray-200', 'font-medium');
+      });
+
+      const activeId = practitionerId ? `pill-practitioner-${practitionerId}` : 'pill-no-nomination';
+      const activeBtn = document.getElementById(activeId);
+      if (activeBtn) {
+        activeBtn.classList.add('bg-enji', 'text-white', 'border-enji', 'font-bold', 'shadow-sm');
+        activeBtn.classList.remove('bg-white', 'text-gray-600', 'border-gray-200');
+      }
+
+      // Update Card
+      const card = document.getElementById('selected-practitioner-card');
+      if (state.selectedPractitioner) {
+        card.classList.remove('hidden');
+        const p = state.selectedPractitioner;
+        document.getElementById('selected-practitioner-name').innerText = p.name;
+
+        if (p.imageUrl) {
+          document.getElementById('selected-practitioner-image').src = p.imageUrl;
+          document.getElementById('selected-practitioner-image-container').classList.remove('hidden');
+        } else {
+          document.getElementById('selected-practitioner-image-container').classList.add('hidden');
+        }
+
+        if (p.nominationFee > 0) {
+          document.getElementById('selected-practitioner-fee').innerText = `+¥${parseInt(p.nominationFee).toLocaleString()}`;
+          document.getElementById('selected-practitioner-fee').classList.remove('hidden');
+        } else {
+          document.getElementById('selected-practitioner-fee').classList.add('hidden');
+        }
+
+        // Other details...
+      } else {
+        card.classList.add('hidden');
+      }
+
+      // Reload Calendar
+      renderWeeklyCalendar();
     };
 
     // Weekly Calendar Logic
@@ -569,12 +1107,22 @@
 
       try {
         let weeklyData = [];
+        // Calculate total minutes including options
+        let totalMinutes = state.menu ? state.menu.minutes : 60;
+        if (state.selectedOptions && state.selectedOptions.length > 0) {
+          state.selectedOptions.forEach(o => totalMinutes += o.minutes);
+        }
+
         if (location.hostname === 'localhost' || location.hostname === '127.0.0.1') {
           // Mock Data
           await new Promise(r => setTimeout(r, 500));
           weeklyData = generateMockWeeklyData(currentWeekStart);
         } else {
-          const res = await fetch(`${API_BASE_URL}/api/weekly-availability?startDate=${startDateStr}&minutes=${state.menu.minutes}`);
+          let url = `${API_BASE_URL}/api/weekly-availability?startDate=${startDateStr}&minutes=${totalMinutes}`;
+          if (state.selectedPractitioner) {
+            url += `&practitionerId=${state.selectedPractitioner.id}`;
+          }
+          const res = await fetch(url);
           weeklyData = await res.json();
         }
 
@@ -610,11 +1158,21 @@
             let cellContent = '';
             let cellClass = '';
 
-            if (slot.status === '○') {
-              cellContent = '<i class="far fa-circle text-enji text-lg"></i>'; // Using FontAwesome circle for better look, or just text
-              cellClass = 'cursor-pointer hover:bg-red-50 transition-colors';
+            if (slot.status === '⚪︎' || slot.status === '○') {
+              cellContent = '<i class="far fa-circle text-enji text-lg"></i>';
+              // Pass availablePractitioners if exists
+              const availablePractitionersStr = slot.availablePractitioners ? JSON.stringify(slot.availablePractitioners).replace(/"/g, '&quot;') : '[]';
+              cellClass = `cursor-pointer hover:bg-red-50 transition-colors`;
+              // Add click event logic directly to td
+              rowHtml += `<td class="py-3 text-center border font-medium border-gray-100 ${cellClass}" 
+                            onclick="selectTime('${day.date}', '${time}', '${slot.status}', ${availablePractitionersStr})">
+                            ${cellContent}
+                          </td>`;
             } else if (slot.status === '×') {
               cellContent = '<i class="fas fa-times text-gray-400 text-lg"></i>';
+              cellClass = 'bg-gray-100';
+            } else if (slot.status === '休') {
+              cellContent = '<span class="text-xs text-gray-400 font-bold">休</span>';
               cellClass = 'bg-gray-100';
             } else {
               cellContent = '<span class="text-gray-300 font-bold">－</span>';
@@ -640,31 +1198,64 @@
       }
     }
 
-    function selectWeeklySlot(date, time) {
+    window.selectTime = (date, time, status, availablePractitioners = []) => {
+      // Allow both circle characters just in case
+      if (status !== '⚪︎' && status !== '○' && status !== '△') return;
+
       state.date = date;
       state.time = time;
+
+      // 指名なしの場合、ランダムまたはロジックで仮決定
+      if (!state.selectedPractitioner && availablePractitioners && availablePractitioners.length > 0) {
+        const randomIndex = Math.floor(Math.random() * availablePractitioners.length);
+        state.assignedPractitioner = availablePractitioners[randomIndex];
+      } else {
+        state.assignedPractitioner = null;
+      }
+
       document.getElementById('step-date').classList.add('hidden');
       document.getElementById('step-confirm').classList.remove('hidden');
+      updateStepIndicator(4);
 
       document.getElementById('confirm-menu').innerText = state.menu.name;
       document.getElementById('confirm-date').innerText = state.date;
 
       // Calculate end time
-      console.log('Time calculation debug:', {
-        startTime: time,
-        menuMinutes: state.menu.minutes,
-        typeOfMinutes: typeof state.menu.minutes
-      });
-
+      let totalMinutes = state.menu.minutes;
+      if (state.selectedOptions && state.selectedOptions.length > 0) {
+        state.selectedOptions.forEach(o => totalMinutes += o.minutes);
+      }
       const [hours, minutes] = time.split(':').map(Number);
       const endDate = new Date();
-      endDate.setHours(hours, minutes + parseInt(state.menu.minutes));
+      endDate.setHours(hours, minutes + parseInt(totalMinutes));
       const endTime = `${String(endDate.getHours()).padStart(2, '0')}:${String(endDate.getMinutes()).padStart(2, '0')}`;
 
-      console.log('Calculated endTime:', endTime);
-
       document.getElementById('confirm-time').innerText = `${state.time} 〜 ${endTime}`;
-    }
+
+      // Practitioner display
+      let practitionerText = '';
+      if (state.selectedPractitioner) {
+        practitionerText = `${state.selectedPractitioner.name} (指名)`;
+      } else if (state.assignedPractitioner) {
+        practitionerText = `${state.assignedPractitioner.name} (指名なし)`;
+      } else {
+        practitionerText = '指名なし (当日決定)';
+      }
+      document.getElementById('confirm-practitioner').innerText = practitionerText;
+
+      if (state.user && state.user.displayName) {
+        document.getElementById('user-name-input').value = state.user.displayName;
+      }
+
+      // Pre-fill phone if available (e.g. from modifying reservation)
+      if (state.modifyingReservation && state.modifyingReservation.phone) {
+        document.getElementById('user-phone-input').value = state.modifyingReservation.phone;
+      } else if (state.userPhone) { // If we store user phone in state elsewhere
+        document.getElementById('user-phone-input').value = state.userPhone;
+      }
+
+      window.scrollTo(0, 0);
+    };
 
     function formatDate(date) {
       const y = date.getFullYear();
@@ -706,26 +1297,54 @@
 
     window.submitReservation = async () => {
       const name = document.getElementById('user-name-input').value;
+      const phone = document.getElementById('user-phone-input').value;
+
       if (!name) return alert('お名前を入力してください');
+      if (phone && !/^[0-9-]{10,13}$/.test(phone)) return alert('電話番号を正しい形式で入力してください');
+
+      if (!confirm('予約を確定してもよろしいですか？')) return;
 
       document.getElementById('loading').classList.remove('hidden');
       try {
+        // Calculate total values
+        let totalMinutes = state.menu.minutes;
+        let totalPrice = state.menu.price;
+        if (state.selectedOptions) {
+          state.selectedOptions.forEach(o => {
+            totalMinutes += o.minutes;
+            totalPrice += o.price;
+          });
+        }
+        if (state.selectedPractitioner && state.selectedPractitioner.nominationFee) {
+          totalPrice += parseInt(state.selectedPractitioner.nominationFee);
+        }
+
         const payload = {
-          userId: state.user.userId,
+          userId: state.user ? state.user.userId : 'guest',
           name: name,
-          menu: {
-            name: state.menu.name,
-            minutes: state.menu.minutes
-          },
-          phone: document.getElementById('user-phone-input')?.value || '', // Added phone just in case, though not in input yet
+          phone: phone,
+          menu: state.menu,
           date: state.date,
-          time: state.time
+          time: state.time,
+          selectedOptions: state.selectedOptions,
+          practitionerId: state.selectedPractitioner ? state.selectedPractitioner.id : (state.assignedPractitioner ? state.assignedPractitioner.id : ''),
+          practitionerName: state.selectedPractitioner ? state.selectedPractitioner.name : (state.assignedPractitioner ? state.assignedPractitioner.name : ''),
+          totalMinutes: totalMinutes,
+          totalPrice: totalPrice
         };
 
         let result = { status: 'success' };
         if (!(location.hostname === 'localhost' || location.hostname === '127.0.0.1')) {
-          const res = await fetch(`${API_BASE_URL}/api/reservations`, {
-            method: 'POST',
+          let url = `${API_BASE_URL}/api/reservations`;
+          let method = 'POST';
+
+          if (state.modifyingReservation) {
+            url = `${API_BASE_URL}/api/reservations/${state.modifyingReservation.id}`;
+            method = 'PUT';
+          }
+
+          const res = await fetch(url, {
+            method: method,
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payload)
           });
@@ -735,12 +1354,17 @@
         }
 
         if (result.status === 'success') {
-          alert('予約が完了しました！');
-          switchTab('mypage');
+          updateStepIndicator(5);
+          alert(state.modifyingReservation ? '予約を変更しました！' : '予約が完了しました！');
+          // Reset modification state
+          state.modifyingReservation = null;
+          // Reload to reset
+          location.reload();
         } else {
           alert('エラー: ' + (result.message || JSON.stringify(result)));
         }
       } catch (e) {
+        console.error(e);
         alert('通信エラー');
       } finally {
         document.getElementById('loading').classList.add('hidden');
@@ -787,9 +1411,13 @@
       document.getElementById('modal-date').innerText = `${item.date} ${item.time}`;
       document.getElementById('modal-menu').innerText = item.menu;
 
-      const cancelBtn = document.getElementById('modal-cancel-btn');
-      cancelBtn.onclick = () => {
+      document.getElementById('modal-cancel-btn').onclick = () => {
         cancelReservation(item.id);
+        closeModal();
+      };
+
+      document.getElementById('modal-change-btn').onclick = () => {
+        startReservationChange(item);
         closeModal();
       };
 
@@ -798,6 +1426,55 @@
 
     window.closeModal = () => {
       document.getElementById('reservation-modal').classList.add('hidden');
+    };
+
+    window.startReservationChange = (reservation) => {
+      // Set modification mode
+      state.modifyingReservation = reservation;
+
+      // Restore Menu
+      // Note: In a real app we should match by ID, but simplified here by name matching as menu ID might not be in history response
+      // However, getReservationsByUserId logic returns 'menu' as name string currently. 
+      // We need menu object for logic. Let's try to find it in api/menus list.
+      const menuObj = state.menus.find(m => m.name === reservation.menu);
+      if (!menuObj) {
+        alert('メニュー情報が見つかりません。変更を受け付けられません。');
+        return;
+      }
+      state.menu = menuObj;
+
+      // Restore Options
+      state.selectedOptions = [];
+      if (reservation.optionIds) {
+        const ids = String(reservation.optionIds).split(',');
+        state.selectedOptions = state.options.filter(o => ids.includes(String(o.id)));
+      }
+
+      // Restore Practitioner
+      if (reservation.practitionerId) {
+        state.selectedPractitioner = state.practitioners.find(p => String(p.id) === String(reservation.practitionerId)) || null;
+        // If not found in current loaded practitioners (maybe inactive), might need handling, but null is safe
+      } else {
+        state.selectedPractitioner = null;
+      }
+
+      // Populate inputs
+      if (reservation.phone) {
+        // We need to wait for DOM update or ensure element exists. 
+        // user-phone-input is in confirm step, handled in showConfirmStep or we set it in state?
+        // Not in state currently, so we set a flag or just handle in confirm step logic if we want to preserve old phone
+        // Simpler: Just pre-fill if we go to confirm step? 
+        // But we go to date selection first.
+      }
+
+      // Move to Date Selection
+      // We skip option selection as we restored it
+      document.getElementById('home-view').classList.remove('hidden'); // Ensure we are in home view if coming from mypage
+      switchTab('home'); // Switch tab first
+
+      moveToDateSelection();
+
+      alert('変更後の日時を選択してください');
     };
 
     window.cancelReservation = async (reservationId) => {

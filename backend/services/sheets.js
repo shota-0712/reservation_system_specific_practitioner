@@ -229,7 +229,7 @@ async function getUserReservations(userId) {
     const sheets = await getSheetsClient();
     const response = await sheets.spreadsheets.values.get({
         spreadsheetId: SHEET_ID,
-        range: 'reservations!A2:O',  // A-O列まで読み取り（オプション情報含む）
+        range: 'reservations!A2:P',  // A-P列まで読み取り（P:電話番号）
     });
 
     const rows = response.data.values || [];
@@ -251,6 +251,7 @@ async function getUserReservations(userId) {
                 optionNames: row[12] || '',
                 totalMinutes: row[13] ? parseInt(row[13]) : null,
                 totalPrice: row[14] ? parseInt(row[14]) : null,
+                phone: row[15] || '',  // P: 電話番号
             });
         }
     }
@@ -262,7 +263,7 @@ async function getAllReservations() {
     const sheets = await getSheetsClient();
     const response = await sheets.spreadsheets.values.get({
         spreadsheetId: SHEET_ID,
-        range: 'reservations!A2:O',  // A-O列まで読み取り（オプション情報含む）
+        range: 'reservations!A2:P',  // A-P列まで読み取り（P:電話番号）
     });
 
     const rows = response.data.values || [];
@@ -282,6 +283,7 @@ async function getAllReservations() {
         optionNames: row[12] || '',      // M: オプション名（カンマ区切り）
         totalMinutes: row[13] ? parseInt(row[13]) : null,  // N: 合計時間
         totalPrice: row[14] ? parseInt(row[14]) : null,    // O: 合計料金
+        phone: row[15] || '',            // P: 電話番号
     }));
 
     // 日付順でソート（新しい順）
@@ -303,7 +305,7 @@ async function addReservation(data) {
 
     await sheets.spreadsheets.values.append({
         spreadsheetId: SHEET_ID,
-        range: 'reservations!A:O',  // A-O列まで拡張 (L:optionIds, M:optionNames, N:totalMinutes, O:totalPrice)
+        range: 'reservations!A:P',  // A-P列まで拡張 (P:電話番号)
         valueInputOption: 'USER_ENTERED',
         requestBody: {
             values: [[
@@ -321,7 +323,8 @@ async function addReservation(data) {
                 optionIds,                    // L: option IDs
                 optionNames,                  // M: option Names
                 data.totalMinutes || data.menu.minutes,  // N: 合計施術時間
-                data.totalPrice || data.menu.price,       // O: 合計料金
+                data.totalPrice || data.menu.price,      // O: 合計料金
+                data.phone || '',                        // P: 電話番号
             ]],
         },
     });
@@ -333,7 +336,7 @@ async function getReservationById(reservationId, userId) {
     const sheets = await getSheetsClient();
     const response = await sheets.spreadsheets.values.get({
         spreadsheetId: SHEET_ID,
-        range: 'reservations!A2:O',  // オプション・合計情報まで拡張
+        range: 'reservations!A2:P',  // P列（電話番号）まで拡張
     });
 
     const rows = response.data.values || [];
@@ -353,6 +356,7 @@ async function getReservationById(reservationId, userId) {
                 optionNames: row[12] || '',
                 totalMinutes: row[13] ? parseInt(row[13]) : null,
                 totalPrice: row[14] ? parseInt(row[14]) : null,
+                phone: row[15] || '',
             };
         }
     }
@@ -365,7 +369,7 @@ async function getReservationByIdForAdmin(reservationId) {
     const sheets = await getSheetsClient();
     const response = await sheets.spreadsheets.values.get({
         spreadsheetId: SHEET_ID,
-        range: 'reservations!A2:O',  // Extended to include option columns
+        range: 'reservations!A2:P',  // P列（電話番号）まで拡張
     });
 
     const rows = response.data.values || [];
@@ -386,6 +390,7 @@ async function getReservationByIdForAdmin(reservationId) {
                 optionNames: row[12] || '',
                 totalMinutes: row[13] ? parseInt(row[13]) : 0,
                 totalPrice: row[14] ? parseInt(row[14]) : 0,
+                phone: row[15] || '',
             };
         }
     }
@@ -464,7 +469,7 @@ async function updateReservation(reservationId, userId, updateData) {
     // 対象行を見つける
     const response = await sheets.spreadsheets.values.get({
         spreadsheetId: SHEET_ID,
-        range: 'reservations!A2:O',
+        range: 'reservations!A2:P',
     });
 
     const rows = response.data.values || [];
@@ -487,6 +492,7 @@ async function updateReservation(reservationId, userId, updateData) {
                 optionNames: rows[i][12] || '',
                 totalMinutes: rows[i][13] ? parseInt(rows[i][13]) : null,
                 totalPrice: rows[i][14] ? parseInt(rows[i][14]) : null,
+                phone: rows[i][15] || '',
             };
             break;
         }
@@ -513,6 +519,8 @@ async function updateReservation(reservationId, userId, updateData) {
                 { range: `reservations!M${targetRowIndex}`, values: [[updateData.optionNames || '']] },
                 { range: `reservations!N${targetRowIndex}`, values: [[updateData.totalMinutes]] },
                 { range: `reservations!O${targetRowIndex}`, values: [[updateData.totalPrice]] },
+                // data.phone が undefined の場合は更新しない（API側で渡さない場合があるため）
+                ...(updateData.phone !== undefined ? [{ range: `reservations!P${targetRowIndex}`, values: [[updateData.phone]] }] : []),
             ]
         }
     });

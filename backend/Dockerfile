@@ -8,6 +8,10 @@ COPY package*.json ./
 # 依存関係をインストール
 RUN npm ci --only=production
 
+# Timezone setting
+RUN apt-get update && apt-get install -y tzdata
+ENV TZ=Asia/Tokyo
+
 # ソースコードをコピー
 COPY . .
 
