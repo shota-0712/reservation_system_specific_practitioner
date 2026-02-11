@@ -31,6 +31,59 @@ if [ -z "${CLOUDSQL_CONNECTION}" ]; then
   exit 1
 fi
 
+CB_REGION="${CB_REGION:-asia-northeast1}"
+CB_CONNECTION="${CB_CONNECTION:-${TRIGGER_PREFIX}-conn}"
+CB_REPOSITORY="${CB_REPOSITORY:-${GITHUB_REPO}}"
+REMOTE_URI="${REMOTE_URI:-https://github.com/${GITHUB_OWNER}/${GITHUB_REPO}.git}"
+
+# Cloud Build GitHub triggers are increasingly moving to 2nd gen repos (cloudbuild/v2).
+# For 2nd gen repos, you must:
+# 1) Create a GitHub connection (one-time, opens a browser URL)
+# 2) Register the GitHub repo in that connection
+#
+# This script assumes the connection/repository already exist and fails fast with
+# copy-pastable commands if they don't.
+if ! gcloud builds connections describe "${CB_CONNECTION}" --project="${PROJECT_ID}" --region="${CB_REGION}" >/dev/null 2>&1; then
+  echo "ERROR: Cloud Build GitHub connection not found."
+  echo ""
+  echo "Create it (one-time; follow printed URLs):"
+  echo "  gcloud builds connections create github ${CB_CONNECTION} --project=${PROJECT_ID} --region=${CB_REGION}"
+  echo ""
+  echo "Then register the repo:"
+  echo "  gcloud builds repositories create ${CB_REPOSITORY} \\"
+  echo "    --remote-uri=${REMOTE_URI} \\"
+  echo "    --connection=${CB_CONNECTION} \\"
+  echo "    --project=${PROJECT_ID} \\"
+  echo "    --region=${CB_REGION}"
+  exit 1
+fi
+
+if ! gcloud builds repositories describe "${CB_REPOSITORY}" --project="${PROJECT_ID}" --connection="${CB_CONNECTION}" --region="${CB_REGION}" >/dev/null 2>&1; then
+  echo "ERROR: Cloud Build repository not found in the connection."
+  echo ""
+  echo "Create it (one-time):"
+  echo "  gcloud builds repositories create ${CB_REPOSITORY} \\"
+  echo "    --remote-uri=${REMOTE_URI} \\"
+  echo "    --connection=${CB_CONNECTION} \\"
+  echo "    --project=${PROJECT_ID} \\"
+  echo "    --region=${CB_REGION}"
+  exit 1
+fi
+
+REPOSITORY_RESOURCE="projects/${PROJECT_ID}/locations/${CB_REGION}/connections/${CB_CONNECTION}/repositories/${CB_REPOSITORY}"
+
+TRIGGER_SERVICE_ACCOUNT="${TRIGGER_SERVICE_ACCOUNT:-}"
+if [ -z "${TRIGGER_SERVICE_ACCOUNT}" ]; then
+  PROJECT_NUMBER="$(gcloud projects describe "${PROJECT_ID}" --format="value(projectNumber)" 2>/dev/null || true)"
+  if [ -n "${PROJECT_NUMBER}" ]; then
+    TRIGGER_SERVICE_ACCOUNT="projects/${PROJECT_ID}/serviceAccounts/${PROJECT_NUMBER}@cloudbuild.gserviceaccount.com"
+  fi
+fi
+SERVICE_ACCOUNT_FLAG=""
+if [ -n "${TRIGGER_SERVICE_ACCOUNT}" ]; then
+  SERVICE_ACCOUNT_FLAG="--service-account=${TRIGGER_SERVICE_ACCOUNT}"
+fi
+
 create_trigger_if_missing() {
   local trigger_name="$1"
   local included_files="$2"
@@ -39,9 +92,9 @@ create_trigger_if_missing() {
   local existing_id
   existing_id="$(gcloud builds triggers list \
     --project="${PROJECT_ID}" \
-    --filter="name=${trigger_name}" \
-    --format="value(id)" \
-    | head -n1 || true)"
+    --region="${CB_REGION}" \
+    --format="csv[no-heading](id,name)" \
+    | awk -F',' -v n="${trigger_name}" '$2==n {print $1; exit}' || true)"
 
   if [ -n "${existing_id}" ]; then
     echo "SKIP: trigger already exists (${trigger_name}, id=${existing_id})"
@@ -51,12 +104,13 @@ create_trigger_if_missing() {
   gcloud builds triggers create github \
     --project="${PROJECT_ID}" \
     --name="${trigger_name}" \
-    --repo-owner="${GITHUB_OWNER}" \
-    --repo-name="${GITHUB_REPO}" \
+    --repository="${REPOSITORY_RESOURCE}" \
+    --region="${CB_REGION}" \
     --branch-pattern="${BRANCH_PATTERN}" \
     --build-config="cloudbuild.yaml" \
     --included-files="${included_files}" \
-    --substitutions="${substitutions}"
+    --substitutions="${substitutions}" \
+    ${SERVICE_ACCOUNT_FLAG}
 
   echo "CREATED: ${trigger_name}"
 }
