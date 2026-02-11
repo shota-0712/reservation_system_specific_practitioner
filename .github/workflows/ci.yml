@@ -1,0 +1,104 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+jobs:
+  backend-v2:
+    name: backend-v2
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend-v2
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: backend-v2/package-lock.json
+
+      - name: Install
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Unit Tests
+        run: npm run test:ci
+
+      - name: Build
+        run: npm run build
+
+  admin-dashboard:
+    name: admin-dashboard
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: admin-dashboard
+    env:
+      NEXT_PUBLIC_API_URL: http://localhost:8080
+      NEXT_PUBLIC_TENANT_ID: default
+      NEXT_PUBLIC_FIREBASE_API_KEY: dummy
+      NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN: example.firebaseapp.com
+      NEXT_PUBLIC_FIREBASE_PROJECT_ID: example
+      NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET: example.appspot.com
+      NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID: "1234567890"
+      NEXT_PUBLIC_FIREBASE_APP_ID: 1:1234567890:web:dummy
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: admin-dashboard/package-lock.json
+
+      - name: Install
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Build
+        run: npm run build
+
+  landing-page:
+    name: landing-page
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: landing-page
+    env:
+      NEXT_PUBLIC_ADMIN_URL: /login
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: landing-page/package-lock.json
+
+      - name: Install
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Build
+        run: npm run build
+

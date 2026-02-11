@@ -1,0 +1,2211 @@
+<!DOCTYPE html>
+<html lang="ja">
+
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+  <title>En Salon Reservation</title>
+  <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+  <!-- Font Awesome -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <link
+    href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&family=Noto+Sans+JP:wght@400;500;700&display=swap"
+    rel="stylesheet">
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="./config.js"></script>
+  <script>
+    tailwind.config = {
+      darkMode: ["class"],
+      theme: {
+        container: {
+          center: true,
+          padding: "2rem",
+          screens: {
+            "2xl": "1400px",
+          },
+        },
+        extend: {
+          boxShadow: {
+            'soft': '0 4px 20px -2px rgba(0, 0, 0, 0.05)',
+            'glow': '0 0 15px rgba(225, 29, 72, 0.3)', // Primary color glow
+          },
+          colors: {
+            border: "hsl(214.3 31.8% 91.4%)",
+            input: "hsl(214.3 31.8% 91.4%)",
+            ring: "hsl(346 77% 49%)",
+            background: "hsl(0 0% 100%)",
+            foreground: "hsl(222.2 84% 4.9%)",
+            primary: {
+              DEFAULT: "hsl(346 77% 49%)",
+              foreground: "hsl(355.7 100% 97.3%)",
+            },
+            secondary: {
+              DEFAULT: "hsl(210 40% 96.1%)",
+              foreground: "hsl(222.2 47.4% 11.2%)",
+            },
+            destructive: {
+              DEFAULT: "hsl(0 84.2% 60.2%)",
+              foreground: "hsl(210 40% 98%)",
+            },
+            muted: {
+              DEFAULT: "hsl(210 40% 96.1%)",
+              foreground: "hsl(215.4 16.3% 46.9%)",
+            },
+            accent: {
+              DEFAULT: "hsl(210 40% 96.1%)",
+              foreground: "hsl(222.2 47.4% 11.2%)",
+            },
+            popover: {
+              DEFAULT: "hsl(0 0% 100%)",
+              foreground: "hsl(222.2 84% 4.9%)",
+            },
+            card: {
+              DEFAULT: "hsl(0 0% 100%)",
+              foreground: "hsl(222.2 84% 4.9%)",
+            },
+            // Legacy mapping for compatibility
+            enji: "hsl(346 77% 49%)",
+            'enji-light': "hsl(346 77% 55%)",
+            'enji-pale': "hsl(346 77% 95%)",
+          },
+          borderRadius: {
+            lg: "0.5rem",
+            md: "calc(0.5rem - 2px)",
+            sm: "calc(0.5rem - 4px)",
+            '2xl': "1rem",
+            '3xl': "1.5rem",
+          },
+          fontFamily: {
+            sans: ["Inter", "Noto Sans JP", "sans-serif"],
+          },
+        },
+      },
+    }
+  </script>
+  <style>
+    :root {
+      /* Theme Color Default (Fallback) */
+      --color-primary: #e11d48;
+    }
+
+    body {
+      font-family: 'Inter', 'Noto Sans JP', sans-serif;
+      -webkit-font-smoothing: antialiased;
+      background-color: hsl(0 0% 100%);
+      color: hsl(222.2 84% 4.9%);
+    }
+
+    .pb-safe {
+      padding-bottom: env(safe-area-inset-bottom);
+    }
+
+    @keyframes fadeIn {
+      from {
+        opacity: 0;
+        transform: translateY(10px);
+      }
+
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    .animate-fade-in {
+      animation: fadeIn 0.3s ease-out forwards;
+    }
+
+    /* Line clamp utility */
+    .line-clamp-2 {
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+
+    .line-clamp-3 {
+      display: -webkit-box;
+      -webkit-line-clamp: 3;
+      line-clamp: 3;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+
+    /* Hide scrollbar for clean UI */
+    ::-webkit-scrollbar {
+      width: 0px;
+      background: transparent;
+    }
+  </style>
+</head>
+
+<body class="bg-gray-50 text-gray-800 select-none">
+
+  <!-- App Container -->
+  <div id="app" class="min-h-screen pb-24">
+    <!-- Header -->
+    <header class="bg-white shadow-soft sticky top-0 z-40">
+      <div class="max-w-md mx-auto px-4 py-3 flex items-center gap-4">
+        <div id="header-logo-container">
+          <div id="header-logo-placeholder"
+            class="h-12 w-12 rounded-full bg-gray-200 flex items-center justify-center flex-shrink-0">
+            <i class="fas fa-store text-gray-400 text-xl"></i>
+          </div>
+          <img id="header-logo" src="" alt="Salon Logo"
+            class="h-12 w-12 rounded-full object-cover flex-shrink-0 hidden">
+        </div>
+        <div class="flex-1 min-w-0">
+          <h1 id="header-salon-name" class="font-bold text-gray-800 text-sm truncate">Loading...</h1>
+          <p id="header-address" class="text-xs text-gray-500 truncate"></p>
+          <p class="text-xs text-gray-400 flex items-center gap-1">
+            <i class="fas fa-train text-xs"></i>
+            <span id="header-station"></span>
+          </p>
+        </div>
+      </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="max-w-md mx-auto p-4">
+
+      <!-- HOME VIEW -->
+      <div id="home-view" class="block">
+
+        <!-- Progress Steps Indicator (Compact) - 4 Steps -->
+        <div id="progress-steps" class="bg-white rounded-2xl shadow-soft p-3 mb-4">
+          <div class="flex items-center justify-between">
+            <div class="flex flex-col items-center">
+              <div id="step-icon-1"
+                class="w-6 h-6 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-xs font-bold transition-all duration-300">
+                1</div>
+              <span class="text-[10px] text-primary mt-1 whitespace-nowrap font-bold">メニュー</span>
+            </div>
+            <div class="flex-1 h-0.5 bg-gray-200 mx-1" id="step-line-1"></div>
+            <div class="flex flex-col items-center">
+              <div id="step-icon-2"
+                class="w-6 h-6 rounded-full bg-gray-200 text-gray-400 flex items-center justify-center text-xs font-bold transition-all duration-300">
+                2</div>
+              <span class="text-[10px] text-gray-400 mt-1 whitespace-nowrap">日時</span>
+            </div>
+            <div class="flex-1 h-0.5 bg-gray-200 mx-1" id="step-line-2"></div>
+            <div class="flex flex-col items-center">
+              <div id="step-icon-3"
+                class="w-6 h-6 rounded-full bg-gray-200 text-gray-400 flex items-center justify-center text-xs font-bold transition-all duration-300">
+                3</div>
+              <span class="text-[10px] text-gray-400 mt-1 whitespace-nowrap">お客様</span>
+            </div>
+            <div class="flex-1 h-0.5 bg-gray-200 mx-1" id="step-line-3"></div>
+            <div class="flex flex-col items-center">
+              <div id="step-icon-4"
+                class="w-6 h-6 rounded-full bg-gray-200 text-gray-400 flex items-center justify-center text-xs font-bold transition-all duration-300">
+                4</div>
+              <span class="text-[10px] text-gray-400 mt-1 whitespace-nowrap">確認</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Step 1: Menu Selection -->
+        <div id="step-menu" class="animate-fade-in">
+          <!-- Category Tabs -->
+          <div id="category-tabs" class="flex flex-wrap gap-2 mb-4">
+            <button onclick="filterByCategory('all')"
+              class="category-tab px-3 py-1.5 rounded-full text-sm font-medium bg-primary text-primary-foreground transition-colors"
+              data-category="all">すべて</button>
+            <!-- Other category tabs will be dynamically added -->
+          </div>
+
+          <!-- Menu Count -->
+          <div class="flex items-center mb-4">
+            <h2 class="text-lg font-bold text-gray-800 border-l-4 border-primary pl-3">メニュー選択</h2>
+            <span id="menu-count" class="ml-2 text-sm text-gray-500"></span>
+          </div>
+
+          <div id="menu-list" class="space-y-4">
+            <div class="animate-pulse space-y-4">
+              <div class="h-24 bg-gray-200 rounded-lg"></div>
+              <div class="h-24 bg-gray-200 rounded-lg"></div>
+            </div>
+          </div>
+        </div>
+
+
+
+        <!-- Step 2: Date & Practitioner Selection -->
+        <div id="step-date" class="hidden animate-fade-in">
+
+          <!-- Selected Menu Summary Area -->
+          <div class="bg-white border-t border-b border-gray-200 p-4 mb-4 -mx-4 sm:mx-0 sm:rounded-xl sm:border">
+            <div class="flex justify-between items-center mb-4">
+              <h3 class="font-bold text-sm text-gray-800">選択済クーポン・メニュー</h3>
+              <span class="text-xs text-gray-500">施術時間合計 (目安)：<span id="total-time-display">0分</span></span>
+            </div>
+
+            <!-- Menu List -->
+            <div id="date-selected-menu-list" class="space-y-6">
+              <!-- Populated by JS -->
+            </div>
+
+            <!-- Nomination Fee Row -->
+            <div class="mt-6 pt-4 border-t border-dashed border-gray-300 flex justify-between items-center">
+              <span class="text-sm text-gray-700">指名料</span>
+              <span id="nomination-fee-display" class="text-sm font-medium text-gray-800">---</span>
+            </div>
+          </div>
+
+          <!-- Add Menu Button -->
+          <div class="flex justify-end mb-8 px-4">
+            <button onclick="openAddMenuModal()"
+              class="bg-gradient-to-b from-white to-red-50 border border-red-200 text-red-500 font-bold py-2 px-8 rounded shadow-sm hover:shadow hover:bg-red-50 text-sm transition-all">
+              メニューを追加する
+            </button>
+          </div>
+
+          <!-- Practitioner Selection -->
+          <div class="mb-8 px-4">
+            <h3 class="font-bold text-gray-800 mb-4 text-base tracking-wide border-l-4 border-gray-400 pl-3 py-0.5">
+              スタイリストを指名
+            </h3>
+
+            <!-- Pills Container -->
+            <div id="practitioner-pills" class="flex flex-wrap gap-2">
+              <!-- Populated via JS -->
+            </div>
+
+            <!-- Selected Practitioner Detail Card -->
+            <div id="selected-practitioner-card"
+              class="bg-white rounded-xl shadow-soft border border-gray-100 p-4 mt-4 hidden animate-fade-in">
+              <div class="flex items-center">
+                <div id="selected-practitioner-image-container"
+                  class="w-12 h-12 rounded-full overflow-hidden mr-3 hidden">
+                  <img id="selected-practitioner-image" src="" class="w-full h-full object-cover">
+                </div>
+                <div>
+                  <div class="font-bold text-gray-800" id="selected-practitioner-name"></div>
+                  <div class="text-xs text-gray-500 mt-1" id="selected-practitioner-title"></div>
+                </div>
+                <div class="ml-auto">
+                  <div class="text-xs text-primary font-bold" id="selected-practitioner-fee"></div>
+                </div>
+              </div>
+              <div id="selected-practitioner-pr" class="mt-2 pt-2 border-t border-gray-100 hidden">
+                <p id="selected-practitioner-description" class="text-xs text-gray-600"></p>
+              </div>
+            </div>
+          </div>
+
+          <!-- Calendar -->
+          <div class="mb-20 px-4">
+            <h3 class="font-bold text-gray-800 mb-4 text-base tracking-wide border-l-4 border-gray-400 pl-3 py-0.5">
+              日時を選択
+            </h3>
+
+            <!-- Week Navigation -->
+            <div class="flex justify-between items-center mb-4">
+              <button id="prev-week"
+                class="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center text-gray-600 hover:bg-gray-200 transition-colors">
+                <i class="fas fa-chevron-left"></i>
+              </button>
+              <span id="current-month-display" class="font-bold text-lg text-gray-800 tracking-widest"></span>
+              <button id="next-week"
+                class="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center text-gray-600 hover:bg-gray-200 transition-colors">
+                <i class="fas fa-chevron-right"></i>
+              </button>
+            </div>
+
+            <div class="overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0">
+              <div id="calendar-loading" class="flex justify-center py-10 hidden">
+                <i class="fas fa-spinner fa-spin text-primary text-2xl"></i>
+              </div>
+              <div id="weekly-calendar-container" class="min-w-full">
+                <!-- Populated via JS -->
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Step 3: Customer Info (New) -->
+        <div id="step-customer" class="hidden animate-fade-in">
+          <div class="flex items-center mb-4">
+            <button onclick="goBackToDate()" class="mr-3 text-gray-500 hover:text-gray-700">
+              <i class="fas fa-chevron-left"></i>
+            </button>
+            <h2 class="text-xl font-bold text-gray-800">お客様情報入力</h2>
+          </div>
+
+          <div class="bg-white rounded-2xl shadow-soft p-5 border border-black/5 space-y-4">
+            <div>
+              <label class="block text-sm font-bold text-gray-700 mb-1">お名前 <span class="text-red-500">*</span></label>
+              <input type="text" id="customer-name"
+                class="w-full p-3 rounded-xl border border-gray-200 focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-colors bg-gray-50/50"
+                placeholder="例: 山田 花子">
+            </div>
+            <div>
+              <label class="block text-sm font-bold text-gray-700 mb-1">電話番号 <span class="text-red-500">*</span></label>
+              <input type="tel" id="customer-phone"
+                class="w-full p-3 rounded-xl border border-gray-200 focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-colors bg-gray-50/50"
+                placeholder="例: 090-1234-5678">
+            </div>
+            <div>
+              <label class="block text-sm font-bold text-gray-700 mb-1">メールアドレス <span
+                  class="text-gray-400 text-xs font-normal">(任意)</span></label>
+              <input type="email" id="customer-email"
+                class="w-full p-3 rounded-xl border border-gray-200 focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-colors bg-gray-50/50"
+                placeholder="example@email.com">
+            </div>
+          </div>
+
+          <div class="mt-6">
+            <button onclick="submitCustomerInfo()"
+              class="w-full bg-primary hover:bg-primary/90 text-white font-bold py-3 rounded-xl shadow-soft transition-colors text-lg">
+              確認画面へ進む
+            </button>
+          </div>
+        </div>
+
+        <!-- Step 4: Confirmation -->
+        <div id="step-confirm" class="hidden animate-fade-in">
+          <button onclick="goBack('step-date')" class="btn-ghost mb-2 text-gray-500 text-sm flex items-center gap-1">
+            <i class="fas fa-arrow-left"></i> 戻る
+          </button>
+          <h2 class="text-lg font-bold text-gray-800 mb-4 border-l-4 border-primary pl-3">予約確認</h2>
+
+          <div class="bg-white shadow-lg border border-black/5 rounded-2xl overflow-hidden">
+            <div class="bg-primary text-primary-foreground p-4">
+              <h3 class="font-bold text-lg">ご予約内容</h3>
+            </div>
+            <div class="p-6 space-y-4">
+              <div>
+                <label class="text-xs text-gray-400 block">メニュー</label>
+                <p id="confirm-menu" class="font-bold text-gray-800 text-lg"></p>
+              </div>
+              <div>
+                <label class="text-xs text-gray-400 block">担当施術者</label>
+                <p id="confirm-practitioner" class="font-bold text-gray-800"></p>
+              </div>
+              <div class="flex gap-4">
+                <div>
+                  <label class="text-xs text-gray-400 block">日付</label>
+                  <p id="confirm-date" class="font-bold text-gray-800"></p>
+                </div>
+                <div>
+                  <label class="text-xs text-gray-400 block">時間</label>
+                  <p id="confirm-time" class="font-bold text-gray-800"></p>
+                </div>
+              </div>
+              <div>
+                <label class="text-xs text-gray-400 block">お名前</label>
+                <p id="confirm-user-name" class="font-bold text-gray-800"></p>
+              </div>
+              <div>
+                <label class="text-xs text-gray-400 block">電話番号</label>
+                <p id="confirm-user-phone" class="font-bold text-gray-800"></p>
+              </div>
+              <div id="confirm-email-row" class="hidden">
+                <label class="text-xs text-gray-400 block">メールアドレス</label>
+                <p id="confirm-user-email" class="font-bold text-gray-800"></p>
+              </div>
+            </div>
+            <div class="p-4 bg-gray-50">
+              <button onclick="submitReservation()"
+                class="w-full bg-primary hover:bg-primary/90 text-white font-bold py-3 rounded-lg shadow-md transition-colors">予約を確定する</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- MY PAGE VIEW -->
+      <div id="mypage-view" class="hidden animate-fade-in">
+
+        <!-- User Profile Header -->
+        <div class="bg-white rounded-2xl shadow-soft p-4 mb-4">
+          <div class="flex items-center gap-4">
+            <div class="relative">
+              <div
+                class="bg-gray-100 rounded-full w-16 h-16 flex items-center justify-center overflow-hidden ring-2 ring-enji/20">
+                <img id="user-icon" src="https://placehold.co/100" alt="User" class="w-full h-full object-cover">
+              </div>
+            </div>
+            <div class="flex-1">
+              <h3 id="user-name-display" class="font-bold text-gray-800 text-lg">ゲスト様</h3>
+              <div class="flex items-center gap-2 mt-1 text-xs text-gray-500">
+                <span><i class="fas fa-calendar-check mr-1"></i>来店回数: <span id="visit-count">3</span>回</span>
+              </div>
+            </div>
+            <button class="p-2 text-gray-400 hover:text-gray-600">
+              <i class="fas fa-cog"></i>
+            </button>
+          </div>
+        </div>
+
+        <!-- Tabs -->
+        <div class="bg-white rounded-2xl shadow-soft mb-4 overflow-hidden">
+          <div class="flex border-b border-black/5">
+            <button onclick="switchMypageTab('reservations')" id="mypage-tab-reservations"
+              class="flex-1 py-3 text-sm font-bold text-primary border-b-2 border-primary transition-colors flex items-center justify-center gap-1">
+              <i class="fas fa-calendar-alt"></i> 予約
+            </button>
+            <button onclick="switchMypageTab('preferences')" id="mypage-tab-preferences"
+              class="flex-1 py-3 text-sm font-medium text-gray-400 border-b-2 border-transparent hover:text-gray-600 transition-colors flex items-center justify-center gap-1">
+              <i class="fas fa-heart"></i> こだわり
+            </button>
+            <button onclick="switchMypageTab('gallery')" id="mypage-tab-gallery"
+              class="flex-1 py-3 text-sm font-medium text-gray-400 border-b-2 border-transparent hover:text-gray-600 transition-colors flex items-center justify-center gap-1">
+              <i class="fas fa-images"></i> 写真
+            </button>
+          </div>
+        </div>
+
+        <!-- Reservations Tab Content -->
+        <div id="mypage-reservations" class="block">
+          <!-- Upcoming Reservation -->
+          <div id="upcoming-reservation" class="mb-4 hidden">
+            <h4 class="text-xs text-gray-500 mb-2 flex items-center gap-1"><i class="fas fa-clock"></i> 次回の予約</h4>
+            <div id="upcoming-reservation-content"></div>
+          </div>
+
+          <!-- Past Reservations -->
+          <h4 class="text-xs text-gray-500 mb-2 flex items-center gap-1"><i class="fas fa-history"></i> 予約履歴</h4>
+          <div id="reservation-history" class="space-y-3">
+            <div class="flex justify-center py-8 text-primary"><i class="fas fa-spinner fa-spin fa-2x"></i></div>
+          </div>
+        </div>
+
+        <!-- Preferences Tab Content -->
+        <div id="mypage-preferences" class="hidden">
+          <div class="space-y-2">
+            <div class="bg-white rounded-2xl shadow-soft overflow-hidden">
+              <div class="p-4 border-b border-black/5">
+                <p class="text-xs text-gray-400 mb-1">サロンで過ごす時間は</p>
+                <p id="pref-salon-time" class="text-gray-800 font-medium">普通で良い</p>
+              </div>
+              <div class="flex items-center justify-between px-4 py-2 hover:bg-gray-50">
+                <span class="text-sm text-gray-600">変更する</span>
+                <i class="fas fa-chevron-right text-gray-300"></i>
+              </div>
+            </div>
+            <div class="bg-white rounded-2xl shadow-soft overflow-hidden">
+              <div class="p-4 border-b border-black/5">
+                <p class="text-xs text-gray-400 mb-1">スタッフとの会話について</p>
+                <p id="pref-conversation" class="text-gray-800 font-medium">普通で良い</p>
+              </div>
+              <div class="flex items-center justify-between px-4 py-2 hover:bg-gray-50">
+                <span class="text-sm text-gray-600">変更する</span>
+                <i class="fas fa-chevron-right text-gray-300"></i>
+              </div>
+            </div>
+            <div class="bg-white rounded-2xl shadow-soft overflow-hidden">
+              <div class="p-4 border-b border-black/5">
+                <p class="text-xs text-gray-400 mb-1">シャンプー時の会話について</p>
+                <p id="pref-shampoo" class="text-gray-800 font-medium">たまになら話すのも良い</p>
+              </div>
+              <div class="flex items-center justify-between px-4 py-2 hover:bg-gray-50">
+                <span class="text-sm text-gray-600">変更する</span>
+                <i class="fas fa-chevron-right text-gray-300"></i>
+              </div>
+            </div>
+            <div class="bg-white rounded-2xl shadow-soft overflow-hidden">
+              <div class="p-4 border-b border-black/5">
+                <p class="text-xs text-gray-400 mb-1">希望のヘアスタイルを伝えるのは苦手ですか？</p>
+                <p id="pref-style" class="text-gray-800 font-medium">YES, 苦手</p>
+              </div>
+              <div class="flex items-center justify-between px-4 py-2 hover:bg-gray-50">
+                <span class="text-sm text-gray-600">変更する</span>
+                <i class="fas fa-chevron-right text-gray-300"></i>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Gallery Tab Content -->
+        <div id="mypage-gallery" class="hidden">
+          <div id="gallery-content" class="grid grid-cols-3 gap-2">
+            <div class="aspect-square bg-gray-100 rounded-lg flex items-center justify-center text-gray-300">
+              <i class="fas fa-image fa-2x"></i>
+            </div>
+            <div class="aspect-square bg-gray-100 rounded-lg flex items-center justify-center text-gray-300">
+              <i class="fas fa-image fa-2x"></i>
+            </div>
+            <div class="aspect-square bg-gray-100 rounded-lg flex items-center justify-center text-gray-300">
+              <i class="fas fa-image fa-2x"></i>
+            </div>
+          </div>
+          <p class="text-center text-gray-400 text-sm mt-4">施術後の写真がここに表示されます</p>
+        </div>
+
+      </div>
+
+
+
+    </main>
+
+    <!-- Bottom Navigation -->
+    <nav class="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 pb-safe z-50">
+      <div class="max-w-md mx-auto flex justify-around items-center h-16">
+        <button onclick="switchTab('home')" id="nav-home"
+          class="flex flex-col items-center justify-center w-full h-full text-primary transition-colors">
+          <i class="fas fa-calendar-plus text-xl mb-1"></i>
+          <span class="text-xs font-medium">予約する</span>
+        </button>
+        <button onclick="switchTab('mypage')" id="nav-mypage"
+          class="flex flex-col items-center justify-center w-full h-full text-gray-400 transition-colors">
+          <i class="fas fa-clipboard-list text-xl mb-1"></i>
+          <span class="text-xs font-medium">予約履歴/キャンセル</span>
+        </button>
+
+      </div>
+    </nav>
+  </div>
+
+  <!-- Loading Overlay -->
+  <div id="loading" class="fixed inset-0 bg-white/80 flex justify-center items-center z-50 hidden">
+    <div class="text-primary"><i class="fas fa-spinner fa-spin fa-3x"></i></div>
+  </div>
+
+  <!-- Add Menu Modal (New) -->
+  <div id="add-menu-modal"
+    class="fixed inset-0 bg-black/50 flex justify-center items-end sm:items-center z-50 hidden p-0 sm:p-4 animate-fade-in">
+    <div class="bg-white rounded-t-2xl sm:rounded-2xl shadow-lg w-full max-w-md h-[80vh] flex flex-col overflow-hidden">
+      <div class="bg-white p-4 border-b border-black/5 flex justify-between items-center flex-shrink-0">
+        <h3 class="font-bold text-lg text-gray-800">メニューを追加</h3>
+        <button onclick="closeAddMenuModal()"
+          class="text-gray-400 hover:text-gray-600 w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-100">
+          <i class="fas fa-times"></i>
+        </button>
+      </div>
+
+      <div class="flex-1 overflow-y-auto p-4 bg-gray-50">
+        <div id="add-menu-list" class="space-y-3">
+          <!-- Menus will be injected here -->
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Reservation Detail Modal -->
+  <div id="reservation-modal"
+    class="fixed inset-0 bg-black/50 flex justify-center items-center z-50 hidden p-4 animate-fade-in">
+    <div class="bg-white rounded-2xl shadow-lg w-full max-w-sm overflow-hidden">
+      <div class="bg-primary text-primary-foreground p-4 flex justify-between items-center">
+        <h3 class="font-bold text-lg">予約詳細</h3>
+        <button onclick="closeModal()" class="text-white hover:text-gray-200"><i class="fas fa-times"></i></button>
+      </div>
+      <div class="p-6 space-y-4">
+        <div>
+          <label class="text-xs text-gray-400 block">日時</label>
+          <p id="modal-date" class="font-bold text-gray-800 text-lg"></p>
+        </div>
+        <div>
+          <label class="text-xs text-gray-400 block">メニュー</label>
+          <p id="modal-menu" class="font-bold text-gray-800"></p>
+        </div>
+        <div class="pt-4 border-t border-black/5 flex gap-3">
+          <button id="modal-cancel-btn"
+            class="flex-1 border border-red-500 text-red-500 font-bold py-3 rounded-lg hover:bg-red-50 transition-colors">キャンセル</button>
+          <button id="modal-change-btn"
+            class="flex-1 bg-primary text-primary-foreground font-bold py-3 rounded-lg hover:bg-primary/90 transition-colors">日時変更</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+
+
+  <script>
+    // ==============================================
+    // Configuration (設定エリア)
+    // ==============================================
+    // 本番環境では環境変数またはビルド時に置換
+    const API_BASE_URL = window.RESERVATION_API_URL || "http://localhost:8080";
+    const TENANT_KEY = window.RESERVATION_TENANT_KEY || "default";
+    let LIFF_ID = null;
+    let idToken = null; // LINE ID Token for API authentication
+
+    // ローカル実行判定（file://プロトコル対応）
+    const isLocalRuntime = !location.hostname || location.hostname === 'localhost' || location.hostname === '127.0.0.1' || location.protocol === 'file:';
+    // モック起動は明示フラグ時のみ有効化する
+    const isLocalDev = isLocalRuntime && String(window.RESERVATION_ENABLE_MOCK || '').toLowerCase() === 'true';
+    // LIFF を使わずに API 接続したい場合（ローカル開発用）
+    const useBypassLiff = isLocalRuntime && String(window.RESERVATION_BYPASS_LIFF || '').toLowerCase() === 'true';
+
+    // ==============================================
+    // State
+    // ==============================================
+    let state = {
+      user: null,
+      menu: null,
+      date: null,
+      time: null,
+      currentTab: 'home',
+      // New state properties
+      selectedPractitioner: null,
+      selectedOptions: [],
+      practitioners: [],
+      options: [],
+      menus: [],
+      reservationCards: [],
+      siteConfig: {
+        siteTitle: 'En Salon',
+        salonInfo: '',
+        precautions: ''
+      }
+    };
+
+    function getApiHeaders(includeJson = true) {
+      const headers = {};
+      if (includeJson) headers['Content-Type'] = 'application/json';
+      if (idToken) headers['Authorization'] = `Bearer ${idToken}`;
+      return headers;
+    }
+
+    function showInitError(message) {
+      const html = `<div class="text-center text-red-500 py-8">${message}</div>`;
+      const menuList = document.getElementById('menu-list');
+      if (menuList) menuList.innerHTML = html;
+      alert(message.replace(/<br>/g, '\\n'));
+    }
+
+    async function establishAuthSession(profile) {
+      if (!idToken) return;
+
+      const response = await fetch(`${API_BASE_URL}/api/v1/${TENANT_KEY}/auth/session`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          idToken,
+          profile: {
+            userId: profile.userId,
+            displayName: profile.displayName,
+            pictureUrl: profile.pictureUrl,
+          },
+          notificationToken: profile.userId || profile.sub,
+        }),
+      });
+
+      if (!response.ok) {
+        const body = await response.json().catch(() => ({}));
+        throw new Error(body.error?.message || '認証セッションの確立に失敗しました');
+      }
+    }
+
+    // ==============================================
+    // Initialization
+    // ==============================================
+    window.onload = async () => {
+      console.log('Window Loaded. isLocalRuntime:', isLocalRuntime, 'isLocalDev:', isLocalDev, 'useBypassLiff:', useBypassLiff);
+      if (isLocalDev) {
+        state.user = { userId: 'mock_user', displayName: 'Guest User', pictureUrl: 'https://placehold.co/100' };
+        updateUserDisplay();
+        console.log('Local Mode: Loading Menus...');
+        loadMenus();
+        return;
+      }
+
+      if (useBypassLiff) {
+        try {
+          const localProfile = window.RESERVATION_PROFILE || {
+            userId: 'local_user',
+            displayName: 'Local User',
+            pictureUrl: '',
+          };
+          idToken = window.RESERVATION_ID_TOKEN || null;
+          if (!idToken) {
+            throw new Error('RESERVATION_ID_TOKEN が未設定です');
+          }
+          state.user = localProfile;
+          updateUserDisplay();
+          await establishAuthSession(localProfile);
+          loadMenus();
+          return;
+        } catch (err) {
+          showInitError(`ローカル認証初期化エラー: ${err.message}`);
+          return;
+        }
+      }
+
+      try {
+        console.log('Fetching Config...');
+        const configRes = await fetch(`${API_BASE_URL}/api/v1/${TENANT_KEY}/auth/config`);
+        if (!configRes.ok) throw new Error('Config fetch failed');
+        const config = await configRes.json();
+        console.log('Config loaded:', config);
+        const configData = config.data || config;
+        LIFF_ID = configData.liffId;
+        if (!LIFF_ID) {
+          const localHint = isLocalRuntime
+            ? '<br>ローカル検証では window.RESERVATION_ENABLE_MOCK=true または window.RESERVATION_BYPASS_LIFF=true を設定してください。'
+            : '';
+          showInitError(`LIFF設定が未構成です。管理者に設定を依頼してください。${localHint}`);
+          return;
+        }
+
+        // Apply basic branding (optional)
+        if (configData.branding?.primaryColor) {
+          const root = document.documentElement;
+          root.style.setProperty('--color-primary', configData.branding.primaryColor);
+        }
+
+        // Apply Header Customization from store/tenant data
+        const tenantName = configData.tenantName || 'En Salon';
+        const store = configData.store;
+        document.title = tenantName;
+        document.getElementById('header-salon-name').innerText = store?.name || tenantName;
+        if (store?.address) {
+          document.getElementById('header-address').innerText = store.address;
+        }
+        document.getElementById('header-station').parentElement.classList.add('hidden');
+        if (configData.branding?.logoUrl) {
+          document.getElementById('header-logo').src = configData.branding.logoUrl;
+          document.getElementById('header-logo').classList.remove('hidden');
+          document.getElementById('header-logo-placeholder').classList.add('hidden');
+        }
+
+        console.log('Initializing LIFF...');
+        await liff.init({ liffId: LIFF_ID });
+        console.log('LIFF initialized');
+
+        if (!liff.isLoggedIn()) {
+          console.log('LIFF not logged in. Logging in...');
+          liff.login();
+          return;
+        }
+
+        // Get ID Token for API authentication
+        idToken = liff.getIDToken();
+        console.log('Got ID Token:', idToken ? 'Yes' : 'No');
+
+        const profile = await liff.getProfile();
+        console.log('Got Profile:', profile);
+        state.user = profile;
+        updateUserDisplay();
+        await establishAuthSession(profile);
+
+        console.log('Loading Menus...');
+        loadMenus();
+      } catch (err) {
+        console.error('Critical Init Error:', err);
+        showInitError(`初期化エラー: ${err.message}<br>再読み込みをお試しください。`);
+      }
+    };
+
+
+
+    function updateUserDisplay() {
+      if (state.user) {
+        document.getElementById('user-name-display').innerText = state.user.displayName + '様';
+        if (state.user.pictureUrl) {
+          document.getElementById('user-icon').src = state.user.pictureUrl;
+        }
+      }
+    }
+
+    // Navigation
+    window.switchTab = (tab) => {
+      state.currentTab = tab;
+
+      // Toggle Views
+      document.getElementById('home-view').classList.toggle('hidden', tab !== 'home');
+      document.getElementById('home-view').classList.toggle('block', tab === 'home');
+      document.getElementById('mypage-view').classList.toggle('hidden', tab !== 'mypage');
+      document.getElementById('mypage-view').classList.toggle('block', tab === 'mypage');
+
+      // Toggle Nav Active State
+      const navHome = document.getElementById('nav-home');
+      const navMypage = document.getElementById('nav-mypage');
+
+      // Reset all nav buttons
+      [navHome, navMypage].forEach(btn => {
+        btn.classList.add('text-gray-400');
+        btn.classList.remove('text-primary');
+      });
+
+      if (tab === 'home') {
+        navHome.classList.add('text-primary');
+        navHome.classList.remove('text-gray-400');
+      } else if (tab === 'mypage') {
+        navMypage.classList.add('text-primary');
+        navMypage.classList.remove('text-gray-400');
+        loadHistory();
+      }
+    };
+
+    window.goBack = (stepId) => {
+      document.getElementById('step-date').classList.add('hidden');
+      document.getElementById('step-confirm').classList.add('hidden');
+      document.getElementById('step-menu').classList.add('hidden');
+      document.getElementById(stepId).classList.remove('hidden');
+    };
+
+    // Logic
+    async function loadMenus() {
+      const container = document.getElementById('menu-list');
+      try {
+        let menus = [];
+
+        if (isLocalDev) {
+          // Mock data for local development
+          menus = [
+            { id: '1', name: 'フェイシャル基本コース', minutes: 60, price: 8000, description: '基本のフェイシャルコースです。クレンジング、マッサージ、パックまで含まれます。', category: 'フェイシャル' },
+            { id: '2', name: '全身アロマオイル', minutes: 90, price: 12000, description: '全身のリラックス効果が高いアロマオイルマッサージです。', category: 'ボディ' },
+            { id: '3', name: 'クイックマッサージ', minutes: 30, price: 4000, description: 'お急ぎの方におすすめのクイックコース。', category: 'ボディ' },
+            { id: '4', name: 'ヘッドスパ', minutes: 45, price: 6000, description: '頭皮のコリをほぐし、リフレッシュ。', category: 'ヘッドスパ' },
+            { id: '5', name: 'フットケア', minutes: 40, price: 5000, description: '足裏から膝下までのトリートメント。', category: 'フット' }
+          ];
+        } else {
+          const res = await fetch(`${API_BASE_URL}/api/v1/${TENANT_KEY}/menus`);
+          const data = await res.json();
+          menus = data.data || data || [];
+          menus = menus.map(m => ({
+            ...m,
+            minutes: m.minutes ?? m.duration ?? 0,
+          }));
+        }
+        state.menus = menus;
+        renderMenus(menus);
+        updateMenuCount(menus.length);
+
+        // Load practitioners and options in background
+        loadPractitioners();
+        loadOptions();
+
+      } catch (e) {
+        console.error(e);
+        container.innerHTML = '<div class="text-center text-red-400">メニュー読み込みエラー</div>';
+      }
+    }
+
+    function renderMenus(menus) {
+      const container = document.getElementById('menu-list');
+      if (menus.length === 0) {
+        container.innerHTML = '<div class="text-center text-gray-400 py-8">該当するメニューがありません</div>';
+        return;
+      }
+      container.innerHTML = menus.map(menu => {
+        const imageHtml = menu.imageUrl
+          ? `<img src="${menu.imageUrl}" alt="${menu.name}" class="w-full h-32 object-cover rounded-t-xl mb-3">`
+          : '';
+        return `
+        <div onclick='selectMenu(${JSON.stringify(menu)})' class="bg-white shadow-soft border border-black/5 rounded-2xl cursor-pointer hover:border-primary transition-all active:scale-95 overflow-hidden">
+          ${imageHtml}
+          <div class="p-4">
+            <div class="flex justify-between items-center">
+              <div>
+                <div class="flex items-center gap-2 mb-1">
+                   <span class="text-[10px] bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full">${menu.category || 'その他'}</span>
+                </div>
+                <h3 class="font-bold text-gray-800">${menu.name}</h3>
+                <p class="text-xs text-gray-500 mt-1 mb-1 line-clamp-2">${menu.description || ''}</p>
+                <p class="text-sm text-gray-400 mt-1"><i class="far fa-clock"></i> ${menu.minutes}分</p>
+              </div>
+              <div class="text-primary font-bold text-lg">¥${menu.price.toLocaleString()}</div>
+            </div>
+          </div>
+        </div>
+      `}).join('');
+    }
+
+    function updateMenuCount(count) {
+      document.getElementById('menu-count').innerText = `${count}件`;
+    }
+
+    window.filterByCategory = (category) => {
+      // Update active tab
+      document.querySelectorAll('.category-tab').forEach(btn => {
+        if (btn.dataset.category === category) {
+          btn.classList.add('bg-primary', 'text-white');
+          btn.classList.remove('bg-gray-100', 'text-gray-600');
+        } else {
+          btn.classList.remove('bg-primary', 'text-white');
+          btn.classList.add('bg-gray-100', 'text-gray-600');
+        }
+      });
+
+      if (category === 'all') {
+        renderMenus(state.menus);
+        updateMenuCount(state.menus.length);
+      } else {
+        const filtered = state.menus.filter(m => (m.category || 'その他') === category);
+        renderMenus(filtered);
+        updateMenuCount(filtered.length);
+      }
+    };
+
+    async function loadPractitioners() {
+      try {
+        if (isLocalDev) {
+          // Mock - ホットペッパー風のリッチなスタッフ情報
+          state.practitioners = [
+            {
+              id: '1',
+              name: '山田 花子',
+              title: 'チーフスタイリスト',
+              imageUrl: 'https://images.unsplash.com/photo-1594744803329-e58b31de8bf5?w=200&h=200&fit=crop&crop=face',
+              nominationFee: 1100,
+              active: true,
+              experience: '歴8年',
+              sns: '@hanako_salon',
+              prTitle: '【ナチュラルスタイルならお任せ！】透明感カラーが得意です',
+              description: '自然体で過ごしやすいスタイルを心がけています。イルミナカラーやアディクシーカラーで透明感のある髪色を実現します♪ぜひお気軽にご相談ください！',
+              specialties: ['カラー', 'トリートメント', 'ヘッドスパ']
+            },
+            {
+              id: '2',
+              name: '佐藤 次郎',
+              title: 'スタイリスト',
+              imageUrl: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=200&h=200&fit=crop&crop=face',
+              nominationFee: 550,
+              active: true,
+              experience: '歴3年',
+              sns: '@jiro_hair',
+              prTitle: '【メンズカットに自信あり】ビジネススタイルからオシャレヘアまで',
+              description: 'メンズカットを中心に担当しています。お客様のライフスタイルに合わせたスタイル提案を大切にしています。',
+              specialties: ['カット', 'パーマ', 'メンズ']
+            },
+            {
+              id: '3',
+              name: '鈴木 美咲',
+              title: 'アシスタント',
+              imageUrl: 'https://images.unsplash.com/photo-1438761681033-6461ffad8d80?w=200&h=200&fit=crop&crop=face',
+              nominationFee: 0,
+              active: true,
+              experience: '歴1年',
+              sns: '',
+              prTitle: '【丁寧なシャンプーが好評】リラックスできる時間をお届け',
+              description: 'お客様にリラックスしていただけるよう、丁寧な施術を心がけています。',
+              specialties: ['シャンプー', 'ヘッドスパ']
+            }
+          ];
+        } else {
+          const res = await fetch(`${API_BASE_URL}/api/v1/${TENANT_KEY}/practitioners`);
+          const data = await res.json();
+          const list = data.data || data || [];
+          state.practitioners = list.map(p => ({
+            ...p,
+            nominationFee: p.nominationFee ?? p.nomination_fee ?? 0,
+            prTitle: p.prTitle ?? p.pr_title ?? '',
+            sns: p.sns || p.snsInstagram || p.snsTwitter || '',
+            title: p.title || '',
+            experience: p.experience || '',
+            description: p.description || '',
+            imageUrl: p.imageUrl || p.image_url || '',
+          }));
+        }
+      } catch (e) {
+        console.error('Failed to load practitioners', e);
+      }
+    }
+
+    async function loadOptions() {
+      try {
+        if (isLocalDev) {
+          // Mock
+          state.options = [
+            { id: '1', name: '延長10分', minutes: 10, price: 1000 },
+            // 指名料は自動適用のためオプションからは削除
+          ];
+        } else {
+          try {
+            const res = await fetch(`${API_BASE_URL}/api/v1/${TENANT_KEY}/options`);
+            const data = await res.json();
+            const list = data.data || data || [];
+            state.options = list.map(o => ({
+              ...o,
+              minutes: o.minutes ?? o.duration ?? 0,
+            }));
+          } catch {
+            state.options = [];
+          }
+        }
+      } catch (e) {
+        console.error('Failed to load options', e);
+      }
+    }
+
+    window.selectMenu = (menu) => {
+      state.menu = menu;
+      state.additionalMenus = []; // Initialize additional menus
+      state.selectedOptions = []; // (Legacy support)
+      state.selectedPractitioner = null;
+
+      // Go directly to Date Selection
+      initDateStep();
+    };
+
+    function initDateStep() {
+      // Hide all steps
+      ['step-menu', 'step-options', 'step-date', 'step-customer', 'step-confirm'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.classList.add('hidden');
+      });
+
+      // Show Date Step
+      document.getElementById('step-date').classList.remove('hidden');
+      updateStepIndicator(2);
+
+      // Initialize Views
+      updateDateView();
+      renderPractitionerPills();
+
+      // Reset Date/Time
+      state.date = null;
+      state.time = null;
+
+      initWeeklyCalendar();
+      window.scrollTo(0, 0);
+    }
+
+    function updateStepIndicator(step) {
+      for (let i = 1; i <= 4; i++) {
+        const icon = document.getElementById(`step-icon-${i}`);
+        const line = document.getElementById(`step-line-${i}`);
+
+        if (!icon) continue; // Guard against missing elements
+
+        if (i < step) {
+          // Completed
+          icon.className = "w-6 h-6 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-xs font-bold";
+          icon.innerHTML = '<i class="fas fa-check"></i>';
+          if (line) line.className = "flex-1 h-0.5 bg-primary mx-1";
+        } else if (i === step) {
+          // Current
+          icon.className = "w-6 h-6 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-xs font-bold";
+          icon.innerText = i;
+          if (line) line.className = "flex-1 h-0.5 bg-gray-200 mx-1";
+        } else {
+          // Future
+          icon.className = "w-6 h-6 rounded-full bg-gray-200 text-gray-400 flex items-center justify-center text-xs font-bold";
+          icon.innerText = i;
+          if (line) line.className = "flex-1 h-0.5 bg-gray-200 mx-1";
+        }
+      }
+    }
+
+    // --- Add Menu Logic ---
+
+    window.openAddMenuModal = () => {
+      const modal = document.getElementById('add-menu-modal');
+      const listContainer = document.getElementById('add-menu-list');
+      modal.classList.remove('hidden');
+
+      // Determine selectable menus (exclude already selected)
+      const currentIds = [state.menu.id, ...state.additionalMenus.map(m => m.id)];
+      const selectableMenus = state.menus.filter(m => !currentIds.includes(m.id));
+
+      if (selectableMenus.length === 0) {
+        listContainer.innerHTML = '<div class="text-center text-gray-500 py-4">追加できるメニューはありません</div>';
+        return;
+      }
+
+      listContainer.innerHTML = selectableMenus.map(menu => `
+        <div onclick='addMenu(${JSON.stringify(menu)})' class="bg-white p-3 rounded-xl border border-gray-200 shadow-sm flex justify-between items-center cursor-pointer hover:border-primary active:bg-gray-50">
+           <div>
+              <p class="font-bold text-gray-800 text-sm">${menu.name}</p>
+              <p class="text-xs text-gray-500">${menu.minutes}分 / ¥${menu.price.toLocaleString()}</p>
+           </div>
+           <div class="w-8 h-8 rounded-full bg-gray-100 text-gray-400 flex items-center justify-center">
+              <i class="fas fa-plus"></i>
+           </div>
+        </div>
+      `).join('');
+    };
+
+    window.closeAddMenuModal = () => {
+      document.getElementById('add-menu-modal').classList.add('hidden');
+    };
+
+    window.addMenu = (menu) => {
+      state.additionalMenus.push(menu);
+      closeAddMenuModal();
+      updateDateView();
+    };
+
+    window.removeMenu = (index) => {
+      state.additionalMenus.splice(index, 1);
+      updateDateView();
+    };
+
+    window.updateDateView = () => {
+      const listContainer = document.getElementById('date-selected-menu-list');
+      if (!listContainer) return;
+      listContainer.innerHTML = '';
+
+      // Combine main menu and additional menus
+      let allMenus = [];
+      if (state.menu) allMenus.push(state.menu);
+      if (state.additionalMenus) allMenus = allMenus.concat(state.additionalMenus);
+
+      let totalMinutes = 0;
+      let totalMenuPrice = 0;
+
+      allMenus.forEach((menu, index) => {
+        totalMinutes += menu.minutes;
+        totalMenuPrice += menu.price;
+
+        // Minimo-style menu display
+        const menuEl = document.createElement('div');
+        // Remove button for additional menus (index > 0)
+        const removeBtn = index > 0 ? `<button onclick="removeMenu(${index - 1})" class="text-gray-400 hover:text-red-500 ml-2"><i class="fas fa-times-circle"></i></button>` : '';
+
+        menuEl.innerHTML = `
+          <div class="flex justify-between items-start">
+             <div class="flex-1">
+               <div class="flex items-center mb-1">
+                 <span class="bg-red-100 text-red-500 text-[10px] font-bold px-1 py-0.5 rounded mr-2">全員</span>
+                 <h4 class="text-sm text-gray-800 leading-snug">${menu.name} ${removeBtn}</h4>
+               </div>
+               <div class="text-right lg:hidden">
+                 <span class="text-red-500 font-bold ml-2">¥${menu.price.toLocaleString()}</span>
+               </div>
+             </div>
+             <div class="hidden lg:block text-right">
+                <span class="text-red-500 font-bold ml-2">¥${menu.price.toLocaleString()}</span>
+             </div>
+          </div>
+          <div class="border-b border-dashed border-gray-300 my-2"></div>
+          <div class="text-[10px] text-gray-500 space-y-1">
+             <p>来店日条件：指定なし</p>
+             <p>対象スタイリスト：全員</p>
+             <p>その他条件：${menu.description || 'なし'}</p>
+          </div>
+        `;
+        listContainer.appendChild(menuEl);
+      });
+
+      // Nomination Fee Logic
+      const nominationFeeEl = document.getElementById('nomination-fee-display');
+      let nominationFee = 0;
+      if (state.selectedPractitioner && state.selectedPractitioner.nominationFee > 0) {
+        nominationFee = parseInt(state.selectedPractitioner.nominationFee);
+        if (nominationFeeEl) nominationFeeEl.innerText = `+¥${nominationFee.toLocaleString()}`;
+      } else {
+        if (nominationFeeEl) nominationFeeEl.innerText = '---';
+      }
+
+      // Total Time Update
+      const timeDisplay = document.getElementById('total-time-display');
+      if (timeDisplay) timeDisplay.innerText = `${totalMinutes}分`;
+
+      // Total Summary (Footer or Date View total)
+      const dateTotal = document.getElementById('date-total-price');
+      const dateTotalTime = document.getElementById('date-total-time'); // Not used in new UI but might be present
+
+      // Not showing date-total-price in the new summary box (image doesn't have it clearly, but we can compute)
+      // Actually, the new HTML doesn't have date-total-price ID visible in the screenshot mockup area I built.
+      // But let's check legacy elements.
+
+      // Re-render Calendar with new total minutes
+      renderWeeklyCalendar();
+    };
+
+    /* renderOptions is deprecated/unused in new flow but kept to avoid ReferenceError if referenced elsewhere */
+    function renderOptions() { }
+
+    window.toggleOption = (optionId) => {
+      const option = state.options.find(o => String(o.id) === String(optionId));
+      if (!option) return;
+
+      const index = state.selectedOptions.findIndex(o => String(o.id) === String(optionId));
+      if (index === -1) {
+        // Add
+        state.selectedOptions.push(option);
+        document.getElementById(`option-card-${optionId}`).classList.add('border-primary', 'bg-red-50');
+        document.getElementById(`option-card-${optionId}`).classList.remove('border-black/5', 'bg-white');
+        const check = document.getElementById(`option-check-${optionId}`);
+        check.classList.add('bg-primary', 'border-primary');
+        check.classList.remove('border-gray-300');
+        check.querySelector('i').classList.remove('opacity-0');
+      } else {
+        // Remove
+        state.selectedOptions.splice(index, 1);
+        document.getElementById(`option-card-${optionId}`).classList.remove('border-primary', 'bg-red-50');
+        document.getElementById(`option-card-${optionId}`).classList.add('border-black/5', 'bg-white');
+        const check = document.getElementById(`option-check-${optionId}`);
+        check.classList.remove('bg-primary', 'border-primary');
+        check.classList.add('border-gray-300');
+        check.querySelector('i').classList.add('opacity-0');
+      }
+      updateTotalSummary();
+    };
+
+    // Calculate total price and duration
+    function calculateTotal() {
+      if (!state.menu) return { price: 0, duration: 0 };
+
+      let totalMinutes = state.menu.minutes || 0;
+      let totalPrice = state.menu.price || 0;
+
+      // Add options
+      state.selectedOptions.forEach(opt => {
+        totalMinutes += opt.minutes || opt.duration || 0;
+        totalPrice += opt.price || 0;
+      });
+
+      // Add nomination fee if practitioner selected
+      if (state.selectedPractitioner && state.selectedPractitioner.nominationFee > 0) {
+        totalPrice += parseInt(state.selectedPractitioner.nominationFee);
+      }
+
+      return { price: totalPrice, duration: totalMinutes };
+    }
+
+    function updateTotalSummary() {
+      if (!state.menu) return;
+
+      const total = calculateTotal();
+      let totalMinutes = total.duration;
+      let totalPrice = total.price;
+
+      // Update Option Summary Box
+      const optionsSummary = document.getElementById('options-summary');
+      if (state.selectedOptions.length > 0) {
+        optionsSummary.classList.remove('hidden');
+        const names = state.selectedOptions.map(o => o.name).join(' / ');
+        document.getElementById('options-summary-names').innerText = names;
+
+        let addedPrice = 0;
+        let addedMins = 0;
+        state.selectedOptions.forEach(o => { addedPrice += o.price; addedMins += (o.minutes || o.duration || 0); });
+        document.getElementById('options-summary-info').innerText = `+¥${addedPrice.toLocaleString()} / +${addedMins}分`;
+
+        document.getElementById('options-button-text').innerText = `オプションを追加して日時選択へ`;
+      } else {
+        optionsSummary.classList.add('hidden');
+        document.getElementById('options-button-text').innerText = '日時選択へ進む';
+      }
+
+      // Update Total Box (nomination fee already included in calculateTotal())
+      document.getElementById('total-time').innerText = `所要時間: 約${totalMinutes}分`;
+      document.getElementById('total-price').innerText = `¥${totalPrice.toLocaleString()}`;
+    }
+
+    window.goBackToDate = () => {
+      document.getElementById('step-customer').classList.add('hidden');
+      document.getElementById('step-date').classList.remove('hidden');
+      updateStepIndicator(2);
+    };
+
+    window.submitCustomerInfo = () => {
+      const name = document.getElementById('customer-name').value;
+      const phone = document.getElementById('customer-phone').value;
+      const email = document.getElementById('customer-email').value;
+
+      if (!name) return alert('お名前を入力してください');
+      if (!phone) return alert('電話番号を入力してください');
+
+      state.customerInfo = { name, phone, email };
+
+      // Final Confirmation Setup
+      document.getElementById('step-customer').classList.add('hidden');
+      document.getElementById('step-confirm').classList.remove('hidden');
+      updateStepIndicator(4);
+
+      renderConfirm();
+      window.scrollTo(0, 0);
+    };
+
+    function moveToDateSelection() {
+      initDateStep();
+    }
+
+    function renderPractitionerPills() {
+      const container = document.getElementById('practitioner-pills');
+      if (!container) return;
+      container.innerHTML = '';
+
+      // "No Nomination" Option
+      const noNomButton = document.createElement('button');
+      noNomButton.id = 'pill-no-nomination';
+      const isNoNom = !state.selectedPractitioner;
+      noNomButton.className = 'border px-4 py-2 rounded-full text-sm font-medium transition-all whitespace-nowrap flex items-center ' +
+        (isNoNom ? 'border-red-400 text-red-500 bg-red-50 font-bold' : 'border-gray-300 text-gray-600 bg-white hover:bg-gray-50');
+
+      const checkMark = isNoNom ? '<i class="fas fa-check mr-1"></i>' : '';
+      noNomButton.innerHTML = `${checkMark}指名なし`;
+
+      noNomButton.onclick = () => selectPractitioner(null);
+      container.appendChild(noNomButton);
+
+      if (state.practitioners) {
+        state.practitioners.forEach(p => {
+          const btn = document.createElement('button');
+          btn.id = `pill-practitioner-${p.id}`;
+          const isSelected = state.selectedPractitioner && String(state.selectedPractitioner.id) === String(p.id);
+          const activeClass = isSelected ? 'border-red-400 text-red-500 bg-red-50 font-bold' : 'border-gray-300 text-gray-600 bg-white hover:bg-gray-50';
+
+          btn.className = `border px-4 py-2 rounded-full text-sm font-medium transition-all whitespace-nowrap flex items-center ${activeClass}`;
+
+          const pCheck = isSelected ? '<i class="fas fa-check mr-1"></i>' : '';
+          btn.innerHTML = `${pCheck}${p.name}`;
+          btn.onclick = () => selectPractitioner(p.id);
+          container.appendChild(btn);
+        });
+      }
+    }
+
+    window.selectPractitioner = (practitionerId) => {
+      // Update selection state
+      if (practitionerId) {
+        state.selectedPractitioner = state.practitioners.find(p => String(p.id) === String(practitionerId));
+      } else {
+        state.selectedPractitioner = null;
+      }
+
+      // Re-render Pills
+      if (typeof renderPractitionerPills === 'function') renderPractitionerPills();
+
+      // Update Card
+      const card = document.getElementById('selected-practitioner-card');
+      if (state.selectedPractitioner) {
+        card.classList.remove('hidden');
+        const p = state.selectedPractitioner;
+        // Check if elements exist before setting
+        const nameEl = document.getElementById('selected-practitioner-name');
+        if (nameEl) nameEl.innerText = p.name;
+
+        // Handling Image
+        const imgContainer = document.getElementById('selected-practitioner-image-container');
+        const img = document.getElementById('selected-practitioner-image');
+        if (p.imageUrl && img && imgContainer) {
+          img.src = p.imageUrl;
+          imgContainer.classList.remove('hidden');
+        } else if (imgContainer) {
+          imgContainer.classList.add('hidden');
+        }
+
+        // Nomination Fee
+        const feeEl = document.getElementById('selected-practitioner-fee');
+        if (p.nominationFee > 0 && feeEl) {
+          feeEl.innerText = `+¥${parseInt(p.nominationFee).toLocaleString()}`;
+          feeEl.classList.remove('hidden');
+        } else if (feeEl) {
+          feeEl.classList.add('hidden');
+        }
+
+        // Title
+        const titleEl = document.getElementById('selected-practitioner-title');
+        if (p.title && titleEl) {
+          titleEl.innerText = p.title;
+          titleEl.classList.remove('hidden');
+        } else if (titleEl) {
+          titleEl.classList.add('hidden');
+        }
+
+        // SNS
+        const snsElem = document.getElementById('selected-practitioner-sns');
+        if (p.sns && snsElem) {
+          snsElem.innerHTML = `<i class="fab fa-instagram mr-1"></i>${p.sns}`;
+          snsElem.classList.remove('hidden');
+        } else if (snsElem) {
+          snsElem.classList.add('hidden');
+        }
+
+        // Experience
+        const expElem = document.getElementById('selected-practitioner-experience');
+        if (p.experience && expElem) {
+          expElem.innerText = p.experience;
+          expElem.classList.remove('hidden');
+        } else if (expElem) {
+          expElem.classList.add('hidden');
+        }
+
+        // PR Section
+        const prSection = document.getElementById('selected-practitioner-pr');
+        const prTitleElem = document.getElementById('selected-practitioner-prTitle');
+        const descElem = document.getElementById('selected-practitioner-description');
+        const toggleBtn = document.getElementById('toggle-description-btn');
+
+        if ((p.prTitle || p.description) && prSection) {
+          prSection.classList.remove('hidden');
+          if (prTitleElem) prTitleElem.innerText = p.prTitle || '';
+          if (descElem) descElem.innerText = p.description || '';
+
+          // Show "詳細を見る" link for long descriptions
+          if (p.description && p.description.length > 50 && toggleBtn) {
+            toggleBtn.classList.remove('hidden');
+          } else if (toggleBtn) {
+            toggleBtn.classList.add('hidden');
+          }
+        } else if (prSection) {
+          prSection.classList.add('hidden');
+        }
+
+      } else {
+        card.classList.add('hidden');
+      }
+
+      // Reload Calendar & Views because nomination fee affects total price
+      updateDateView();
+    };
+
+    // Weekly Calendar Logic
+    let currentWeekStart = new Date();
+
+    function initWeeklyCalendar() {
+      // Reset to today/start of week
+      currentWeekStart = new Date();
+
+      document.getElementById('prev-week').onclick = () => {
+        currentWeekStart.setDate(currentWeekStart.getDate() - 7);
+        renderWeeklyCalendar();
+      };
+      document.getElementById('next-week').onclick = () => {
+        currentWeekStart.setDate(currentWeekStart.getDate() + 7);
+        renderWeeklyCalendar();
+      };
+
+      renderWeeklyCalendar();
+    }
+
+    async function renderWeeklyCalendar() {
+      const startDateStr = formatDate(currentWeekStart);
+      const title = `${currentWeekStart.getFullYear()}年 ${currentWeekStart.getMonth() + 1}月`;
+      const titleEl = document.getElementById('current-month-display');
+      if (titleEl) titleEl.innerText = title;
+
+      const container = document.getElementById('weekly-calendar-container');
+      const loading = document.getElementById('calendar-loading');
+
+      if (!container) return;
+
+      // Show loading
+      if (loading) loading.classList.remove('hidden');
+      container.innerHTML = '';
+
+      try {
+        let weeklyData = [];
+        // Calculate total minutes
+        let totalMinutes = state.menu ? state.menu.minutes : 60;
+        if (state.additionalMenus) {
+          state.additionalMenus.forEach(m => totalMinutes += m.minutes);
+        }
+
+        if (isLocalDev) {
+          // Mock Data
+          await new Promise(r => setTimeout(r, 500));
+          weeklyData = generateMockWeeklyData(currentWeekStart);
+        } else {
+          // Build menu IDs for API
+          const menuIdList = [state.menu.id];
+          if (state.additionalMenus) {
+            state.additionalMenus.forEach(m => menuIdList.push(m.id));
+          }
+          const menuIds = menuIdList.join(',');
+
+          let url = `${API_BASE_URL}/api/v1/${TENANT_KEY}/slots/week?startDate=${startDateStr}&menuIds=${menuIds}`;
+          if (state.selectedPractitioner) {
+            url += `&practitionerId=${state.selectedPractitioner.id}`;
+          }
+          const res = await fetch(url);
+          if (!res.ok) {
+            const errorBody = await res.json().catch(() => ({}));
+            throw new Error(errorBody.error?.message || '空き枠情報の取得に失敗しました');
+          }
+          const data = await res.json();
+
+          // Transform API response to display format
+          if (data.success && data.data && Array.isArray(data.data.days)) {
+            weeklyData = data.data.days.map(day => {
+              const dayOfWeek = ['日', '月', '火', '水', '木', '金', '土'][day.dayOfWeek];
+              return {
+                date: day.date.replace(/-/g, '/'),
+                day: dayOfWeek,
+                slots: day.slots.map(slot => ({
+                  time: slot.time,
+                  status: slot.available ? '○' : '×',
+                  availablePractitioners: slot.practitionerIds || []
+                }))
+              };
+            });
+          } else {
+            throw new Error(data.error?.message || '空き枠情報の形式が不正です');
+          }
+        }
+
+        // --- DEFENSIVE CODING ---
+        if (weeklyData.length > 7) {
+          console.warn("Weekly data length is", weeklyData.length, ". Slicing to 7.");
+          weeklyData = weeklyData.slice(0, 7);
+        }
+
+        if (weeklyData.length === 0 || !weeklyData[0].slots || weeklyData[0].slots.length === 0) {
+          container.innerHTML = '<div class="text-gray-500 py-4 text-center">選択可能な空き枠がありません</div>';
+          return;
+        }
+
+        // Build Table HTML
+        let tableHtml = '<table class="w-full border-collapse text-center">';
+
+        // Render Header
+        tableHtml += '<thead><tr>';
+        tableHtml += '<th class="py-2 w-12 bg-gray-50 sticky left-0 z-10 border-r border-black/5">日時</th>';
+        weeklyData.forEach(day => {
+          const isSat = day.day === '土';
+          const isSun = day.day === '日';
+          const colorClass = isSat ? 'text-gray-600 font-bold' : (isSun ? 'text-gray-600 font-bold' : 'text-gray-700');
+          const dayNum = day.date.split('/')[2];
+          tableHtml += `
+            <th class="py-1 px-1">
+              <div class="text-xs ${colorClass}">${dayNum}</div>
+              <div class="text-xs ${colorClass}">(${day.day})</div>
+            </th>
+          `;
+        });
+        tableHtml += '</tr></thead>';
+
+        // Render Body
+        tableHtml += '<tbody>';
+        const timeSlots = weeklyData[0].slots.map(s => s.time);
+
+        timeSlots.forEach((time, index) => {
+          tableHtml += '<tr class="border-b border-gray-50">';
+          tableHtml += `<td class="py-3 text-xs font-bold text-gray-600 bg-gray-50 sticky left-0 z-10 border-r border-black/5">${time}</td>`;
+
+          weeklyData.forEach(day => {
+            const slot = day.slots[index];
+            let cellContent = '';
+            let cellClass = '';
+            let clickHandler = '';
+
+            if (slot.status === '⚪︎' || slot.status === '○') {
+              cellContent = '<i class="far fa-circle text-primary text-lg"></i>';
+              const availablePractitionersStr = slot.availablePractitioners ? JSON.stringify(slot.availablePractitioners).replace(/"/g, '&quot;') : '[]';
+              cellClass = 'cursor-pointer hover:bg-gray-100 transition-colors bg-white';
+              clickHandler = `onclick="selectTime('${day.date}', '${time}', '${slot.status}', ${availablePractitionersStr})"`;
+            } else if (slot.status === '×') {
+              cellContent = '<i class="fas fa-times text-gray-300 text-lg"></i>';
+              cellClass = 'bg-gray-50';
+            } else if (slot.status === '休') {
+              cellContent = '<span class="text-xs text-gray-400 font-bold">休</span>';
+              cellClass = 'bg-gray-50';
+            } else {
+              cellContent = '<span class="text-gray-300 font-bold">－</span>';
+              cellClass = 'bg-gray-50';
+            }
+
+            tableHtml += `<td class="py-3 text-center border-r border-b border-black/5 align-middle ${cellClass}" ${clickHandler}>${cellContent}</td>`;
+          });
+
+          tableHtml += '</tr>';
+        });
+        tableHtml += '</tbody></table>';
+
+        container.innerHTML = tableHtml;
+
+      } catch (e) {
+        console.error('Calendar Error:', e);
+        container.innerHTML = '<div class="text-red-500 py-4 text-center">読み込みエラー</div>';
+      } finally {
+        if (loading) loading.classList.add('hidden');
+      }
+    }
+
+    window.selectTime = (date, time, status, availablePractitioners = []) => {
+      // Allow both circle chars
+      if (status !== '⚪︎' && status !== '○' && status !== '△') return;
+
+      state.date = date;
+      state.time = time;
+
+      // 指名なしの場合の担当者自動割当logic
+      if (!state.selectedPractitioner && availablePractitioners && availablePractitioners.length > 0) {
+        const randomIndex = Math.floor(Math.random() * availablePractitioners.length);
+        state.assignedPractitioner = availablePractitioners[randomIndex];
+      } else {
+        state.assignedPractitioner = null;
+      }
+
+      // Go to Customer Info Step
+      document.getElementById('step-date').classList.add('hidden');
+      document.getElementById('step-customer').classList.remove('hidden');
+      updateStepIndicator(3);
+      window.scrollTo(0, 0);
+
+      // Pre-fill if User logged in
+      if (state.user && state.user.displayName) {
+        const nameInput = document.getElementById('customer-name');
+        if (nameInput && !nameInput.value) nameInput.value = state.user.displayName;
+      }
+    };
+
+    function renderConfirm() {
+      const confirmMenu = document.getElementById('confirm-menu');
+      const confirmDate = document.getElementById('confirm-date');
+      const confirmTime = document.getElementById('confirm-time');
+      const confirmPractitioner = document.getElementById('confirm-practitioner');
+
+      if (!confirmMenu) return; // safety
+
+      // Menu Display
+      let displayMenus = state.menu.name;
+      if (state.additionalMenus && state.additionalMenus.length > 0) {
+        displayMenus += ' + ' + state.additionalMenus.map(m => m.name).join(' + ');
+      }
+      confirmMenu.innerText = displayMenus;
+
+      // Date Display
+      confirmDate.innerText = state.date;
+
+      // Time & Price Calculation
+      let totalMinutes = state.menu.minutes;
+      let totalPrice = state.menu.price;
+
+      if (state.additionalMenus) {
+        state.additionalMenus.forEach(m => {
+          totalMinutes += m.minutes;
+          totalPrice += m.price;
+        });
+      }
+
+      let nominationFee = 0;
+      if (state.selectedPractitioner && state.selectedPractitioner.nominationFee) {
+        nominationFee = parseInt(state.selectedPractitioner.nominationFee);
+        totalPrice += nominationFee;
+      }
+
+      const [hours, minutes] = state.time.split(':').map(Number);
+      const endDate = new Date();
+      endDate.setHours(hours, minutes + parseInt(totalMinutes));
+      const endTime = `${String(endDate.getHours()).padStart(2, '0')}:${String(endDate.getMinutes()).padStart(2, '0')}`;
+
+      confirmTime.innerText = `${state.time} 〜 ${endTime} (${totalMinutes}分)`;
+
+      // Practitioner Display
+      let practitionerText = '';
+      if (state.selectedPractitioner) {
+        practitionerText = `${state.selectedPractitioner.name} (指名)`;
+        if (nominationFee > 0) {
+          practitionerText += ` (+¥${nominationFee.toLocaleString()})`;
+        }
+      } else if (state.assignedPractitioner) {
+        practitionerText = `${state.assignedPractitioner.name} (指名なし)`;
+      } else {
+        practitionerText = '指名なし (当日決定)';
+      }
+      confirmPractitioner.innerText = practitionerText;
+
+      // Customer Info Display
+      if (state.customerInfo) {
+        const nameEl = document.getElementById('confirm-user-name');
+        const phoneEl = document.getElementById('confirm-user-phone');
+        const emailEl = document.getElementById('confirm-user-email');
+        const emailRow = document.getElementById('confirm-email-row');
+
+        if (nameEl) nameEl.innerText = state.customerInfo.name || '';
+        if (phoneEl) phoneEl.innerText = state.customerInfo.phone || '';
+        if (emailEl && state.customerInfo.email) {
+          emailEl.innerText = state.customerInfo.email;
+          if (emailRow) emailRow.classList.remove('hidden');
+        } else if (emailRow) {
+          emailRow.classList.add('hidden');
+        }
+      }
+
+      // Update Total Price (Assuming specific ID for confirm total, if not present we should log or add it)
+      const totalEl = document.getElementById('confirm-total-price');
+      if (totalEl) totalEl.innerText = `¥${totalPrice.toLocaleString()}`;
+    }
+
+    // Old selectTime logic removed
+
+    function formatDate(date) {
+      const y = date.getFullYear();
+      const m = String(date.getMonth() + 1).padStart(2, '0');
+      const d = String(date.getDate()).padStart(2, '0');
+      return `${y}/${m}/${d}`;
+    }
+
+    function generateMockWeeklyData(startDate) {
+      const result = [];
+      for (let i = 0; i < 7; i++) {
+        const d = new Date(startDate);
+        d.setDate(startDate.getDate() + i);
+        const dateStr = formatDate(d);
+        const dayOfWeek = ['日', '月', '火', '水', '木', '金', '土'][d.getDay()];
+
+        const slots = [];
+        let current = new Date(d);
+        current.setHours(10, 0, 0, 0);
+        const end = new Date(d);
+        end.setHours(20, 0, 0, 0);
+
+        while (current < end) {
+          const time = `${String(current.getHours()).padStart(2, '0')}:${String(current.getMinutes()).padStart(2, '0')}`;
+          // Random status
+          // Random status but ensure some availability
+          const rand = Math.random();
+          let status = '○';
+          // Make weekends fully open for demo
+          if (d.getDay() === 0 || d.getDay() === 6) {
+            status = '○';
+          } else {
+            if (rand < 0.2) status = '×';
+            if (rand < 0.05) status = '-';
+          }
+
+          slots.push({ time, status });
+          current.setMinutes(current.getMinutes() + 30);
+        }
+
+        result.push({ date: dateStr, day: dayOfWeek, slots });
+      }
+      return result;
+    }
+
+    // Mypage Tab Switch
+    window.switchMypageTab = (tab) => {
+      // Hide all tabs
+      document.getElementById('mypage-reservations').classList.add('hidden');
+      document.getElementById('mypage-preferences').classList.add('hidden');
+      document.getElementById('mypage-gallery').classList.add('hidden');
+
+      // Reset tab styles
+      ['reservations', 'preferences', 'gallery'].forEach(t => {
+        const btn = document.getElementById(`mypage-tab-${t}`);
+        btn.classList.remove('text-primary', 'font-bold', 'border-primary');
+        btn.classList.add('text-gray-400', 'font-medium', 'border-transparent');
+      });
+
+      // Show selected tab
+      document.getElementById(`mypage-${tab}`).classList.remove('hidden');
+      const activeBtn = document.getElementById(`mypage-tab-${tab}`);
+      activeBtn.classList.add('text-primary', 'font-bold', 'border-primary');
+      activeBtn.classList.remove('text-gray-400', 'font-medium', 'border-transparent');
+    };
+
+    async function loadHistory() {
+      const container = document.getElementById('reservation-history');
+      const upcomingContainer = document.getElementById('upcoming-reservation');
+      const upcomingContent = document.getElementById('upcoming-reservation-content');
+
+      container.innerHTML = '<div class="flex justify-center py-8 text-primary"><i class="fas fa-spinner fa-spin fa-2x"></i></div>';
+
+      try {
+        let history = [];
+        let upcoming = null;
+
+        if (isLocalDev) {
+          // リッチなモックデータ
+          history = [
+            {
+              id: 'mock1',
+              date: '2024年03月12日',
+              time: '12:00〜',
+              practitioner: { name: '山田 花子', title: '店長', imageUrl: 'https://placehold.co/60' },
+              menus: ['全体Rストレート', 'カット'],
+              price: 22000,
+              status: 'completed'
+            },
+            {
+              id: 'mock2',
+              date: '2024年01月09日',
+              time: '13:00〜',
+              practitioner: { name: '佐藤 次郎', title: 'スタイリスト', imageUrl: 'https://placehold.co/60' },
+              menus: ['カット'],
+              price: 6600,
+              status: 'completed'
+            },
+            {
+              id: 'mock3',
+              date: '2023年11月14日',
+              time: '18:00〜',
+              practitioner: { name: '山田 花子', title: '店長', imageUrl: 'https://placehold.co/60' },
+              menus: ['カット', 'カラー'],
+              price: 15000,
+              status: 'completed'
+            }
+          ];
+
+          upcoming = {
+            id: 'upcoming1',
+            date: '2024年04月15日',
+            time: '14:00〜',
+            practitioner: { name: '山田 花子', title: '店長', imageUrl: 'https://placehold.co/60' },
+            menus: ['カット', 'トリートメント'],
+            price: 12000,
+            status: 'confirmed'
+          };
+        } else {
+          // Use LINE ID Token for authentication
+          if (!idToken) {
+            throw new Error('認証トークンが取得できていません');
+          }
+
+          const res = await fetch(`${API_BASE_URL}/api/v1/${TENANT_KEY}/reservations/my`, {
+            headers: {
+              'Authorization': `Bearer ${idToken}`
+            }
+          });
+          const data = await res.json();
+
+          // Transform API response to display format
+          const reservations = data.data || [];
+          const now = new Date();
+
+          // Split into upcoming and history
+          history = [];
+          upcoming = null;
+
+          reservations.forEach(r => {
+            const resDate = new Date(r.date + 'T' + r.startTime);
+            const item = {
+              id: r.id,
+              date: r.date.replace(/-/g, '年').replace(/年(\d+)$/, '月$1日'),
+              time: r.startTime + '〜',
+              practitioner: { name: r.practitionerName, title: '', imageUrl: '' },
+              menus: r.menuNames || [r.menuName || 'メニュー'],
+              price: r.totalPrice,
+              status: r.status,
+              // Keep raw fields for reschedule flow
+              rawDate: r.date,
+              rawStartTime: r.startTime,
+              rawEndTime: r.endTime,
+              practitionerId: r.practitionerId,
+              menuIds: r.menuIds,
+              optionIds: r.optionIds,
+              storeId: r.storeId,
+              phone: r.customerPhone,
+              customerName: r.customerName,
+            };
+
+            if (resDate >= now && r.status !== 'canceled' && r.status !== 'completed') {
+              if (!upcoming) {
+                upcoming = item;
+              } else {
+                history.push(item);
+              }
+            } else {
+              history.push(item);
+            }
+          });
+        }
+
+        // 次回予約を表示
+        if (upcoming) {
+          upcomingContainer.classList.remove('hidden');
+          upcomingContent.innerHTML = renderReservationCard(upcoming, true);
+        } else {
+          upcomingContainer.classList.add('hidden');
+        }
+
+        state.reservationCards = [...(upcoming ? [upcoming] : []), ...history];
+
+        if (history.length === 0) {
+          container.innerHTML = `<div class="text-center text-gray-400 py-8">予約履歴はありません</div>`;
+          return;
+        }
+
+        container.innerHTML = history.map(item => renderReservationCard(item, false)).join('');
+      } catch (e) {
+        console.error(e);
+        container.innerHTML = `<div class="text-center text-red-400 py-8">読み込みエラー</div>`;
+      }
+    }
+
+    function renderReservationCard(item, isUpcoming) {
+      const statusBadge = isUpcoming
+        ? '<span class="bg-green-100 text-green-600 text-[10px] px-2 py-0.5 rounded-full">予約確定</span>'
+        : '';
+
+      const borderColor = isUpcoming ? 'border-green-500' : 'border-primary';
+      const bgColor = isUpcoming ? 'bg-green-50/50' : 'bg-white';
+
+      const menuList = item.menus
+        ? item.menus.map(m => `<span class="text-gray-600">●${m}</span>`).join(' ')
+        : `<span class="text-gray-600">${item.menu || ''}</span>`;
+
+      const practitionerHtml = item.practitioner ? `
+        <div class="flex items-center gap-2 mt-2">
+          <img src="${item.practitioner.imageUrl}" alt="${item.practitioner.name}" 
+            class="w-8 h-8 rounded-full object-cover border border-gray-200">
+          <div>
+            <p class="text-xs font-medium text-gray-700">${item.practitioner.name}</p>
+            <p class="text-[10px] text-gray-400">${item.practitioner.title || ''}</p>
+          </div>
+        </div>
+      ` : '';
+
+      const priceHtml = item.price
+        ? `<div class="text-primary font-bold text-lg mt-2">${item.price.toLocaleString()}円</div>`
+        : '';
+
+      const actionHtml = isUpcoming
+        ? `<div class="flex gap-2 mt-3">
+            <button onclick="cancelReservation('${item.id}')" class="flex-1 border border-red-400 text-red-400 text-sm py-2 rounded-lg hover:bg-red-50 transition-colors">
+              キャンセル
+            </button>
+            <button onclick="rescheduleReservation('${item.id}')" class="flex-1 bg-primary text-primary-foreground text-sm py-2 rounded-lg hover:bg-primary/90 transition-colors">
+              日時変更
+            </button>
+          </div>`
+        : `<button onclick="viewHistoryDetails('${item.id}')" class="w-full mt-3 text-sm text-primary py-2 bg-primary/5 rounded-lg hover:bg-gray-100 transition-colors">
+            過去の履歴を確認する
+          </button>`;
+
+      return `
+        <div class="${bgColor} shadow-soft border-l-4 ${borderColor} p-4 rounded-r-xl mb-3">
+          <div class="flex justify-between items-start">
+            <div class="flex-1">
+              <div class="flex items-center gap-2 mb-2">
+                <span class="font-bold text-gray-800">${item.date} ${item.time}</span>
+                ${statusBadge}
+              </div>
+              ${practitionerHtml}
+              <div class="text-sm mt-2 space-x-1">
+                ${menuList}
+              </div>
+              ${priceHtml}
+            </div>
+          </div>
+          ${actionHtml}
+        </div>
+      `;
+    }
+
+    window.viewHistoryDetails = (id) => {
+      const item = (state.reservationCards || []).find((r) => String(r.id) === String(id));
+      if (!item) {
+        alert('履歴データが見つかりません');
+        return;
+      }
+      const detail = {
+        ...item,
+        menu: item.menu || (item.menus && item.menus.length > 0 ? item.menus.join(' / ') : ''),
+      };
+      showReservationDetails(detail);
+    };
+
+    window.rescheduleReservation = (id) => {
+      const item = (state.reservationCards || []).find((r) => String(r.id) === String(id));
+      if (!item) {
+        alert('変更対象の予約が見つかりません');
+        return;
+      }
+      startReservationChange({
+        ...item,
+        menu: item.menu || (item.menus && item.menus.length > 0 ? item.menus[0] : ''),
+      });
+    };
+
+    window.showReservationDetails = (item) => {
+      document.getElementById('modal-date').innerText = `${item.date} ${item.time}`;
+      document.getElementById('modal-menu').innerText = item.menu;
+
+      document.getElementById('modal-cancel-btn').onclick = () => {
+        cancelReservation(item.id);
+        closeModal();
+      };
+
+      document.getElementById('modal-change-btn').onclick = () => {
+        startReservationChange(item);
+        closeModal();
+      };
+
+      document.getElementById('reservation-modal').classList.remove('hidden');
+    };
+
+    window.closeModal = () => {
+      document.getElementById('reservation-modal').classList.add('hidden');
+    };
+
+    window.startReservationChange = (reservation) => {
+      // Set modification mode
+      state.modifyingReservation = reservation;
+
+      // Restore Menu
+      const menuIds = Array.isArray(reservation.menuIds)
+        ? reservation.menuIds.map(String)
+        : (reservation.menuIds ? String(reservation.menuIds).split(',') : []);
+      const primaryMenuId = menuIds.length > 0 ? String(menuIds[0]) : null;
+
+      let menuObj = null;
+      if (primaryMenuId) {
+        menuObj = state.menus.find(m => String(m.id) === primaryMenuId) || null;
+      }
+      if (!menuObj) {
+        // Fallback: name matching (legacy history payloads)
+        const menuName = reservation.menu || (reservation.menus && reservation.menus.length > 0 ? reservation.menus[0] : '');
+        menuObj = state.menus.find(m => m.name === menuName) || null;
+      }
+      if (!menuObj) {
+        alert('メニュー情報が見つかりません。変更を受け付けられません。');
+        return;
+      }
+      state.menu = menuObj;
+
+      // Restore additional menus (if any)
+      state.additionalMenus = [];
+      if (menuIds.length > 1) {
+        state.additionalMenus = menuIds
+          .slice(1)
+          .map((id) => state.menus.find((m) => String(m.id) === String(id)))
+          .filter(Boolean);
+      }
+
+      // Restore Options
+      state.selectedOptions = [];
+      if (reservation.optionIds) {
+        const ids = Array.isArray(reservation.optionIds)
+          ? reservation.optionIds.map(String)
+          : String(reservation.optionIds).split(',');
+        state.selectedOptions = state.options.filter(o => ids.includes(String(o.id)));
+      }
+
+      // Restore Practitioner
+      if (reservation.practitionerId) {
+        state.selectedPractitioner = state.practitioners.find(p => String(p.id) === String(reservation.practitionerId)) || null;
+        // If not found in current loaded practitioners (maybe inactive), might need handling, but null is safe
+      } else {
+        state.selectedPractitioner = null;
+      }
+
+      // Populate inputs
+      if (reservation.phone) {
+        // We need to wait for DOM update or ensure element exists. 
+        // user-phone-input is in confirm step, handled in showConfirmStep or we set it in state?
+        // Not in state currently, so we set a flag or just handle in confirm step logic if we want to preserve old phone
+        // Simpler: Just pre-fill if we go to confirm step? 
+        // But we go to date selection first.
+      }
+
+      // Move to Date Selection
+      // We skip option selection as we restored it
+      document.getElementById('home-view').classList.remove('hidden'); // Ensure we are in home view if coming from mypage
+      switchTab('home'); // Switch tab first
+
+      moveToDateSelection();
+
+      alert('変更後の日時を選択してください');
+    };
+
+    async function submitReservation() {
+      // Show loading
+      document.getElementById('loading').classList.remove('hidden');
+
+      try {
+        if (!state.user) {
+          throw new Error('ユーザー情報が取得できていません。再読み込みしてください。');
+        }
+
+        // Determine practitioner ID (use assigned practitioner if no nomination)
+        const practitionerId = state.selectedPractitioner?.id || state.assignedPractitioner?.id;
+        if (!practitionerId) {
+          throw new Error('施術者が選択されていません。');
+        }
+
+        // Build menu IDs array (primary + additional menus)
+        const menuIds = [state.menu.id];
+        if (state.additionalMenus && state.additionalMenus.length > 0) {
+          state.additionalMenus.forEach(m => menuIds.push(m.id));
+        }
+
+        // Convert date format from YYYY/MM/DD to YYYY-MM-DD
+        const formattedDate = state.date.replace(/\//g, '-');
+
+        const payload = {
+          practitionerId: practitionerId,
+          menuIds: menuIds,
+          optionIds: state.selectedOptions.map(o => o.id),
+          date: formattedDate,
+          startTime: state.time,
+          customerNote: '',
+          isNomination: !!state.selectedPractitioner,
+          notificationToken: state.user.userId || state.user.sub,
+          customerName: document.getElementById('customer-name').value,
+          customerPhone: document.getElementById('customer-phone').value,
+        };
+
+        if (isLocalDev) {
+          console.log('Mock Reservation Submit:', payload);
+          await new Promise(r => setTimeout(r, 1500));
+        } else {
+          // Use LINE ID Token for authentication
+          if (!idToken) {
+            throw new Error('認証トークンが取得できていません。再読み込みしてください。');
+          }
+
+          const modifyingId = state.modifyingReservation?.id;
+          if (modifyingId && state.modifyingReservation?.storeId) {
+            payload.storeId = state.modifyingReservation.storeId;
+          }
+
+          const url = modifyingId
+            ? `${API_BASE_URL}/api/v1/${TENANT_KEY}/reservations/${modifyingId}`
+            : `${API_BASE_URL}/api/v1/${TENANT_KEY}/reservations`;
+
+          const res = await fetch(url, {
+            method: modifyingId ? 'PUT' : 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${idToken}`
+            },
+            body: JSON.stringify(payload)
+          });
+
+          if (!res.ok) {
+            const errorData = await res.json().catch(() => ({}));
+            throw new Error(errorData.error?.message || errorData.message || '予約に失敗しました');
+          }
+        }
+
+        // Success - Go to Complete View or Reset
+        if (state.modifyingReservation?.id) {
+          alert('予約を変更しました！\nLINEで通知をお送りします。');
+          state.modifyingReservation = null;
+        } else {
+          alert('予約が完了しました！\nLINEで通知をお送りします。');
+        }
+
+        // Reset and go home
+        location.reload();
+
+      } catch (err) {
+        console.error('Reservation Error:', err);
+        alert('エラーが発生しました: ' + err.message);
+      } finally {
+        document.getElementById('loading').classList.add('hidden');
+      }
+    };
+
+    window.cancelReservation = async (reservationId) => {
+      if (!confirm('本当にキャンセルしますか？')) return;
+
+      document.getElementById('loading').classList.remove('hidden');
+      try {
+        let result = { success: true };
+        if (!isLocalDev) {
+          // Use LINE ID Token for authentication
+          if (!idToken) {
+            throw new Error('認証トークンが取得できていません。再読み込みしてください。');
+          }
+
+          const res = await fetch(`${API_BASE_URL}/api/v1/${TENANT_KEY}/reservations/${reservationId}`, {
+            method: 'DELETE',
+            headers: {
+              'Authorization': `Bearer ${idToken}`
+            }
+          });
+          result = await res.json();
+        } else {
+          await new Promise(r => setTimeout(r, 1000));
+        }
+
+        if (result.success) {
+          alert('キャンセルしました');
+          loadHistory();
+        } else {
+          alert('エラー: ' + (result.error?.message || result.message || 'キャンセルに失敗しました'));
+        }
+      } catch (e) {
+        console.error('Cancel Error:', e);
+        alert('通信エラー: ' + e.message);
+      } finally {
+        document.getElementById('loading').classList.add('hidden');
+      }
+    };
+
+    // 管理者向け機能は admin-dashboard へ統合済み
+  </script>
+</body>
+
+</html>
