@@ -133,6 +133,11 @@ gcloud secrets add-iam-policy-binding db-password \
 
 Firebase Consoleの「Authentication」→「Users」から手動で管理者アカウントを追加
 
+または、初回セットアップ時のみ Admin Dashboard の `"/signup"` 画面で新規登録できます。
+- 例: `https://reserve-admin-xxxxx.run.app/signup`
+- 条件: 該当テナントの `admins` レコードが 0 件のときのみ
+- 初回 API 呼び出し時に owner 権限が自動作成されます
+
 ---
 
 ## 5. LINE Developers設定

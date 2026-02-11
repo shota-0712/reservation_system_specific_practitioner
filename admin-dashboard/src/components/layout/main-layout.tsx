@@ -35,10 +35,12 @@ export function MainLayout({ children }: MainLayoutProps) {
         return () => window.removeEventListener("resize", handleResize);
     }, []);
 
+    const isPublicAuthRoute = pathname === "/login" || pathname === "/signup";
+
     // Redirect to login if not authenticated
     useEffect(() => {
-        // Skip for login page
-        if (pathname === "/login") return;
+        // Skip for auth pages
+        if (isPublicAuthRoute) return;
 
         // Skip during initial loading
         if (loading) return;
@@ -47,10 +49,10 @@ export function MainLayout({ children }: MainLayoutProps) {
         if (!user) {
             router.push("/login");
         }
-    }, [user, loading, pathname, router]);
+    }, [user, loading, isPublicAuthRoute, router]);
 
-    // Don't show layout on login page
-    if (pathname === "/login") {
+    // Don't show layout on auth pages
+    if (isPublicAuthRoute) {
         return <>{children}</>;
     }
 
