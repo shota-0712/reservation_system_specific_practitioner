@@ -7,12 +7,13 @@
 
 import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
 import { User } from 'firebase/auth';
-import { onAuthChange, signIn, signOut, getIdToken } from './firebase';
+import { onAuthChange, signIn, signUp, signOut, getIdToken } from './firebase';
 
 interface AuthContextType {
     user: User | null;
     loading: boolean;
     login: (email: string, password: string) => Promise<void>;
+    register: (email: string, password: string, displayName?: string) => Promise<void>;
     logout: () => Promise<void>;
     getAuthToken: () => Promise<string | null>;
 }
@@ -36,6 +37,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         await signIn(email, password);
     };
 
+    const register = async (email: string, password: string, displayName?: string) => {
+        await signUp(email, password, displayName);
+    };
+
     const logout = async () => {
         await signOut();
     };
@@ -45,7 +50,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
 
     return (
-        <AuthContext.Provider value={{ user, loading, login, logout, getAuthToken }}>
+        <AuthContext.Provider value={{ user, loading, login, register, logout, getAuthToken }}>
             {children}
         </AuthContext.Provider>
     );

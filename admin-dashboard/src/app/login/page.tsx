@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { Scissors, Eye, EyeOff, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/lib/auth-context";
@@ -140,6 +141,12 @@ export default function LoginPage() {
                     <div className="mt-6 pt-6 border-t border-gray-100">
                         <p className="text-xs text-gray-400 text-center">
                             Firebase Authenticationで認証しています
+                        </p>
+                        <p className="text-xs text-gray-500 text-center mt-2">
+                            初回セットアップですか？{" "}
+                            <Link href="/signup" className="text-primary hover:underline">
+                                新規登録
+                            </Link>
                         </p>
                     </div>
                 </div>

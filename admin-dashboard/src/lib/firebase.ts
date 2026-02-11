@@ -9,6 +9,8 @@ import { initializeApp, getApps } from 'firebase/app';
 import {
     getAuth,
     signInWithEmailAndPassword,
+    createUserWithEmailAndPassword,
+    updateProfile,
     signOut as firebaseSignOut,
     onAuthStateChanged,
     User
@@ -41,6 +43,19 @@ export async function signIn(email: string, password: string) {
     const auth = getAuthSafe();
     if (!auth) throw new Error('Firebase Auth is not available in this environment');
     return signInWithEmailAndPassword(auth, email, password);
+}
+
+/**
+ * メールアドレスとパスワードで新規登録
+ */
+export async function signUp(email: string, password: string, displayName?: string) {
+    const auth = getAuthSafe();
+    if (!auth) throw new Error('Firebase Auth is not available in this environment');
+    const credential = await createUserWithEmailAndPassword(auth, email, password);
+    if (displayName?.trim()) {
+        await updateProfile(credential.user, { displayName: displayName.trim() });
+    }
+    return credential;
 }
 
 /**

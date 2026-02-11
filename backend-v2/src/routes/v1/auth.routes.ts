@@ -10,6 +10,7 @@ import { asyncHandler, validateBody } from '../../middleware/index.js';
 import { getTenantId, getTenant } from '../../middleware/tenant.js';
 import { createCustomerRepository, createStoreRepository } from '../../repositories/index.js';
 import { createLineService } from '../../services/line.service.js';
+import { DatabaseService } from '../../config/database.js';
 import type { ApiResponse, Customer } from '../../types/index.js';
 
 const router = Router();
@@ -202,6 +203,36 @@ router.get('/config',
                     requirePhone: store.requirePhone,
                     requireEmail: store.requireEmail,
                 } : undefined,
+            },
+        };
+
+        res.json(response);
+    })
+);
+
+/**
+ * GET /auth/admin/bootstrap-status
+ * Returns whether the tenant can create the first admin account.
+ * Public endpoint for admin signup screen.
+ */
+router.get('/admin/bootstrap-status',
+    asyncHandler(async (req: Request, res: Response): Promise<void> => {
+        const tenantId = getTenantId(req);
+        const row = await DatabaseService.queryOne<{ count: number }>(
+            'SELECT COUNT(*)::int AS count FROM admins WHERE tenant_id = $1',
+            [tenantId],
+            tenantId
+        );
+
+        const adminCount = Number(row?.count ?? 0);
+        const response: ApiResponse<{
+            canRegister: boolean;
+            adminCount: number;
+        }> = {
+            success: true,
+            data: {
+                canRegister: adminCount === 0,
+                adminCount,
             },
         };
 
