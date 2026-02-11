@@ -30,12 +30,13 @@ router.get('/health', (_req: Request, res: Response) => {
  * Readiness check endpoint
  */
 router.get('/ready', (_req: Request, res: Response) => {
-    checkReadiness().then(({ ready, checks }) => {
-        const response: ApiResponse<{ ready: boolean; checks: typeof checks }> = {
+    checkReadiness().then(({ ready, checks, required }) => {
+        const response: ApiResponse<{ ready: boolean; checks: typeof checks; required: typeof required }> = {
             success: ready,
             data: {
                 ready,
                 checks,
+                required,
             },
             error: ready
                 ? undefined
@@ -54,11 +55,26 @@ router.get('/ready', (_req: Request, res: Response) => {
             googleOauthConfigured: false,
             writeFreezeMode: env.WRITE_FREEZE_MODE,
         };
-        const response: ApiResponse<{ ready: boolean; checks: typeof checks }> = {
+        const response: ApiResponse<{
+            ready: boolean;
+            checks: typeof checks;
+            required: {
+                database: true;
+                firebase: true;
+                line: boolean;
+                googleOauthConfigured: boolean;
+            };
+        }> = {
             success: false,
             data: {
                 ready: false,
                 checks,
+                required: {
+                    database: true,
+                    firebase: true,
+                    line: env.READINESS_REQUIRE_LINE,
+                    googleOauthConfigured: env.READINESS_REQUIRE_GOOGLE_OAUTH,
+                },
             },
             error: {
                 code: 'INTERNAL_ERROR',

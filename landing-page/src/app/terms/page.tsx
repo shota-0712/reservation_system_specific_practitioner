@@ -1,6 +1,9 @@
 import Link from 'next/link';
 
 export default function Terms() {
+  const adminBaseUrl = (process.env.NEXT_PUBLIC_ADMIN_URL || '').replace(/\/+$/, '');
+  const registerUrl = adminBaseUrl ? `${adminBaseUrl}/register` : '/register';
+
   return (
     <div className="min-h-screen bg-[#f6f5f4]">
       {/* Header */}
@@ -14,7 +17,7 @@ export default function Terms() {
           </Link>
           <div className="flex items-center gap-3">
             <a
-              href="/#contact"
+              href={registerUrl}
               className="px-5 py-2.5 text-sm text-white font-semibold rounded-full bg-gradient-to-r from-[#ff2f2f] via-[#ef7b16] via-[#8a43e1] to-[#d511fd] hover:opacity-90 transition-opacity"
             >
               無料で始める

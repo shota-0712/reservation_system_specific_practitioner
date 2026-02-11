@@ -15,19 +15,39 @@ set -euo pipefail
 
 BRANCH_PATTERN="${BRANCH_PATTERN:-^main$}"
 TRIGGER_PREFIX="${TRIGGER_PREFIX:-reserve}"
+CB_REGION="${CB_REGION:-asia-northeast1}"
+CB_CONNECTION="${CB_CONNECTION:-${TRIGGER_PREFIX}-conn}"
+CB_REPOSITORY="${CB_REPOSITORY:-${GITHUB_REPO}}"
+REMOTE_URI="${REMOTE_URI:-https://github.com/${GITHUB_OWNER}/${GITHUB_REPO}.git}"
+
 CUSTOMER_TENANT_KEY="${CUSTOMER_TENANT_KEY:-default}"
 NEXT_PUBLIC_TENANT_ID="${NEXT_PUBLIC_TENANT_ID:-${CUSTOMER_TENANT_KEY}}"
 CUSTOMER_API_URL="${CUSTOMER_API_URL:-${NEXT_PUBLIC_API_URL}}"
 RUN_MIGRATIONS="${RUN_MIGRATIONS:-false}"
 RUN_INTEGRATION="${RUN_INTEGRATION:-false}"
 WRITE_FREEZE_MODE="${WRITE_FREEZE_MODE:-false}"
+READINESS_REQUIRE_LINE="${READINESS_REQUIRE_LINE:-false}"
+READINESS_REQUIRE_GOOGLE_OAUTH="${READINESS_REQUIRE_GOOGLE_OAUTH:-true}"
+PUBLIC_ONBOARDING_ENABLED="${PUBLIC_ONBOARDING_ENABLED:-true}"
 FORCE_RECREATE="${FORCE_RECREATE:-false}"
+
 CLOUDSQL_CONNECTION="${CLOUDSQL_CONNECTION:-}"
 CLOUDSQL_INSTANCE="${CLOUDSQL_INSTANCE:-}"
 DB_USER="${DB_USER:-app_user}"
 DB_NAME="${DB_NAME:-reservation_system}"
 GOOGLE_OAUTH_CLIENT_ID="${GOOGLE_OAUTH_CLIENT_ID:-}"
 GOOGLE_OAUTH_REDIRECT_URI="${GOOGLE_OAUTH_REDIRECT_URI:-}"
+
+TRIGGER_SERVICE_ACCOUNT="${TRIGGER_SERVICE_ACCOUNT:-}"
+USE_TRIGGER_SERVICE_ACCOUNT="${USE_TRIGGER_SERVICE_ACCOUNT:-false}"
+if [ "${USE_TRIGGER_SERVICE_ACCOUNT}" != "true" ]; then
+  TRIGGER_SERVICE_ACCOUNT=""
+fi
+
+if [ -z "${CLOUDSQL_CONNECTION}" ]; then
+  echo "ERROR: CLOUDSQL_CONNECTION is required (example: project:asia-northeast1:reservation-system-db)"
+  exit 1
+fi
 
 if [ -n "${GOOGLE_OAUTH_CLIENT_ID}" ] && [ -z "${GOOGLE_OAUTH_REDIRECT_URI}" ]; then
   echo "ERROR: GOOGLE_OAUTH_REDIRECT_URI is required when GOOGLE_OAUTH_CLIENT_ID is set."
@@ -39,95 +59,64 @@ if [ -z "${GOOGLE_OAUTH_CLIENT_ID}" ] && [ -n "${GOOGLE_OAUTH_REDIRECT_URI}" ]; 
   exit 1
 fi
 
-if [ -z "${CLOUDSQL_CONNECTION}" ]; then
-  echo "ERROR: CLOUDSQL_CONNECTION is required (example: project:asia-northeast1:reservation-system-db)"
-  exit 1
-fi
-
-CB_REGION="${CB_REGION:-asia-northeast1}"
-CB_CONNECTION="${CB_CONNECTION:-${TRIGGER_PREFIX}-conn}"
-CB_REPOSITORY="${CB_REPOSITORY:-${GITHUB_REPO}}"
-REMOTE_URI="${REMOTE_URI:-https://github.com/${GITHUB_OWNER}/${GITHUB_REPO}.git}"
-
-# Cloud Build GitHub triggers are increasingly moving to 2nd gen repos (cloudbuild/v2).
-# For 2nd gen repos, you must:
-# 1) Create a GitHub connection (one-time, opens a browser URL)
-# 2) Register the GitHub repo in that connection
-#
-# This script assumes the connection/repository already exist and fails fast with
-# copy-pastable commands if they don't.
-if ! gcloud builds connections describe "${CB_CONNECTION}" --project="${PROJECT_ID}" --region="${CB_REGION}" >/dev/null 2>&1; then
-  echo "ERROR: Cloud Build GitHub connection not found."
-  echo ""
-  echo "Create it (one-time; follow printed URLs):"
-  echo "  gcloud builds connections create github ${CB_CONNECTION} --project=${PROJECT_ID} --region=${CB_REGION}"
-  echo ""
-  echo "Then register the repo:"
-  echo "  gcloud builds repositories create ${CB_REPOSITORY} \\"
-  echo "    --remote-uri=${REMOTE_URI} \\"
-  echo "    --connection=${CB_CONNECTION} \\"
-  echo "    --project=${PROJECT_ID} \\"
-  echo "    --region=${CB_REGION}"
-  exit 1
-fi
-
-if ! gcloud builds repositories describe "${CB_REPOSITORY}" --project="${PROJECT_ID}" --connection="${CB_CONNECTION}" --region="${CB_REGION}" >/dev/null 2>&1; then
-  echo "ERROR: Cloud Build repository not found in the connection."
-  echo ""
-  echo "Create it (one-time):"
-  echo "  gcloud builds repositories create ${CB_REPOSITORY} \\"
-  echo "    --remote-uri=${REMOTE_URI} \\"
-  echo "    --connection=${CB_CONNECTION} \\"
-  echo "    --project=${PROJECT_ID} \\"
-  echo "    --region=${CB_REGION}"
-  exit 1
-fi
-
-REPOSITORY_RESOURCE="projects/${PROJECT_ID}/locations/${CB_REGION}/connections/${CB_CONNECTION}/repositories/${CB_REPOSITORY}"
-
-TRIGGER_SERVICE_ACCOUNT="${TRIGGER_SERVICE_ACCOUNT:-}"
-USE_TRIGGER_SERVICE_ACCOUNT="${USE_TRIGGER_SERVICE_ACCOUNT:-false}"
-
-if [ "${USE_TRIGGER_SERVICE_ACCOUNT}" != "true" ]; then
-  TRIGGER_SERVICE_ACCOUNT=""
-fi
-
 if [ -n "${TRIGGER_SERVICE_ACCOUNT}" ] && [[ "${TRIGGER_SERVICE_ACCOUNT}" =~ @cloudbuild\.gserviceaccount\.com$ ]]; then
   echo "ERROR: TRIGGER_SERVICE_ACCOUNT points to a Cloud Build-managed service account (${TRIGGER_SERVICE_ACCOUNT})."
   echo "Use a user-managed service account, or leave TRIGGER_SERVICE_ACCOUNT unset."
   exit 1
 fi
 
-if [ -n "${TRIGGER_SERVICE_ACCOUNT}" ]; then
-  echo "INFO: Creating triggers with user-managed service account: ${TRIGGER_SERVICE_ACCOUNT}"
-else
-  echo "INFO: Creating triggers without explicit service account (Cloud Build default)."
+if ! gcloud builds connections describe "${CB_CONNECTION}" --project="${PROJECT_ID}" --region="${CB_REGION}" >/dev/null 2>&1; then
+  cat <<EOF
+ERROR: Cloud Build GitHub connection not found.
+
+Create it (one-time; follow printed URLs):
+  gcloud builds connections create github ${CB_CONNECTION} --project=${PROJECT_ID} --region=${CB_REGION}
+
+Then register the repo:
+  gcloud builds repositories create ${CB_REPOSITORY} \\
+    --remote-uri=${REMOTE_URI} \\
+    --connection=${CB_CONNECTION} \\
+    --project=${PROJECT_ID} \\
+    --region=${CB_REGION}
+EOF
+  exit 1
 fi
 
-create_trigger_if_missing() {
-  local trigger_name="$1"
-  local included_files="$2"
-  local substitutions="$3"
+if ! gcloud builds repositories describe "${CB_REPOSITORY}" --project="${PROJECT_ID}" --connection="${CB_CONNECTION}" --region="${CB_REGION}" >/dev/null 2>&1; then
+  cat <<EOF
+ERROR: Cloud Build repository not found in the connection.
 
-  local existing_id
-  existing_id="$(gcloud builds triggers list \
+Create it (one-time):
+  gcloud builds repositories create ${CB_REPOSITORY} \\
+    --remote-uri=${REMOTE_URI} \\
+    --connection=${CB_CONNECTION} \\
+    --project=${PROJECT_ID} \\
+    --region=${CB_REGION}
+EOF
+  exit 1
+fi
+
+REPOSITORY_RESOURCE="projects/${PROJECT_ID}/locations/${CB_REGION}/connections/${CB_CONNECTION}/repositories/${CB_REPOSITORY}"
+
+if [ -n "${TRIGGER_SERVICE_ACCOUNT}" ]; then
+  echo "INFO: trigger service account: ${TRIGGER_SERVICE_ACCOUNT}"
+else
+  echo "INFO: trigger service account: (Cloud Build default)"
+fi
+
+trigger_id_by_name() {
+  local trigger_name="$1"
+  gcloud builds triggers list \
     --project="${PROJECT_ID}" \
     --region="${CB_REGION}" \
     --format="csv[no-heading](id,name)" \
-    | awk -F',' -v n="${trigger_name}" '$2==n {print $1; exit}' || true)"
+    | awk -F',' -v n="${trigger_name}" '$2==n {print $1; exit}'
+}
 
-  if [ -n "${existing_id}" ]; then
-    if [ "${FORCE_RECREATE}" = "true" ]; then
-      echo "RECREATE: deleting existing trigger (${trigger_name}, id=${existing_id})"
-      gcloud builds triggers delete "${existing_id}" \
-        --project="${PROJECT_ID}" \
-        --region="${CB_REGION}" \
-        --quiet
-    else
-      echo "SKIP: trigger already exists (${trigger_name}, id=${existing_id})"
-      return
-    fi
-  fi
+create_trigger() {
+  local trigger_name="$1"
+  local included_files="$2"
+  local substitutions="$3"
 
   if [ -n "${TRIGGER_SERVICE_ACCOUNT}" ]; then
     gcloud builds triggers create github \
@@ -151,11 +140,71 @@ create_trigger_if_missing() {
       --included-files="${included_files}" \
       --substitutions="${substitutions}"
   fi
-
-  echo "CREATED: ${trigger_name}"
 }
 
-backend_substitutions="_DEPLOY_TARGET=backend,_RUN_INTEGRATION=${RUN_INTEGRATION},_RUN_MIGRATIONS=${RUN_MIGRATIONS},_WRITE_FREEZE_MODE=${WRITE_FREEZE_MODE},_CLOUDSQL_CONNECTION=${CLOUDSQL_CONNECTION},_DB_USER=${DB_USER},_DB_NAME=${DB_NAME},_NEXT_PUBLIC_FIREBASE_PROJECT_ID=${NEXT_PUBLIC_FIREBASE_PROJECT_ID}"
+update_trigger() {
+  local trigger_id="$1"
+  local included_files="$2"
+  local substitutions="$3"
+
+  local args=(
+    builds triggers update github "${trigger_id}"
+    --project="${PROJECT_ID}"
+    --region="${CB_REGION}"
+    --repository="${REPOSITORY_RESOURCE}"
+    --branch-pattern="${BRANCH_PATTERN}"
+    --build-config="cloudbuild.yaml"
+    --included-files="${included_files}"
+    --update-substitutions="${substitutions}"
+  )
+
+  if [ -n "${TRIGGER_SERVICE_ACCOUNT}" ]; then
+    args+=(--service-account="${TRIGGER_SERVICE_ACCOUNT}")
+  fi
+
+  gcloud "${args[@]}"
+}
+
+ensure_trigger() {
+  local trigger_name="$1"
+  local included_files="$2"
+  local substitutions="$3"
+
+  local existing_id
+  existing_id="$(trigger_id_by_name "${trigger_name}" || true)"
+
+  if [ -z "${existing_id}" ]; then
+    create_trigger "${trigger_name}" "${included_files}" "${substitutions}"
+    echo "CREATED: ${trigger_name}"
+    return
+  fi
+
+  local existing_service_account
+  existing_service_account="$(gcloud builds triggers describe "${existing_id}" --project="${PROJECT_ID}" --region="${CB_REGION}" --format='value(serviceAccount)' || true)"
+
+  # serviceAccount を外したい場合は update で clear できないため recreate が必要
+  if [ -z "${TRIGGER_SERVICE_ACCOUNT}" ] && [ -n "${existing_service_account}" ] && [ "${FORCE_RECREATE}" != "true" ]; then
+    cat <<EOF
+ERROR: Trigger ${trigger_name} has service_account=${existing_service_account}.
+This causes run failures unless logs bucket/logging settings match.
+Run again with FORCE_RECREATE=true to recreate trigger without service account.
+EOF
+    exit 1
+  fi
+
+  if [ "${FORCE_RECREATE}" = "true" ]; then
+    echo "RECREATE: deleting existing trigger (${trigger_name}, id=${existing_id})"
+    gcloud builds triggers delete "${existing_id}" --project="${PROJECT_ID}" --region="${CB_REGION}" --quiet
+    create_trigger "${trigger_name}" "${included_files}" "${substitutions}"
+    echo "RECREATED: ${trigger_name}"
+    return
+  fi
+
+  update_trigger "${existing_id}" "${included_files}" "${substitutions}"
+  echo "UPDATED: ${trigger_name}"
+}
+
+backend_substitutions="_DEPLOY_TARGET=backend,_RUN_INTEGRATION=${RUN_INTEGRATION},_RUN_MIGRATIONS=${RUN_MIGRATIONS},_WRITE_FREEZE_MODE=${WRITE_FREEZE_MODE},_CLOUDSQL_CONNECTION=${CLOUDSQL_CONNECTION},_DB_USER=${DB_USER},_DB_NAME=${DB_NAME},_NEXT_PUBLIC_FIREBASE_PROJECT_ID=${NEXT_PUBLIC_FIREBASE_PROJECT_ID},_READINESS_REQUIRE_LINE=${READINESS_REQUIRE_LINE},_READINESS_REQUIRE_GOOGLE_OAUTH=${READINESS_REQUIRE_GOOGLE_OAUTH},_PUBLIC_ONBOARDING_ENABLED=${PUBLIC_ONBOARDING_ENABLED}"
 if [ -n "${CLOUDSQL_INSTANCE}" ]; then
   backend_substitutions="${backend_substitutions},_CLOUDSQL_INSTANCE=${CLOUDSQL_INSTANCE}"
 fi
@@ -167,24 +216,34 @@ admin_substitutions="_DEPLOY_TARGET=admin,_NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API
 customer_substitutions="_DEPLOY_TARGET=customer,_CUSTOMER_API_URL=${CUSTOMER_API_URL},_CUSTOMER_TENANT_KEY=${CUSTOMER_TENANT_KEY}"
 landing_substitutions="_DEPLOY_TARGET=landing,_NEXT_PUBLIC_ADMIN_URL=${NEXT_PUBLIC_ADMIN_URL}"
 
-create_trigger_if_missing \
+ensure_trigger \
   "${TRIGGER_PREFIX}-backend" \
   "cloudbuild.yaml,backend-v2/**,database/**,scripts/run_migrations_cloudbuild.sh" \
   "${backend_substitutions}"
 
-create_trigger_if_missing \
+ensure_trigger \
   "${TRIGGER_PREFIX}-admin" \
   "cloudbuild.yaml,admin-dashboard/**" \
   "${admin_substitutions}"
 
-create_trigger_if_missing \
+ensure_trigger \
   "${TRIGGER_PREFIX}-customer" \
   "cloudbuild.yaml,customer-app/**" \
   "${customer_substitutions}"
 
-create_trigger_if_missing \
+ensure_trigger \
   "${TRIGGER_PREFIX}-landing" \
   "cloudbuild.yaml,landing-page/**" \
   "${landing_substitutions}"
 
 echo "DONE: Cloud Build triggers are configured."
+
+if [ -x "./scripts/check_cloudbuild_triggers.sh" ]; then
+  echo "INFO: running trigger health check..."
+  PROJECT_ID="${PROJECT_ID}" \
+  CB_REGION="${CB_REGION}" \
+  TRIGGER_PREFIX="${TRIGGER_PREFIX}" \
+  EXPECT_BRANCH_PATTERN="${BRANCH_PATTERN}" \
+  EXPECT_TRIGGER_SERVICE_ACCOUNT="${TRIGGER_SERVICE_ACCOUNT}" \
+  ./scripts/check_cloudbuild_triggers.sh
+fi

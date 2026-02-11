@@ -116,6 +116,40 @@ gcloud secrets add-iam-policy-binding db-password \
   --role="roles/secretmanager.secretAccessor"
 ```
 
+### 3.1 シークレット漏えい時のローテーション手順（Google OAuth Client Secret）
+
+1. Google Cloud Console の OAuth クライアントで `Client Secret` を再発行する。  
+2. Secret Manager に新しい version を追加する。
+
+```bash
+printf %s "NEW_GOOGLE_OAUTH_CLIENT_SECRET" | \
+  gcloud secrets versions add google-oauth-client-secret --data-file=-
+```
+
+3. backend を再デプロイして `latest` を読み込ませる。
+
+```bash
+gcloud builds submit . --config=cloudbuild.yaml \
+  --substitutions=_DEPLOY_TARGET=backend,\
+_RUN_MIGRATIONS=false,\
+_RUN_INTEGRATION=false,\
+_WRITE_FREEZE_MODE=false,\
+_CLOUDSQL_CONNECTION=YOUR_PROJECT_ID:asia-northeast1:reservation-system-db,\
+_DB_USER=app_user,\
+_DB_NAME=reservation_system,\
+_NEXT_PUBLIC_FIREBASE_PROJECT_ID=YOUR_PROJECT_ID,\
+_GOOGLE_OAUTH_CLIENT_ID=YOUR_CLIENT_ID,\
+_GOOGLE_OAUTH_REDIRECT_URI=YOUR_REDIRECT_URI
+```
+
+4. `/ready` で `checks.googleOauthConfigured=true` を確認する。  
+5. 旧 secret version を無効化する。
+
+```bash
+gcloud secrets versions list google-oauth-client-secret
+gcloud secrets versions disable OLD_VERSION --secret=google-oauth-client-secret
+```
+
 ---
 
 ## 4. Firebase設定
@@ -353,6 +387,9 @@ NEXT_PUBLIC_TENANT_ID=demo-salon \
 RUN_INTEGRATION=true \
 RUN_MIGRATIONS=true \
 WRITE_FREEZE_MODE=false \
+READINESS_REQUIRE_LINE=false \
+READINESS_REQUIRE_GOOGLE_OAUTH=true \
+PUBLIC_ONBOARDING_ENABLED=true \
 ./scripts/create_cloudbuild_triggers.sh
 ```
 
@@ -363,8 +400,25 @@ WRITE_FREEZE_MODE=false \
 - `reserve-landing` (`_DEPLOY_TARGET=landing`)
 
 注記:
-- 既存 trigger がある場合は作成をスキップする（上書きしない）
-- 設定変更時は Cloud Console か `gcloud builds triggers update` で更新する
+- `scripts/create_cloudbuild_triggers.sh` は update-or-create 動作。既存 trigger は更新される
+- service account 不整合（run時エラー原因）は自動検出される
+- 健全性チェック:
+
+```bash
+PROJECT_ID=YOUR_PROJECT_ID \
+CB_REGION=asia-northeast1 \
+./scripts/check_cloudbuild_triggers.sh
+```
+
+- PRラベル初期化（任意・`gh` CLI）:
+
+```bash
+GITHUB_REPO=YOUR_GITHUB_OWNER/YOUR_GITHUB_REPO \
+./scripts/ensure_github_labels.sh
+```
+
+- 本番デプロイ対象ブランチは `main` のみ（`BRANCH_PATTERN=^main$`）
+- `codex/*` ブランチは検証専用
 
 ### 6.6 切替コマンドシート自動生成
 
@@ -423,29 +477,18 @@ Cloud Run が表示するCNAMEレコードをDNSプロバイダーに設定
 
 ---
 
-## 8. テナント初期設定
+## 8. テナント初期設定（公開セルフ登録）
 
-デプロイ後、最初のテナントを作成します。
+SQL手作業は不要です。  
+`reserve-admin` の `/register` から美容室テナントを作成し、`/onboarding` で初期設定を完了してください。
 
-```sql
--- Cloud SQL Proxyで接続後
-INSERT INTO tenants (slug, name, plan, status, line_liff_id)
-VALUES (
-  'demo-salon',
-  'デモサロン',
-  'pro',
-  'active',
-  'YOUR_LIFF_ID'
-);
-
--- 取得したtenant_idで店舗作成
-INSERT INTO stores (tenant_id, name, store_code)
-VALUES (
-  'TENANT_UUID',
-  'デモサロン 渋谷店',
-  'demoshop1'
-);
-```
+1. `https://reserve-admin-xxxxx.run.app/register` を開く  
+2. サロン名 / slug / オーナー情報を入力して登録  
+3. 自動遷移した `/onboarding` で以下を完了
+   - 店舗情報
+   - 営業設定
+   - 初期メニュー / スタッフ
+   - Google連携（必須）
 
 ---
 
@@ -457,9 +500,10 @@ VALUES (
 - [ ] Readiness チェック: `https://reserve-api-xxxxx.run.app/ready`
   - [ ] `checks.database=true`
   - [ ] `checks.firebase=true`
-  - [ ] 本番では `checks.line=true`（LINE疎通がリリースゲート）
+  - [ ] `required.line` が運用ポリシーどおり（当面は `false`）
+  - [ ] `required.googleOauthConfigured=true` かつ `checks.googleOauthConfigured=true`
   - [ ] 切替完了後は `checks.writeFreezeMode=false`
-- [ ] Admin Dashboard ログイン画面表示
+- [ ] Admin Dashboard `/register` と `/onboarding` 表示
 - [ ] Customer App 表示確認
 - [ ] Landing Page 表示確認
 - [ ] LIFF エンドポイントURL更新

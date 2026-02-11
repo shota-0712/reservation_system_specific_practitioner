@@ -27,6 +27,7 @@ import reminderRoutes from './reminder.routes.js';
 import jobRoutes from './jobs.routes.js';
 import reportsRoutes from './reports.routes.js';
 import adminJobRoutes from './jobs.admin.routes.js';
+import { onboardingAdminRoutes } from './onboarding.admin.routes.js';
 
 // Keep parent params (e.g. :tenantKey from /api/v1/:tenantKey) available in child routes.
 const router = Router({ mergeParams: true });
@@ -46,6 +47,7 @@ router.use('/slots', slotRoutes);
 router.use('/admin/dashboard', dashboardRoutes);
 router.use('/admin/customers', customerRoutes);
 router.use('/admin/settings', settingsRoutes);
+router.use('/admin/onboarding', onboardingAdminRoutes);
 router.use('/admin/reminders', reminderRoutes);
 router.use('/admin/reports', reportsRoutes);
 router.use('/admin/jobs', adminJobRoutes);

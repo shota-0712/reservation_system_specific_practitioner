@@ -14,6 +14,9 @@ interface TenantRow {
     name: string;
     plan: string;
     status: string;
+    onboarding_status?: Tenant['onboardingStatus'];
+    onboarding_completed_at?: Date;
+    onboarding_payload?: Record<string, unknown>;
     line_liff_id?: string;
     line_channel_id?: string;
     line_channel_access_token_encrypted?: string;
@@ -36,6 +39,9 @@ function mapTenant(row: TenantRow): Tenant {
         name: row.name,
         plan: row.plan as Tenant['plan'],
         status: row.status as Tenant['status'],
+        onboardingStatus: row.onboarding_status,
+        onboardingCompletedAt: row.onboarding_completed_at,
+        onboardingPayload: row.onboarding_payload,
         lineConfig: row.line_channel_id ? {
             channelId: row.line_channel_id,
             channelSecret: row.line_channel_secret_encrypted ?? undefined,
@@ -167,6 +173,10 @@ export class TenantRepository {
         name: string;
         lineConfig?: Tenant['lineConfig'];
         branding?: Partial<Tenant['branding']>;
+        plan?: Tenant['plan'];
+        status?: Tenant['status'];
+        onboardingStatus?: Tenant['onboardingStatus'];
+        onboardingPayload?: Record<string, unknown>;
     }): Promise<Tenant> {
         // Check slug uniqueness
         const existing = await this.findBySlug(data.slug);
@@ -177,13 +187,18 @@ export class TenantRepository {
         const row = await DatabaseService.queryOne<TenantRow>(
             `INSERT INTO tenants (
                 slug, name, plan, status,
+                onboarding_status, onboarding_payload,
                 line_liff_id, line_channel_id,
                 branding_primary_color, branding_logo_url
-            ) VALUES ($1, $2, 'trial', 'trial', $3, $4, $5, $6)
+            ) VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8, $9, $10)
             RETURNING *`,
             [
                 data.slug,
                 data.name,
+                data.plan ?? 'trial',
+                data.status ?? 'trial',
+                data.onboardingStatus ?? 'pending',
+                JSON.stringify(data.onboardingPayload ?? {}),
                 data.lineConfig?.liffId ?? null,
                 data.lineConfig?.channelId ?? null,
                 data.branding?.primaryColor ?? '#4F46E5',
@@ -216,6 +231,13 @@ export class TenantRepository {
                 branding_logo_url = COALESCE($8, branding_logo_url),
                 max_stores = COALESCE($9, max_stores),
                 max_practitioners = COALESCE($10, max_practitioners),
+                onboarding_status = COALESCE($11, onboarding_status),
+                onboarding_payload = COALESCE($12::jsonb, onboarding_payload),
+                onboarding_completed_at = CASE
+                    WHEN $11 = 'completed' THEN NOW()
+                    WHEN $11 IS NULL THEN onboarding_completed_at
+                    ELSE NULL
+                END,
                 updated_at = NOW()
              WHERE id = $1
              RETURNING *`,
@@ -230,6 +252,8 @@ export class TenantRepository {
                 data.branding?.logoUrl ?? null,
                 data.maxStores ?? null,
                 data.maxPractitioners ?? null,
+                data.onboardingStatus ?? null,
+                data.onboardingPayload ? JSON.stringify(data.onboardingPayload) : null,
             ]
         );
 
@@ -299,6 +323,66 @@ export class TenantRepository {
     async isSlugAvailable(slug: string): Promise<boolean> {
         const existing = await this.findBySlug(slug);
         return existing === null;
+    }
+
+    async getOnboardingStatus(tenantId: string): Promise<{
+        onboardingStatus: Tenant['onboardingStatus'];
+        onboardingCompletedAt?: Date;
+        onboardingPayload?: Record<string, unknown>;
+    } | null> {
+        const row = await DatabaseService.queryOne<{
+            onboarding_status: Tenant['onboardingStatus'];
+            onboarding_completed_at?: Date;
+            onboarding_payload?: Record<string, unknown>;
+        }>(
+            `SELECT onboarding_status, onboarding_completed_at, onboarding_payload
+             FROM tenants
+             WHERE id = $1`,
+            [tenantId]
+        );
+
+        if (!row) {
+            return null;
+        }
+
+        return {
+            onboardingStatus: row.onboarding_status,
+            onboardingCompletedAt: row.onboarding_completed_at,
+            onboardingPayload: row.onboarding_payload,
+        };
+    }
+
+    async updateOnboarding(
+        tenantId: string,
+        payload: {
+            status?: Tenant['onboardingStatus'];
+            onboardingPayload?: Record<string, unknown>;
+        }
+    ): Promise<Tenant> {
+        const row = await DatabaseService.queryOne<TenantRow>(
+            `UPDATE tenants
+             SET onboarding_status = COALESCE($2, onboarding_status),
+                 onboarding_payload = COALESCE($3::jsonb, onboarding_payload),
+                 onboarding_completed_at = CASE
+                     WHEN $2 = 'completed' THEN NOW()
+                     WHEN $2 IS NULL THEN onboarding_completed_at
+                     ELSE NULL
+                 END,
+                 updated_at = NOW()
+             WHERE id = $1
+             RETURNING *`,
+            [
+                tenantId,
+                payload.status ?? null,
+                payload.onboardingPayload ? JSON.stringify(payload.onboardingPayload) : null,
+            ]
+        );
+
+        if (!row) {
+            throw new NotFoundError('テナント', tenantId);
+        }
+
+        return mapTenant(row);
     }
 }
 

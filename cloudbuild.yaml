@@ -65,6 +65,9 @@ substitutions:
   # Google OAuth (Backend)
   _GOOGLE_OAUTH_CLIENT_ID: ""
   _GOOGLE_OAUTH_REDIRECT_URI: ""
+  _READINESS_REQUIRE_LINE: "false"
+  _READINESS_REQUIRE_GOOGLE_OAUTH: "true"
+  _PUBLIC_ONBOARDING_ENABLED: "true"
 
 options:
   logging: CLOUD_LOGGING_ONLY
@@ -258,6 +261,9 @@ steps:
           echo 'NODE_ENV: "production"'
           echo "WRITE_FREEZE_MODE: \"${_WRITE_FREEZE_MODE}\""
           echo 'ALLOWED_ORIGINS: "https://*.run.app,https://*.a.run.app,https://liff.line.me"'
+          echo "READINESS_REQUIRE_LINE: \"${_READINESS_REQUIRE_LINE}\""
+          echo "READINESS_REQUIRE_GOOGLE_OAUTH: \"${_READINESS_REQUIRE_GOOGLE_OAUTH}\""
+          echo "PUBLIC_ONBOARDING_ENABLED: \"${_PUBLIC_ONBOARDING_ENABLED}\""
           printf 'GOOGLE_OAUTH_CLIENT_ID: "%s"\n' "${_GOOGLE_OAUTH_CLIENT_ID}"
           printf 'GOOGLE_OAUTH_REDIRECT_URI: "%s"\n' "${_GOOGLE_OAUTH_REDIRECT_URI}"
           printf 'FIREBASE_PROJECT_ID: "%s"\n' "$$FIREBASE_PROJECT_ID"
@@ -413,6 +419,50 @@ steps:
           --max-instances ${_CUSTOMER_MAX_INSTANCES} \
           --set-env-vars=RESERVATION_API_URL=$$API_URL,RESERVATION_TENANT_KEY=${_CUSTOMER_TENANT_KEY},RESERVATION_ENABLE_MOCK=false,RESERVATION_BYPASS_LIFF=false
     waitFor: ['customer-push', 'admin-deploy']
+
+  - id: "customer-smoke"
+    name: gcr.io/cloud-builders/gcloud
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        if [ "${_DEPLOY_TARGET}" != "all" ] && [ "${_DEPLOY_TARGET}" != "customer" ]; then
+          echo "Skipping customer smoke (_DEPLOY_TARGET=${_DEPLOY_TARGET})"
+          exit 0
+        fi
+
+        API_URL="${_CUSTOMER_API_URL}"
+        if [ -z "$$API_URL" ]; then
+          API_URL="${_NEXT_PUBLIC_API_URL}"
+        fi
+        if [ -z "$$API_URL" ]; then
+          echo "ERROR: _CUSTOMER_API_URL or _NEXT_PUBLIC_API_URL must be provided"
+          exit 1
+        fi
+
+        CUSTOMER_URL="$(gcloud run services describe ${_CUSTOMER_SERVICE} --region ${_REGION} --format='value(status.url)')"
+        if [ -z "$$CUSTOMER_URL" ]; then
+          echo "ERROR: failed to resolve customer service URL"
+          exit 1
+        fi
+
+        CONFIG_JS="$(curl -fsSL "$$CUSTOMER_URL/config.js")"
+        echo "$$CONFIG_JS" | grep -F "window.RESERVATION_API_URL = \"$$API_URL\";" >/dev/null || {
+          echo "ERROR: customer config.js does not contain expected API URL ($$API_URL)"
+          exit 1
+        }
+        echo "$$CONFIG_JS" | grep -F "window.RESERVATION_TENANT_KEY = \"${_CUSTOMER_TENANT_KEY}\";" >/dev/null || {
+          echo "ERROR: customer config.js does not contain expected tenant key (${_CUSTOMER_TENANT_KEY})"
+          exit 1
+        }
+
+        curl -fsS "$$API_URL/api/v1/${_CUSTOMER_TENANT_KEY}/auth/config" >/tmp/customer-auth-config.json
+        if ! grep -q '"success"' /tmp/customer-auth-config.json; then
+          echo "ERROR: backend auth/config response is invalid"
+          cat /tmp/customer-auth-config.json
+          exit 1
+        fi
+    waitFor: ['customer-deploy']
 
   # ============================================================
   # Landing Page

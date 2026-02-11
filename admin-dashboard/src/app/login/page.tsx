@@ -143,9 +143,14 @@ export default function LoginPage() {
                             Firebase Authenticationで認証しています
                         </p>
                         <p className="text-xs text-gray-500 text-center mt-2">
-                            初回セットアップですか？{" "}
+                            新規でサロンを開設する場合は{" "}
+                            <Link href="/register" className="text-primary hover:underline">
+                                サロン登録
+                            </Link>
+                            {" / "}
+                            既存tenantの初回管理者登録は{" "}
                             <Link href="/signup" className="text-primary hover:underline">
-                                新規登録
+                                こちら
                             </Link>
                         </p>
                     </div>
