@@ -28,7 +28,8 @@ import jobRoutes from './jobs.routes.js';
 import reportsRoutes from './reports.routes.js';
 import adminJobRoutes from './jobs.admin.routes.js';
 
-const router = Router();
+// Keep parent params (e.g. :tenantKey from /api/v1/:tenantKey) available in child routes.
+const router = Router({ mergeParams: true });
 
 // All v1 routes require tenant context
 router.use(resolveTenant({ required: true }));
