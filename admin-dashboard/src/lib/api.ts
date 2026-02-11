@@ -6,10 +6,90 @@
 import { getIdToken } from './firebase';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080';
-const TENANT_ID = process.env.NEXT_PUBLIC_TENANT_ID || 'default';
+const TENANT_ID_FALLBACK = process.env.NEXT_PUBLIC_TENANT_ID || 'default';
+const TENANT_STORAGE_KEY = 'reservation_admin_tenant_key';
 
 interface FetchOptions extends RequestInit {
     includeAuth?: boolean;
+}
+
+function isTenantKeyValid(value: string): boolean {
+    return /^[a-z0-9](?:[a-z0-9-]{1,38}[a-z0-9])?$/.test(value);
+}
+
+function readTenantKeyFromUrl(): string | null {
+    if (typeof window === 'undefined') {
+        return null;
+    }
+    const params = new URLSearchParams(window.location.search);
+    const key = params.get('tenant') || params.get('tenantKey');
+    if (key && isTenantKeyValid(key)) {
+        return key;
+    }
+    return null;
+}
+
+function readTenantKeyFromPath(): string | null {
+    if (typeof window === 'undefined') {
+        return null;
+    }
+
+    const match = window.location.pathname.match(/^\/(?:t|tenant)\/([a-z0-9-]+)(?:\/|$)/i);
+    const key = match?.[1]?.toLowerCase();
+    if (key && isTenantKeyValid(key)) {
+        return key;
+    }
+    return null;
+}
+
+function readTenantKeyFromStorage(): string | null {
+    if (typeof window === 'undefined') {
+        return null;
+    }
+    const value = window.localStorage.getItem(TENANT_STORAGE_KEY);
+    if (!value || !isTenantKeyValid(value)) {
+        return null;
+    }
+    return value;
+}
+
+export function setTenantKey(tenantKey: string): void {
+    if (typeof window === 'undefined') {
+        return;
+    }
+    if (!isTenantKeyValid(tenantKey)) {
+        throw new Error('Invalid tenant key');
+    }
+    window.localStorage.setItem(TENANT_STORAGE_KEY, tenantKey);
+}
+
+export function getTenantKey(): string {
+    const fromUrl = readTenantKeyFromUrl();
+    if (fromUrl) {
+        setTenantKey(fromUrl);
+        return fromUrl;
+    }
+
+    const fromPath = readTenantKeyFromPath();
+    if (fromPath) {
+        setTenantKey(fromPath);
+        return fromPath;
+    }
+
+    const fromStorage = readTenantKeyFromStorage();
+    if (fromStorage) {
+        return fromStorage;
+    }
+
+    return TENANT_ID_FALLBACK;
+}
+
+function getTenantApiUrl(endpoint: string): string {
+    return `${API_BASE_URL}/api/v1/${getTenantKey()}${endpoint}`;
+}
+
+function getPlatformApiUrl(endpoint: string): string {
+    return `${API_BASE_URL}/api/platform/v1${endpoint}`;
 }
 
 function buildQuery(params: Record<string, string | number | boolean | undefined | null>): string {
@@ -43,7 +123,55 @@ export async function apiClient<T = unknown>(
         }
     }
 
-    const url = `${API_BASE_URL}/api/v1/${TENANT_ID}${endpoint}`;
+    const url = getTenantApiUrl(endpoint);
+    const response = await fetch(url, {
+        ...fetchOptions,
+        headers,
+    });
+
+    const text = await response.text();
+    let json: any = {};
+    try {
+        json = text ? JSON.parse(text) : {};
+    } catch {
+        json = {};
+    }
+
+    if (!response.ok) {
+        return {
+            success: false,
+            error: json.error || { code: 'UNKNOWN_ERROR', message: `HTTP ${response.status}` },
+        };
+    }
+
+    return {
+        success: true,
+        // Some endpoints (jobs/*) return { success, stats } instead of ApiResponse { data }.
+        // Keep compatibility by treating the raw payload as data when "data" is missing.
+        data: json.data !== undefined ? json.data : (json.stats !== undefined ? json : undefined),
+        meta: json.meta ?? json.pagination,
+    };
+}
+
+export async function platformApiClient<T = unknown>(
+    endpoint: string,
+    options: FetchOptions = {}
+): Promise<{ success: boolean; data?: T; error?: { code: string; message: string }; meta?: any }> {
+    const { includeAuth = true, ...fetchOptions } = options;
+
+    const headers: HeadersInit = {
+        'Content-Type': 'application/json',
+        ...fetchOptions.headers,
+    };
+
+    if (includeAuth) {
+        const token = await getIdToken();
+        if (token) {
+            (headers as Record<string, string>).Authorization = `Bearer ${token}`;
+        }
+    }
+
+    const url = getPlatformApiUrl(endpoint);
     const response = await fetch(url, {
         ...fetchOptions,
         headers,
@@ -264,9 +392,10 @@ export const googleCalendarApi = {
             method: 'PUT',
             body: JSON.stringify({ status: 'revoked' }),
         }),
-    startOAuth: () =>
+    startOAuth: (redirectTo?: string) =>
         apiClient<{ authUrl: string }>('/admin/integrations/google-calendar/oauth/start', {
             method: 'POST',
+            body: JSON.stringify(redirectTo ? { redirectTo } : {}),
         }),
 };
 
@@ -343,5 +472,67 @@ export const adminJobsApi = {
         apiClient('/admin/jobs/integrations/google-calendar/sync', {
             method: 'POST',
             body: JSON.stringify(limit ? { limit } : {}),
+        }),
+};
+
+// ============================================
+// オンボーディング API
+// ============================================
+
+export const onboardingApi = {
+    getStatus: () => apiClient<{
+        onboardingStatus: 'pending' | 'in_progress' | 'completed';
+        completed: boolean;
+        onboardingCompletedAt?: string;
+        onboardingPayload?: Record<string, unknown>;
+    }>('/admin/onboarding/status'),
+    updateStatus: (data: {
+        status?: 'pending' | 'in_progress' | 'completed';
+        onboardingPayload?: Record<string, unknown>;
+    }) =>
+        apiClient('/admin/onboarding/status', {
+            method: 'PATCH',
+            body: JSON.stringify(data),
+        }),
+};
+
+// ============================================
+// 公開セルフ登録 API
+// ============================================
+
+export const platformOnboardingApi = {
+    getRegistrationConfig: () =>
+        platformApiClient<{
+            enabled: boolean;
+            slugPattern: string;
+            slugMinLength: number;
+            slugMaxLength: number;
+        }>('/onboarding/registration-config', {
+            includeAuth: false,
+        }),
+    checkSlugAvailability: (slug: string) =>
+        platformApiClient<{ slug: string; available: boolean }>(
+            `/onboarding/slug-availability${buildQuery({ slug })}`,
+            { includeAuth: false }
+        ),
+    registerTenant: (data: {
+        idToken: string;
+        slug: string;
+        tenantName: string;
+        ownerName?: string;
+        storeName?: string;
+        timezone?: string;
+        address?: string;
+        phone?: string;
+    }) =>
+        platformApiClient<{
+            tenantId: string;
+            tenantKey: string;
+            storeId: string;
+            adminId: string;
+        }>('/onboarding/register', {
+            method: 'POST',
+            includeAuth: false,
+            body: JSON.stringify(data),
         }),
 };

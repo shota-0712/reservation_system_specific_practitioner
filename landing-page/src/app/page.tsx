@@ -1,6 +1,10 @@
 import Link from 'next/link';
 
 export default function Home() {
+  const adminBaseUrl = (process.env.NEXT_PUBLIC_ADMIN_URL || '').replace(/\/+$/, '');
+  const loginUrl = adminBaseUrl ? `${adminBaseUrl}/login` : '/login';
+  const registerUrl = adminBaseUrl ? `${adminBaseUrl}/register` : '/register';
+
   return (
     <div className="min-h-screen bg-[#f6f5f4]">
       {/* Header */}
@@ -19,13 +23,13 @@ export default function Home() {
           </nav>
           <div className="flex items-center gap-3">
             <Link
-              href={process.env.NEXT_PUBLIC_ADMIN_URL || '/login'}
+              href={loginUrl}
               className="px-4 py-2 text-sm text-[#1e1e1e] font-medium hover:opacity-60 transition-opacity"
             >
               ログイン
             </Link>
             <a
-              href="#contact"
+              href={registerUrl}
               className="px-5 py-2.5 text-sm text-white font-semibold rounded-full bg-gradient-to-r from-[#ff2f2f] via-[#ef7b16] via-[#8a43e1] to-[#d511fd] hover:opacity-90 transition-opacity"
             >
               無料で始める
@@ -55,7 +59,7 @@ export default function Home() {
           </p>
           <div className="flex flex-col sm:flex-row gap-4 justify-center">
             <a
-              href="#contact"
+              href={registerUrl}
               className="px-8 py-4 text-white font-semibold rounded-full bg-gradient-to-r from-[#ff2f2f] via-[#ef7b16] via-[#8a43e1] to-[#d511fd] hover:opacity-90 transition-opacity shadow-lg"
             >
               無料トライアルを始める
@@ -278,10 +282,10 @@ export default function Home() {
                 ))}
               </ul>
               <a
-                href="#contact"
+                href={registerUrl}
                 className="block w-full py-3 text-center bg-[#f1f0ee] text-[#1e1e1e] font-semibold rounded-full hover:bg-[#e8e4e2] transition-colors"
               >
-                お問い合わせ
+                無料で始める
               </a>
             </div>
 
@@ -307,7 +311,7 @@ export default function Home() {
                 ))}
               </ul>
               <a
-                href="#contact"
+                href={registerUrl}
                 className="block w-full py-3 text-center text-white font-semibold rounded-full bg-gradient-to-r from-[#ff2f2f] via-[#ef7b16] via-[#8a43e1] to-[#d511fd] hover:opacity-90 transition-opacity"
               >
                 無料トライアル
@@ -332,10 +336,10 @@ export default function Home() {
                 ))}
               </ul>
               <a
-                href="#contact"
+                href={registerUrl}
                 className="block w-full py-3 text-center bg-[#f1f0ee] text-[#1e1e1e] font-semibold rounded-full hover:bg-[#e8e4e2] transition-colors"
               >
-                お問い合わせ
+                無料で始める
               </a>
             </div>
           </div>

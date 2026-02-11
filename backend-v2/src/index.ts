@@ -19,6 +19,7 @@ import {
 } from './middleware/index.js';
 import { systemRoutes } from './routes/system.routes.js';
 import { v1Router } from './routes/v1/index.js';
+import { platformOnboardingRoutes } from './routes/platform/onboarding.routes.js';
 
 // Initialize Firebase
 initializeFirebase();
@@ -116,6 +117,7 @@ app.use(writeFreezeGuard());
 
 // API v1 routes
 app.use('/api/v1/:tenantKey', v1Router);
+app.use('/api/platform/v1', platformOnboardingRoutes);
 
 // Legacy route support (without version)
 // app.use('/api/:tenantKey', v1Router);

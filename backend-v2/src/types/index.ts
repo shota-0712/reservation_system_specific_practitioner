@@ -39,6 +39,11 @@ export type AdminRole =
     | 'manager'      // マネージャー
     | 'staff';       // スタッフ
 
+export type TenantOnboardingStatus =
+    | 'pending'
+    | 'in_progress'
+    | 'completed';
+
 // ============================================
 // Tenant (企業)
 // ============================================
@@ -48,6 +53,9 @@ export interface Tenant extends Omit<BaseEntity, 'tenantId'> {
     name: string;
     plan: 'free' | 'trial' | 'basic' | 'pro' | 'enterprise';
     status: 'active' | 'trial' | 'suspended' | 'canceled';
+    onboardingStatus?: TenantOnboardingStatus;
+    onboardingCompletedAt?: Timestamp;
+    onboardingPayload?: Record<string, unknown>;
 
     lineConfig?: {
         channelId?: string;

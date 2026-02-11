@@ -28,6 +28,9 @@ function mapTenantRow(row: Record<string, any>): Tenant {
         name: row.name,
         plan: row.plan,
         status: row.status,
+        onboardingStatus: row.onboarding_status ?? undefined,
+        onboardingCompletedAt: row.onboarding_completed_at ?? undefined,
+        onboardingPayload: row.onboarding_payload ?? undefined,
         lineConfig: {
             channelId: row.line_channel_id ?? undefined,
             channelSecret: row.line_channel_secret_encrypted ?? undefined,

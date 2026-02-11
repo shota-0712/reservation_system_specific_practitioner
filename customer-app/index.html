@@ -169,6 +169,8 @@
 
     <!-- Main Content -->
     <main class="max-w-md mx-auto p-4">
+      <div id="config-debug-box" class="hidden mb-4"></div>
+      <div id="init-error-box" class="hidden mb-4"></div>
 
       <!-- HOME VIEW -->
       <div id="home-view" class="block">
@@ -617,13 +619,64 @@
     // Configuration (設定エリア)
     // ==============================================
     // 本番環境では環境変数またはビルド時に置換
-    const API_BASE_URL = window.RESERVATION_API_URL || "http://localhost:8080";
-    const TENANT_KEY = window.RESERVATION_TENANT_KEY || "default";
+    // ローカル実行判定（file://プロトコル対応）
+    const isLocalRuntime = !location.hostname || location.hostname === 'localhost' || location.hostname === '127.0.0.1' || location.protocol === 'file:';
+    const queryParams = new URLSearchParams(window.location.search);
+    const TENANT_STORAGE_KEY = 'reservation_customer_tenant_key';
+    const TENANT_KEY_REGEX = /^[a-z0-9](?:[a-z0-9-]{1,38}[a-z0-9])?$/;
+
+    function normalizeApiBaseUrl(value) {
+      return (value || '').trim().replace(/\/+$/, '');
+    }
+
+    function isTenantKeyValid(value) {
+      return TENANT_KEY_REGEX.test(String(value || '').trim());
+    }
+
+    function resolveTenantKey() {
+      const fromQuery = (queryParams.get('tenant') || queryParams.get('tenantKey') || '').trim().toLowerCase();
+      if (isTenantKeyValid(fromQuery)) {
+        try {
+          window.localStorage.setItem(TENANT_STORAGE_KEY, fromQuery);
+        } catch (e) {
+          console.warn('Failed to persist tenant key:', e);
+        }
+        return fromQuery;
+      }
+
+      const fromConfig = String(window.RESERVATION_TENANT_KEY || '').trim().toLowerCase();
+      if (isTenantKeyValid(fromConfig)) {
+        return fromConfig;
+      }
+
+      try {
+        const fromStorage = String(window.localStorage.getItem(TENANT_STORAGE_KEY) || '').trim().toLowerCase();
+        if (isTenantKeyValid(fromStorage)) {
+          return fromStorage;
+        }
+      } catch (e) {
+        console.warn('Failed to load tenant key from storage:', e);
+      }
+
+      return '';
+    }
+
+    function resolveApiBaseUrl() {
+      const fromQuery = normalizeApiBaseUrl(queryParams.get('apiUrl') || queryParams.get('api'));
+      if (fromQuery) return fromQuery;
+
+      const fromConfig = normalizeApiBaseUrl(window.RESERVATION_API_URL);
+      if (fromConfig) return fromConfig;
+
+      return isLocalRuntime ? 'http://localhost:8080' : '';
+    }
+
+    const API_BASE_URL = resolveApiBaseUrl();
+    const TENANT_KEY = resolveTenantKey();
+    const DEBUG_CONFIG_ENABLED = isLocalRuntime || queryParams.get('debugConfig') === '1';
     let LIFF_ID = null;
     let idToken = null; // LINE ID Token for API authentication
 
-    // ローカル実行判定（file://プロトコル対応）
-    const isLocalRuntime = !location.hostname || location.hostname === 'localhost' || location.hostname === '127.0.0.1' || location.protocol === 'file:';
     // モック起動は明示フラグ時のみ有効化する
     const isLocalDev = isLocalRuntime && String(window.RESERVATION_ENABLE_MOCK || '').toLowerCase() === 'true';
     // LIFF を使わずに API 接続したい場合（ローカル開発用）
@@ -659,11 +712,68 @@
       return headers;
     }
 
-    function showInitError(message) {
-      const html = `<div class="text-center text-red-500 py-8">${message}</div>`;
+    function escapeHtml(value) {
+      return String(value ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    }
+
+    function renderConfigDiagnostics() {
+      if (!DEBUG_CONFIG_ENABLED) return;
+      const container = document.getElementById('config-debug-box');
+      if (!container) return;
+
+      const diagnostics = [
+        ['API_BASE_URL', API_BASE_URL || '(empty)'],
+        ['TENANT_KEY', TENANT_KEY || '(empty)'],
+        ['RESERVATION_API_URL', window.RESERVATION_API_URL || '(empty)'],
+        ['RESERVATION_TENANT_KEY', window.RESERVATION_TENANT_KEY || '(empty)'],
+        ['RESERVATION_ENABLE_MOCK', window.RESERVATION_ENABLE_MOCK || 'false'],
+        ['RESERVATION_BYPASS_LIFF', window.RESERVATION_BYPASS_LIFF || 'false'],
+      ];
+
+      const rows = diagnostics.map(([label, value]) =>
+        `<div class="flex items-start justify-between gap-3 py-1 border-b border-gray-200 last:border-0">
+          <span class="text-gray-500">${escapeHtml(label)}</span>
+          <span class="font-mono text-gray-800 text-right break-all">${escapeHtml(value)}</span>
+        </div>`
+      ).join('');
+
+      container.innerHTML = `
+        <div class="rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-xs">
+          <p class="font-semibold text-amber-800 mb-2">Config Debug</p>
+          ${rows}
+        </div>
+      `;
+      container.classList.remove('hidden');
+    }
+
+    function showInitError(message, details = {}) {
+      const html = `<div class="text-center text-red-500 py-8">${escapeHtml(message)}</div>`;
       const menuList = document.getElementById('menu-list');
       if (menuList) menuList.innerHTML = html;
-      alert(message.replace(/<br>/g, '\\n'));
+
+      const container = document.getElementById('init-error-box');
+      if (!container) return;
+
+      const detailRows = Object.entries(details)
+        .filter(([, value]) => value !== undefined && value !== null && String(value).trim() !== '')
+        .map(([key, value]) => `<li><span class="font-semibold">${escapeHtml(key)}:</span> <span class="font-mono break-all">${escapeHtml(value)}</span></li>`)
+        .join('');
+
+      container.innerHTML = `
+        <div class="rounded-xl border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-700">
+          <p class="font-semibold mb-2">${escapeHtml(message)}</p>
+          ${detailRows ? `<ul class="list-disc list-inside text-xs space-y-1 mb-3">${detailRows}</ul>` : ''}
+          <button type="button" onclick="window.location.reload()" class="px-3 py-1.5 rounded-lg border border-red-300 bg-white text-red-700 text-xs font-semibold">
+            再試行
+          </button>
+        </div>
+      `;
+      container.classList.remove('hidden');
     }
 
     async function establishAuthSession(profile) {
@@ -694,6 +804,24 @@
     // ==============================================
     window.onload = async () => {
       console.log('Window Loaded. isLocalRuntime:', isLocalRuntime, 'isLocalDev:', isLocalDev, 'useBypassLiff:', useBypassLiff);
+      renderConfigDiagnostics();
+
+      if (!API_BASE_URL) {
+        showInitError('初期化エラー: API URL が未設定です。', {
+          hint: 'RESERVATION_API_URL または ?apiUrl=... を設定してください。',
+          tenantKey: TENANT_KEY || '(empty)',
+        });
+        return;
+      }
+
+      if (!TENANT_KEY) {
+        showInitError('初期化エラー: tenantKey が未設定です。', {
+          hint: 'URLに ?tenant=default を付与するか、RESERVATION_TENANT_KEY を設定してください。',
+          apiBaseUrl: API_BASE_URL,
+        });
+        return;
+      }
+
       if (isLocalDev) {
         state.user = { userId: 'mock_user', displayName: 'Guest User', pictureUrl: 'https://placehold.co/100' };
         updateUserDisplay();
@@ -726,17 +854,40 @@
 
       try {
         console.log('Fetching Config...');
-        const configRes = await fetch(`${API_BASE_URL}/api/v1/${TENANT_KEY}/auth/config`);
-        if (!configRes.ok) throw new Error('Config fetch failed');
-        const config = await configRes.json();
+        const configUrl = `${API_BASE_URL}/api/v1/${TENANT_KEY}/auth/config`;
+        const configRes = await fetch(configUrl);
+        if (!configRes.ok) {
+          const errorBody = await configRes.text().catch(() => '');
+          showInitError('初期化エラー: Config fetch failed', {
+            httpStatus: String(configRes.status),
+            apiBaseUrl: API_BASE_URL,
+            tenantKey: TENANT_KEY,
+            configUrl,
+            hint: configRes.status === 404 ? 'tenantKey または API URL が誤っている可能性があります。' : 'バックエンドのログを確認してください。',
+            response: errorBody.slice(0, 200),
+          });
+          return;
+        }
+        const config = await configRes.json().catch(() => null);
+        if (!config) {
+          showInitError('初期化エラー: 設定レスポンスの解析に失敗しました。', {
+            apiBaseUrl: API_BASE_URL,
+            tenantKey: TENANT_KEY,
+            configUrl,
+          });
+          return;
+        }
         console.log('Config loaded:', config);
         const configData = config.data || config;
         LIFF_ID = configData.liffId;
         if (!LIFF_ID) {
           const localHint = isLocalRuntime
-            ? '<br>ローカル検証では window.RESERVATION_ENABLE_MOCK=true または window.RESERVATION_BYPASS_LIFF=true を設定してください。'
+            ? 'ローカル検証では window.RESERVATION_ENABLE_MOCK=true または window.RESERVATION_BYPASS_LIFF=true を設定してください。'
             : '';
-          showInitError(`LIFF設定が未構成です。管理者に設定を依頼してください。${localHint}`);
+          showInitError(`LIFF設定が未構成です。管理者に設定を依頼してください。${localHint}`, {
+            apiBaseUrl: API_BASE_URL,
+            tenantKey: TENANT_KEY,
+          });
           return;
         }
 
@@ -785,7 +936,11 @@
         loadMenus();
       } catch (err) {
         console.error('Critical Init Error:', err);
-        showInitError(`初期化エラー: ${err.message}<br>再読み込みをお試しください。`);
+        showInitError(`初期化エラー: ${err.message}`, {
+          apiBaseUrl: API_BASE_URL,
+          tenantKey: TENANT_KEY,
+          hint: '再読み込みをお試しください。',
+        });
       }
     };
 

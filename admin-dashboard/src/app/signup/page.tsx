@@ -6,9 +6,7 @@ import Link from "next/link";
 import { Scissors, Eye, EyeOff, Loader2, UserPlus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/lib/auth-context";
-
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080";
-const TENANT_ID = process.env.NEXT_PUBLIC_TENANT_ID || "default";
+import { apiClient, getTenantKey } from "@/lib/api";
 
 export default function SignupPage() {
     const router = useRouter();
@@ -29,12 +27,13 @@ export default function SignupPage() {
             setIsChecking(true);
             setError("");
             try {
-                const response = await fetch(`${API_BASE_URL}/api/v1/${TENANT_ID}/auth/admin/bootstrap-status`);
-                if (!response.ok) {
-                    throw new Error("初期登録状態の確認に失敗しました");
+                const response = await apiClient<{ canRegister: boolean }>('/auth/admin/bootstrap-status', {
+                    includeAuth: false,
+                });
+                if (!response.success) {
+                    throw new Error(response.error?.message || "初期登録状態の確認に失敗しました");
                 }
-                const json = await response.json();
-                setCanRegister(Boolean(json?.data?.canRegister));
+                setCanRegister(Boolean(response.data?.canRegister));
             } catch (err: any) {
                 setCanRegister(false);
                 setError(err?.message || "初期登録状態の確認に失敗しました");
@@ -87,12 +86,12 @@ export default function SignupPage() {
     return (
         <div className="min-h-screen bg-gray-100 flex items-center justify-center p-4">
             <div className="w-full max-w-md">
-                <div className="text-center mb-8">
+            <div className="text-center mb-8">
                     <div className="inline-flex items-center justify-center w-16 h-16 bg-primary rounded-2xl mb-4">
                         <Scissors className="h-8 w-8 text-white" />
                     </div>
                     <h1 className="text-2xl font-bold text-gray-900">初回管理者登録</h1>
-                    <p className="text-gray-500 mt-1">最初のオーナーアカウントを作成</p>
+                    <p className="text-gray-500 mt-1">最初のオーナーアカウントを作成（tenant: {getTenantKey()}）</p>
                 </div>
 
                 <div className="bg-white rounded-2xl shadow-lg p-8">

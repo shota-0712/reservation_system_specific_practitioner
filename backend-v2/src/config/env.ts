@@ -31,6 +31,9 @@ interface EnvConfig {
     // Logging
     LOG_LEVEL: 'error' | 'warn' | 'info' | 'debug';
     WRITE_FREEZE_MODE: boolean;
+    READINESS_REQUIRE_LINE: boolean;
+    READINESS_REQUIRE_GOOGLE_OAUTH: boolean;
+    PUBLIC_ONBOARDING_ENABLED: boolean;
 
     // LINE
     LINE_CHANNEL_ACCESS_TOKEN?: string;
@@ -176,6 +179,9 @@ function validateConfig(): EnvConfig {
         // Logging
         LOG_LEVEL: getEnvString('LOG_LEVEL', isProduction ? 'info' : 'debug') as EnvConfig['LOG_LEVEL'],
         WRITE_FREEZE_MODE: getEnvBoolean('WRITE_FREEZE_MODE', false),
+        READINESS_REQUIRE_LINE: getEnvBoolean('READINESS_REQUIRE_LINE', false),
+        READINESS_REQUIRE_GOOGLE_OAUTH: getEnvBoolean('READINESS_REQUIRE_GOOGLE_OAUTH', true),
+        PUBLIC_ONBOARDING_ENABLED: getEnvBoolean('PUBLIC_ONBOARDING_ENABLED', true),
 
         // LINE
         LINE_CHANNEL_ACCESS_TOKEN: process.env.LINE_CHANNEL_ACCESS_TOKEN,
@@ -210,4 +216,7 @@ export function logConfig(): void {
     console.log(`   Firebase Project: ${env.FIREBASE_PROJECT_ID}`);
     console.log(`   Allowed Origins: ${env.ALLOWED_ORIGINS.join(', ')}`);
     console.log(`   Write Freeze Mode: ${env.WRITE_FREEZE_MODE}`);
+    console.log(`   Readiness Require LINE: ${env.READINESS_REQUIRE_LINE}`);
+    console.log(`   Readiness Require Google OAuth: ${env.READINESS_REQUIRE_GOOGLE_OAUTH}`);
+    console.log(`   Public Onboarding Enabled: ${env.PUBLIC_ONBOARDING_ENABLED}`);
 }

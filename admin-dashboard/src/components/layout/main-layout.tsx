@@ -7,6 +7,7 @@ import { Header } from "./header";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/lib/auth-context";
 import { Loader2 } from "lucide-react";
+import { onboardingApi } from "@/lib/api";
 
 interface MainLayoutProps {
     children: React.ReactNode;
@@ -14,6 +15,8 @@ interface MainLayoutProps {
 
 export function MainLayout({ children }: MainLayoutProps) {
     const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+    const [onboardingStatus, setOnboardingStatus] = useState<'pending' | 'in_progress' | 'completed' | null>(null);
+    const [onboardingLoading, setOnboardingLoading] = useState(false);
     const pathname = usePathname();
     const router = useRouter();
     const { user, loading } = useAuth();
@@ -35,7 +38,8 @@ export function MainLayout({ children }: MainLayoutProps) {
         return () => window.removeEventListener("resize", handleResize);
     }, []);
 
-    const isPublicAuthRoute = pathname === "/login" || pathname === "/signup";
+    const isPublicAuthRoute = pathname === "/login" || pathname === "/signup" || pathname === "/register";
+    const isOnboardingRoute = pathname === "/onboarding";
 
     // Redirect to login if not authenticated
     useEffect(() => {
@@ -50,6 +54,48 @@ export function MainLayout({ children }: MainLayoutProps) {
             router.push("/login");
         }
     }, [user, loading, isPublicAuthRoute, router]);
+
+    useEffect(() => {
+        if (isPublicAuthRoute) return;
+        if (loading || !user) return;
+
+        let mounted = true;
+        setOnboardingLoading(true);
+        onboardingApi.getStatus().then((response) => {
+            if (!mounted) return;
+            if (!response.success) {
+                setOnboardingStatus('pending');
+                return;
+            }
+            setOnboardingStatus(response.data?.onboardingStatus ?? 'pending');
+        }).catch(() => {
+            if (mounted) {
+                setOnboardingStatus('pending');
+            }
+        }).finally(() => {
+            if (mounted) {
+                setOnboardingLoading(false);
+            }
+        });
+
+        return () => {
+            mounted = false;
+        };
+    }, [isPublicAuthRoute, loading, user, pathname]);
+
+    useEffect(() => {
+        if (isPublicAuthRoute) return;
+        if (loading || onboardingLoading || !user || !onboardingStatus) return;
+
+        if (onboardingStatus !== 'completed' && !isOnboardingRoute) {
+            router.push('/onboarding');
+            return;
+        }
+
+        if (onboardingStatus === 'completed' && isOnboardingRoute) {
+            router.push('/');
+        }
+    }, [isOnboardingRoute, isPublicAuthRoute, loading, onboardingLoading, onboardingStatus, router, user]);
 
     // Don't show layout on auth pages
     if (isPublicAuthRoute) {
@@ -71,6 +117,21 @@ export function MainLayout({ children }: MainLayoutProps) {
     // Don't render protected content if not authenticated
     if (!user) {
         return null;
+    }
+
+    if (onboardingLoading) {
+        return (
+            <div className="flex h-screen items-center justify-center bg-gray-50">
+                <div className="flex flex-col items-center gap-4">
+                    <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                    <p className="text-sm text-muted-foreground">初期設定状態を確認中...</p>
+                </div>
+            </div>
+        );
+    }
+
+    if (isOnboardingRoute) {
+        return <>{children}</>;
     }
 
     return (

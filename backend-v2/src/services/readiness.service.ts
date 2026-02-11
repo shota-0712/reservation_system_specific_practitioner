@@ -23,6 +23,12 @@ export interface ReadinessChecks {
 export interface ReadinessResult {
     ready: boolean;
     checks: ReadinessChecks;
+    required: {
+        database: true;
+        firebase: true;
+        line: boolean;
+        googleOauthConfigured: boolean;
+    };
 }
 
 function normalizeLineToken(token: string): string {
@@ -79,16 +85,21 @@ async function verifyLineConnection(token: string): Promise<boolean> {
     }
 }
 
-export function deriveReadyStatus(checks: ReadinessChecks, strictLine: boolean): boolean {
+export function deriveReadyStatus(
+    checks: ReadinessChecks,
+    strictLine: boolean,
+    requireGoogleOAuth = env.READINESS_REQUIRE_GOOGLE_OAUTH
+): boolean {
     if (!checks.database || !checks.firebase) {
         return false;
     }
 
-    if (strictLine) {
-        // Production gate: external integrations must be configured.
-        // LINE: actual API reachability (strictLine=true)
-        // Google: OAuth env config presence (no network call here)
-        return checks.line && checks.googleOauthConfigured;
+    if (strictLine && !checks.line) {
+        return false;
+    }
+
+    if (requireGoogleOAuth && !checks.googleOauthConfigured) {
+        return false;
     }
 
     return true;
@@ -129,11 +140,17 @@ export async function checkReadiness(): Promise<ReadinessResult> {
         }
     }
 
-    const strictLine = env.NODE_ENV === 'production';
-    const ready = deriveReadyStatus(checks, strictLine);
+    const strictLine = env.READINESS_REQUIRE_LINE;
+    const ready = deriveReadyStatus(checks, strictLine, env.READINESS_REQUIRE_GOOGLE_OAUTH);
 
     return {
         ready,
         checks,
+        required: {
+            database: true,
+            firebase: true,
+            line: env.READINESS_REQUIRE_LINE,
+            googleOauthConfigured: env.READINESS_REQUIRE_GOOGLE_OAUTH,
+        },
     };
 }

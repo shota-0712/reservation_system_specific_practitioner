@@ -9,7 +9,7 @@ type ReadinessChecks = {
     writeFreezeMode: boolean;
 };
 
-let deriveReadyStatus: (checks: ReadinessChecks, strictLine: boolean) => boolean;
+let deriveReadyStatus: (checks: ReadinessChecks, strictLine: boolean, requireGoogleOAuth?: boolean) => boolean;
 
 function createChecks(overrides: Partial<ReadinessChecks> = {}): ReadinessChecks {
     return {
@@ -45,7 +45,12 @@ describe('readiness service', () => {
 
     it('returns not ready in strict mode when google oauth is not configured', () => {
         const checks = createChecks({ googleOauthConfigured: false });
-        expect(deriveReadyStatus(checks, true)).toBe(false);
+        expect(deriveReadyStatus(checks, true, true)).toBe(false);
+    });
+
+    it('returns ready when google oauth is not required', () => {
+        const checks = createChecks({ googleOauthConfigured: false });
+        expect(deriveReadyStatus(checks, false, false)).toBe(true);
     });
 
     it('returns not ready when database check fails', () => {
