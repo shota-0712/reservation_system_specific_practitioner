@@ -67,7 +67,7 @@ substitutions:
   _GOOGLE_OAUTH_REDIRECT_URI: ""
 
 options:
-  logging: LEGACY
+  logging: CLOUD_LOGGING_ONLY
 
 steps:
   - id: "validate-deploy-target"
