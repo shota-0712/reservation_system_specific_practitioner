@@ -74,10 +74,22 @@ fi
 REPOSITORY_RESOURCE="projects/${PROJECT_ID}/locations/${CB_REGION}/connections/${CB_CONNECTION}/repositories/${CB_REPOSITORY}"
 
 TRIGGER_SERVICE_ACCOUNT="${TRIGGER_SERVICE_ACCOUNT:-}"
+USE_TRIGGER_SERVICE_ACCOUNT="${USE_TRIGGER_SERVICE_ACCOUNT:-false}"
+
+if [ "${USE_TRIGGER_SERVICE_ACCOUNT}" != "true" ]; then
+  TRIGGER_SERVICE_ACCOUNT=""
+fi
+
 if [ -n "${TRIGGER_SERVICE_ACCOUNT}" ] && [[ "${TRIGGER_SERVICE_ACCOUNT}" =~ @cloudbuild\.gserviceaccount\.com$ ]]; then
   echo "ERROR: TRIGGER_SERVICE_ACCOUNT points to a Cloud Build-managed service account (${TRIGGER_SERVICE_ACCOUNT})."
   echo "Use a user-managed service account, or leave TRIGGER_SERVICE_ACCOUNT unset."
   exit 1
+fi
+
+if [ -n "${TRIGGER_SERVICE_ACCOUNT}" ]; then
+  echo "INFO: Creating triggers with user-managed service account: ${TRIGGER_SERVICE_ACCOUNT}"
+else
+  echo "INFO: Creating triggers without explicit service account (Cloud Build default)."
 fi
 
 create_trigger_if_missing() {
