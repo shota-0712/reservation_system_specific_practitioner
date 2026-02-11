@@ -21,6 +21,7 @@ CUSTOMER_API_URL="${CUSTOMER_API_URL:-${NEXT_PUBLIC_API_URL}}"
 RUN_MIGRATIONS="${RUN_MIGRATIONS:-false}"
 RUN_INTEGRATION="${RUN_INTEGRATION:-false}"
 WRITE_FREEZE_MODE="${WRITE_FREEZE_MODE:-false}"
+FORCE_RECREATE="${FORCE_RECREATE:-false}"
 CLOUDSQL_CONNECTION="${CLOUDSQL_CONNECTION:-}"
 CLOUDSQL_INSTANCE="${CLOUDSQL_INSTANCE:-}"
 DB_USER="${DB_USER:-app_user}"
@@ -73,15 +74,10 @@ fi
 REPOSITORY_RESOURCE="projects/${PROJECT_ID}/locations/${CB_REGION}/connections/${CB_CONNECTION}/repositories/${CB_REPOSITORY}"
 
 TRIGGER_SERVICE_ACCOUNT="${TRIGGER_SERVICE_ACCOUNT:-}"
-if [ -z "${TRIGGER_SERVICE_ACCOUNT}" ]; then
-  PROJECT_NUMBER="$(gcloud projects describe "${PROJECT_ID}" --format="value(projectNumber)" 2>/dev/null || true)"
-  if [ -n "${PROJECT_NUMBER}" ]; then
-    TRIGGER_SERVICE_ACCOUNT="projects/${PROJECT_ID}/serviceAccounts/${PROJECT_NUMBER}@cloudbuild.gserviceaccount.com"
-  fi
-fi
-SERVICE_ACCOUNT_FLAG=""
-if [ -n "${TRIGGER_SERVICE_ACCOUNT}" ]; then
-  SERVICE_ACCOUNT_FLAG="--service-account=${TRIGGER_SERVICE_ACCOUNT}"
+if [ -n "${TRIGGER_SERVICE_ACCOUNT}" ] && [[ "${TRIGGER_SERVICE_ACCOUNT}" =~ @cloudbuild\.gserviceaccount\.com$ ]]; then
+  echo "ERROR: TRIGGER_SERVICE_ACCOUNT points to a Cloud Build-managed service account (${TRIGGER_SERVICE_ACCOUNT})."
+  echo "Use a user-managed service account, or leave TRIGGER_SERVICE_ACCOUNT unset."
+  exit 1
 fi
 
 create_trigger_if_missing() {
@@ -97,20 +93,40 @@ create_trigger_if_missing() {
     | awk -F',' -v n="${trigger_name}" '$2==n {print $1; exit}' || true)"
 
   if [ -n "${existing_id}" ]; then
-    echo "SKIP: trigger already exists (${trigger_name}, id=${existing_id})"
-    return
+    if [ "${FORCE_RECREATE}" = "true" ]; then
+      echo "RECREATE: deleting existing trigger (${trigger_name}, id=${existing_id})"
+      gcloud builds triggers delete "${existing_id}" \
+        --project="${PROJECT_ID}" \
+        --region="${CB_REGION}" \
+        --quiet
+    else
+      echo "SKIP: trigger already exists (${trigger_name}, id=${existing_id})"
+      return
+    fi
   fi
 
-  gcloud builds triggers create github \
-    --project="${PROJECT_ID}" \
-    --name="${trigger_name}" \
-    --repository="${REPOSITORY_RESOURCE}" \
-    --region="${CB_REGION}" \
-    --branch-pattern="${BRANCH_PATTERN}" \
-    --build-config="cloudbuild.yaml" \
-    --included-files="${included_files}" \
-    --substitutions="${substitutions}" \
-    ${SERVICE_ACCOUNT_FLAG}
+  if [ -n "${TRIGGER_SERVICE_ACCOUNT}" ]; then
+    gcloud builds triggers create github \
+      --project="${PROJECT_ID}" \
+      --name="${trigger_name}" \
+      --repository="${REPOSITORY_RESOURCE}" \
+      --region="${CB_REGION}" \
+      --branch-pattern="${BRANCH_PATTERN}" \
+      --build-config="cloudbuild.yaml" \
+      --included-files="${included_files}" \
+      --substitutions="${substitutions}" \
+      --service-account="${TRIGGER_SERVICE_ACCOUNT}"
+  else
+    gcloud builds triggers create github \
+      --project="${PROJECT_ID}" \
+      --name="${trigger_name}" \
+      --repository="${REPOSITORY_RESOURCE}" \
+      --region="${CB_REGION}" \
+      --branch-pattern="${BRANCH_PATTERN}" \
+      --build-config="cloudbuild.yaml" \
+      --included-files="${included_files}" \
+      --substitutions="${substitutions}"
+  fi
 
   echo "CREATED: ${trigger_name}"
 }
