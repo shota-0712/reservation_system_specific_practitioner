@@ -59,6 +59,11 @@ if [ -z "${GOOGLE_OAUTH_CLIENT_ID}" ] && [ -n "${GOOGLE_OAUTH_REDIRECT_URI}" ]; 
   exit 1
 fi
 
+if [ "${READINESS_REQUIRE_GOOGLE_OAUTH}" = "true" ] && { [ -z "${GOOGLE_OAUTH_CLIENT_ID}" ] || [ -z "${GOOGLE_OAUTH_REDIRECT_URI}" ]; }; then
+  echo "ERROR: READINESS_REQUIRE_GOOGLE_OAUTH=true requires GOOGLE_OAUTH_CLIENT_ID and GOOGLE_OAUTH_REDIRECT_URI."
+  exit 1
+fi
+
 if [ -n "${TRIGGER_SERVICE_ACCOUNT}" ] && [[ "${TRIGGER_SERVICE_ACCOUNT}" =~ @cloudbuild\.gserviceaccount\.com$ ]]; then
   echo "ERROR: TRIGGER_SERVICE_ACCOUNT points to a Cloud Build-managed service account (${TRIGGER_SERVICE_ACCOUNT})."
   echo "Use a user-managed service account, or leave TRIGGER_SERVICE_ACCOUNT unset."
@@ -80,6 +85,23 @@ Then register the repo:
     --region=${CB_REGION}
 EOF
   exit 1
+fi
+
+if ! gcloud builds repositories describe "${CB_REPOSITORY}" --project="${PROJECT_ID}" --connection="${CB_CONNECTION}" --region="${CB_REGION}" >/dev/null 2>&1; then
+  # Fallback: resolve repository by remote URI if ID differs (e.g. "_" vs "-").
+  detected_repo="$(
+    gcloud builds repositories list \
+      --project="${PROJECT_ID}" \
+      --connection="${CB_CONNECTION}" \
+      --region="${CB_REGION}" \
+      --format="csv[no-heading](name,remoteUri)" \
+      | awk -F',' -v remote="${REMOTE_URI}" '$2==remote {print $1; exit}'
+  )"
+  if [ -n "${detected_repo}" ]; then
+    detected_repo="${detected_repo##*/}"
+    echo "INFO: repository '${CB_REPOSITORY}' not found; using '${detected_repo}' matched by remote URI."
+    CB_REPOSITORY="${detected_repo}"
+  fi
 fi
 
 if ! gcloud builds repositories describe "${CB_REPOSITORY}" --project="${PROJECT_ID}" --connection="${CB_CONNECTION}" --region="${CB_REGION}" >/dev/null 2>&1; then
@@ -142,10 +164,28 @@ create_trigger() {
   fi
 }
 
-update_trigger() {
-  local trigger_id="$1"
+probe_trigger_create() {
+  local base_name="$1"
   local included_files="$2"
   local substitutions="$3"
+  local probe_name="${base_name}-probe-$(date +%s)"
+  local probe_id=""
+
+  if ! create_trigger "${probe_name}" "${included_files}" "${substitutions}"; then
+    return 1
+  fi
+
+  probe_id="$(trigger_id_by_name "${probe_name}" || true)"
+  if [ -n "${probe_id}" ]; then
+    gcloud builds triggers delete "${probe_id}" --project="${PROJECT_ID}" --region="${CB_REGION}" --quiet >/dev/null
+  fi
+}
+
+update_trigger() {
+  local trigger_name="$1"
+  local trigger_id="$2"
+  local included_files="$3"
+  local substitutions="$4"
 
   local args=(
     builds triggers update github "${trigger_id}"
@@ -162,7 +202,21 @@ update_trigger() {
     args+=(--service-account="${TRIGGER_SERVICE_ACCOUNT}")
   fi
 
-  gcloud "${args[@]}"
+  local output=""
+  if output="$(gcloud "${args[@]}" 2>&1)"; then
+    echo "UPDATED: ${trigger_name}"
+    return 0
+  fi
+
+  if echo "${output}" | grep -q "cannot set more than one trigger config"; then
+    echo "WARN: update skipped for ${trigger_name} due gcloud trigger-config conflict."
+    echo "      Existing trigger was kept unchanged."
+    echo "      Use FORCE_RECREATE=true if you need to force trigger replacement."
+    return 0
+  fi
+
+  echo "${output}" >&2
+  return 1
 }
 
 ensure_trigger() {
@@ -193,6 +247,12 @@ EOF
   fi
 
   if [ "${FORCE_RECREATE}" = "true" ]; then
+    echo "RECREATE: preflight create (${trigger_name})"
+    if ! probe_trigger_create "${trigger_name}" "${included_files}" "${substitutions}"; then
+      echo "ERROR: preflight create failed for ${trigger_name}. Existing trigger is kept unchanged."
+      exit 1
+    fi
+
     echo "RECREATE: deleting existing trigger (${trigger_name}, id=${existing_id})"
     gcloud builds triggers delete "${existing_id}" --project="${PROJECT_ID}" --region="${CB_REGION}" --quiet
     create_trigger "${trigger_name}" "${included_files}" "${substitutions}"
@@ -200,8 +260,7 @@ EOF
     return
   fi
 
-  update_trigger "${existing_id}" "${included_files}" "${substitutions}"
-  echo "UPDATED: ${trigger_name}"
+  update_trigger "${trigger_name}" "${existing_id}" "${included_files}" "${substitutions}"
 }
 
 backend_substitutions="_DEPLOY_TARGET=backend,_RUN_INTEGRATION=${RUN_INTEGRATION},_RUN_MIGRATIONS=${RUN_MIGRATIONS},_WRITE_FREEZE_MODE=${WRITE_FREEZE_MODE},_CLOUDSQL_CONNECTION=${CLOUDSQL_CONNECTION},_DB_USER=${DB_USER},_DB_NAME=${DB_NAME},_NEXT_PUBLIC_FIREBASE_PROJECT_ID=${NEXT_PUBLIC_FIREBASE_PROJECT_ID},_READINESS_REQUIRE_LINE=${READINESS_REQUIRE_LINE},_READINESS_REQUIRE_GOOGLE_OAUTH=${READINESS_REQUIRE_GOOGLE_OAUTH},_PUBLIC_ONBOARDING_ENABLED=${PUBLIC_ONBOARDING_ENABLED}"

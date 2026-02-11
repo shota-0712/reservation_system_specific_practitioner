@@ -8,17 +8,32 @@ TRIGGER_PREFIX="${TRIGGER_PREFIX:-reserve}"
 EXPECT_BRANCH_PATTERN="${EXPECT_BRANCH_PATTERN:-^main$}"
 EXPECT_TRIGGER_SERVICE_ACCOUNT="${EXPECT_TRIGGER_SERVICE_ACCOUNT:-}"
 STRICT_SERVICE_ACCOUNT="${STRICT_SERVICE_ACCOUNT:-true}"
+ALLOW_SERVICE_ACCOUNT_WITH_LOGGING="${ALLOW_SERVICE_ACCOUNT_WITH_LOGGING:-true}"
+BUILD_CONFIG_PATH="${BUILD_CONFIG_PATH:-cloudbuild.yaml}"
 
-declare -A expected_target=(
-  ["${TRIGGER_PREFIX}-backend"]="backend"
-  ["${TRIGGER_PREFIX}-admin"]="admin"
-  ["${TRIGGER_PREFIX}-customer"]="customer"
-  ["${TRIGGER_PREFIX}-landing"]="landing"
+# macOS default bash (3.2) does not support associative arrays.
+trigger_specs=(
+  "${TRIGGER_PREFIX}-backend:backend"
+  "${TRIGGER_PREFIX}-admin:admin"
+  "${TRIGGER_PREFIX}-customer:customer"
+  "${TRIGGER_PREFIX}-landing:landing"
 )
 
 failures=0
 
-for trigger_name in "${!expected_target[@]}"; do
+service_account_logging_safe=false
+if [ "${ALLOW_SERVICE_ACCOUNT_WITH_LOGGING}" = "true" ] && [ -f "${BUILD_CONFIG_PATH}" ]; then
+  if grep -Eq '^[[:space:]]*logging:[[:space:]]*(CLOUD_LOGGING_ONLY|NONE)[[:space:]]*$' "${BUILD_CONFIG_PATH}" \
+    || grep -Eq '^[[:space:]]*default_logs_bucket_behavior:[[:space:]]*REGIONAL_USER_OWNED_BUCKET[[:space:]]*$' "${BUILD_CONFIG_PATH}" \
+    || grep -Eq '^[[:space:]]*logsBucket:[[:space:]]*' "${BUILD_CONFIG_PATH}"; then
+    service_account_logging_safe=true
+  fi
+fi
+
+for spec in "${trigger_specs[@]}"; do
+  trigger_name="${spec%%:*}"
+  expected_deploy_target="${spec#*:}"
+
   trigger_id="$(
     gcloud builds triggers list \
       --project "${PROJECT_ID}" \
@@ -49,8 +64,8 @@ for trigger_name in "${!expected_target[@]}"; do
     item_failed=true
   fi
 
-  if [ "${deploy_target}" != "${expected_target[${trigger_name}]}" ]; then
-    echo "FAIL ${trigger_name}: _DEPLOY_TARGET=${deploy_target:-<empty>} (expected ${expected_target[${trigger_name}]})"
+  if [ "${deploy_target}" != "${expected_deploy_target}" ]; then
+    echo "FAIL ${trigger_name}: _DEPLOY_TARGET=${deploy_target:-<empty>} (expected ${expected_deploy_target})"
     item_failed=true
   fi
 
@@ -66,10 +81,14 @@ for trigger_name in "${!expected_target[@]}"; do
     fi
   else
     if [ -n "${service_account}" ] && [ "${STRICT_SERVICE_ACCOUNT}" = "true" ]; then
-      echo "FAIL ${trigger_name}: serviceAccount=${service_account} is set."
-      echo "     This often causes 'build.service_account + logs bucket/logging' run failures."
-      echo "     Recreate trigger without service account or set logs bucket/logging policy explicitly."
-      item_failed=true
+      if [ "${service_account_logging_safe}" = "true" ]; then
+        echo "WARN ${trigger_name}: serviceAccount is set, but ${BUILD_CONFIG_PATH} has SA-compatible logging."
+      else
+        echo "FAIL ${trigger_name}: serviceAccount=${service_account} is set."
+        echo "     This often causes 'build.service_account + logs bucket/logging' run failures."
+        echo "     Recreate trigger without service account or set logs bucket/logging policy explicitly."
+        item_failed=true
+      fi
     fi
   fi
 
