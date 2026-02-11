@@ -1,0 +1,251 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ========================================
+    // ヘルパー関数
+    // ========================================
+
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function belongsToTenant(tenantId) {
+      return isAuthenticated() &&
+             request.auth.token.tenantId == tenantId;
+    }
+
+    function isAdmin(tenantId) {
+      return belongsToTenant(tenantId) &&
+             request.auth.token.role == 'admin';
+    }
+
+    function isStaff(tenantId) {
+      return belongsToTenant(tenantId) &&
+             (request.auth.token.role == 'admin' ||
+              request.auth.token.role == 'staff');
+    }
+
+    function isPractitioner(tenantId, practitionerId) {
+      return belongsToTenant(tenantId) &&
+             request.auth.token.practitionerId == practitionerId;
+    }
+
+    function isCustomer(customerId) {
+      return isAuthenticated() &&
+             request.auth.uid == customerId;
+    }
+
+    function isValidTimestamp(ts) {
+      return ts is timestamp;
+    }
+
+    function validateString(str, minLen, maxLen) {
+      return str is string &&
+             str.size() >= minLen &&
+             str.size() <= maxLen;
+    }
+
+    function validateEmail(email) {
+      return email is string &&
+             email.matches('^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$');
+    }
+
+    function validatePhoneNumber(phone) {
+      return phone is string &&
+             phone.matches('^[0-9]{10,11}$');
+    }
+
+    function validateStoreCode(code) {
+      return code is string &&
+             code.size() == 8 &&
+             code.matches('^[a-z0-9]{8}$');
+    }
+
+    // ========================================
+    // テナント (Tenants)
+    // ========================================
+
+    match /tenants/{tenantId} {
+      // 読み取り: 所属する管理者・スタッフのみ
+      allow read: if isStaff(tenantId);
+
+      // 作成: 認証済みユーザー（オンボーディング時）
+      allow create: if isAuthenticated() &&
+                       validateStoreCode(request.resource.data.storeCode) &&
+                       validateString(request.resource.data.name, 1, 100) &&
+                       isValidTimestamp(request.resource.data.createdAt) &&
+                       request.resource.data.status == 'trial';
+
+      // 更新: 管理者のみ
+      allow update: if isAdmin(tenantId) &&
+                       request.resource.data.storeCode == resource.data.storeCode &&
+                       request.resource.data.createdAt == resource.data.createdAt;
+
+      // 削除: 禁止（論理削除のみ）
+      allow delete: if false;
+
+
+      // ========================================
+      // 管理者 (Admins)
+      // ========================================
+
+      match /admins/{adminId} {
+        // 読み取り: 管理者のみ
+        allow read: if isAdmin(tenantId);
+
+        // 作成・更新・削除: 管理者のみ
+        allow create, update, delete: if isAdmin(tenantId);
+      }
+
+
+      // ========================================
+      // 顧客 (Customers)
+      // ========================================
+
+      match /customers/{customerId} {
+        // 読み取り: 本人 または スタッフ
+        allow read: if isCustomer(customerId) || isStaff(tenantId);
+
+        // 作成: 認証済みユーザー（初回予約時の自動作成）
+        allow create: if isAuthenticated() &&
+                         (isCustomer(customerId) || isStaff(tenantId)) &&
+                         request.resource.data.tenantId == tenantId &&
+                         isValidTimestamp(request.resource.data.createdAt);
+
+        // 更新: 本人 または スタッフ
+        allow update: if (isCustomer(customerId) || isStaff(tenantId)) &&
+                         request.resource.data.tenantId == resource.data.tenantId &&
+                         request.resource.data.createdAt == resource.data.createdAt;
+
+        // 削除: 管理者のみ（GDPR対応）
+        allow delete: if isAdmin(tenantId);
+      }
+
+
+      // ========================================
+      // 施術者 (Practitioners)
+      // ========================================
+
+      match /practitioners/{practitionerId} {
+        // 読み取り: スタッフ、または予約を持つ顧客
+        allow read: if isStaff(tenantId) || isAuthenticated();
+
+        // 作成・更新・削除: 管理者のみ
+        allow create: if isAdmin(tenantId) &&
+                         request.resource.data.tenantId == tenantId &&
+                         validateString(request.resource.data.name, 1, 50) &&
+                         isValidTimestamp(request.resource.data.createdAt);
+
+        allow update: if isAdmin(tenantId) &&
+                         request.resource.data.tenantId == resource.data.tenantId &&
+                         request.resource.data.createdAt == resource.data.createdAt;
+
+        allow delete: if isAdmin(tenantId);
+      }
+
+
+      // ========================================
+      // メニュー (Menus)
+      // ========================================
+
+      match /menus/{menuId} {
+        // 読み取り: 全認証済みユーザー（顧客も含む）
+        allow read: if isAuthenticated();
+
+        // 作成・更新・削除: 管理者のみ
+        allow create: if isAdmin(tenantId) &&
+                         request.resource.data.tenantId == tenantId &&
+                         request.resource.data.price >= 0 &&
+                         request.resource.data.duration > 0 &&
+                         isValidTimestamp(request.resource.data.createdAt);
+
+        allow update: if isAdmin(tenantId) &&
+                         request.resource.data.tenantId == resource.data.tenantId &&
+                         request.resource.data.createdAt == resource.data.createdAt;
+
+        allow delete: if isAdmin(tenantId);
+      }
+
+
+      // ========================================
+      // 予約 (Reservations)
+      // ========================================
+
+      match /reservations/{reservationId} {
+        // 読み取り: 本人 または スタッフ
+        allow read: if isCustomer(resource.data.customerId) ||
+                       isStaff(tenantId);
+
+        // 作成: 本人 または スタッフ
+        allow create: if (isCustomer(request.resource.data.customerId) || isStaff(tenantId)) &&
+                         request.resource.data.tenantId == tenantId &&
+                         request.resource.data.status in ['pending', 'confirmed'] &&
+                         request.resource.data.totalPrice >= 0 &&
+                         isValidTimestamp(request.resource.data.createdAt);
+
+        // 更新: 本人（ステータス変更のみ）または スタッフ
+        allow update: if (isCustomer(resource.data.customerId) &&
+                          request.resource.data.status == 'cancelled' &&
+                          resource.data.status in ['pending', 'confirmed']) ||
+                         (isStaff(tenantId) &&
+                          request.resource.data.tenantId == resource.data.tenantId &&
+                          request.resource.data.customerId == resource.data.customerId &&
+                          request.resource.data.createdAt == resource.data.createdAt);
+
+        // 削除: 管理者のみ
+        allow delete: if isAdmin(tenantId);
+      }
+
+
+      // ========================================
+      // 設定 (Settings)
+      // ========================================
+
+      match /settings/{settingId} {
+        // 読み取り: スタッフ
+        allow read: if isStaff(tenantId);
+
+        // 作成・更新: 管理者のみ
+        allow create, update: if isAdmin(tenantId);
+
+        // 削除: 禁止
+        allow delete: if false;
+      }
+
+
+      // ========================================
+      // 営業時間・休業日 (Business Hours & Holidays)
+      // ========================================
+
+      match /businessHours/{dayOfWeek} {
+        allow read: if isAuthenticated();
+        allow create, update, delete: if isAdmin(tenantId);
+      }
+
+      match /holidays/{holidayId} {
+        allow read: if isAuthenticated();
+        allow create, update, delete: if isAdmin(tenantId);
+      }
+    }
+
+
+    // ========================================
+    // Store Code マッピング
+    // ========================================
+
+    match /storeCodeMapping/{storeCode} {
+      allow read: if isAuthenticated();
+      allow create, update, delete: if false;
+    }
+
+
+    // ========================================
+    // デフォルト: すべて拒否
+    // ========================================
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

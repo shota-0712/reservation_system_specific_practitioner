@@ -1,0 +1,35 @@
+# Keep Cloud Build uploads small and avoid sending local/dev artifacts.
+# This file uses .gitignore-style patterns.
+
+.git
+.git/**
+
+# Node / Next.js artifacts
+**/node_modules
+**/node_modules/**
+**/.next
+**/.next/**
+**/.turbo
+**/.turbo/**
+**/.cache
+**/.cache/**
+**/dist
+**/dist/**
+**/build
+**/build/**
+**/coverage
+**/coverage/**
+
+# Local env files (keep examples)
+**/.env
+**/.env.*
+!**/.env.example
+
+# OS/editor noise
+**/.DS_Store
+**/*.log
+
+# Local binaries / secrets that must never be uploaded
+cloud_sql_proxy
+backend/service-account.json
+reservation-system-specific-b46b9cd93887.json
