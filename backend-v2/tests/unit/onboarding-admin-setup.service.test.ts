@@ -76,10 +76,10 @@ describe('onboarding-admin-setup-service', () => {
         });
     });
 
-    it('updates existing menu/practitioner by name', async () => {
+    it('updates existing menu/practitioner owner by name', async () => {
         storeRepositoryMock.findAll.mockResolvedValue([{ id: 'store-1' }]);
         menuRepositoryMock.findAll.mockResolvedValue([{ id: 'menu-1', name: '初期メニュー' }]);
-        practitionerRepositoryMock.findAll.mockResolvedValue([{ id: 'prac-1', name: 'オーナー' }]);
+        practitionerRepositoryMock.findAll.mockResolvedValue([{ id: 'prac-1', name: 'オーナー', role: 'owner' }]);
 
         const service = createOnboardingAdminSetupService();
         const result = await service.apply('tenant-1', {
@@ -113,6 +113,33 @@ describe('onboarding-admin-setup-service', () => {
             tenantUpdated: false,
             storeUpdated: false,
             menuApplied: true,
+            practitionerApplied: true,
+        });
+    });
+
+    it('does not promote non-owner practitioner with same name', async () => {
+        storeRepositoryMock.findAll.mockResolvedValue([{ id: 'store-1' }]);
+        menuRepositoryMock.findAll.mockResolvedValue([]);
+        practitionerRepositoryMock.findAll.mockResolvedValue([{ id: 'prac-2', name: 'オーナー', role: 'stylist' }]);
+
+        const service = createOnboardingAdminSetupService();
+        const result = await service.apply('tenant-1', {
+            practitionerName: 'オーナー',
+        });
+
+        expect(practitionerRepositoryMock.updatePractitioner).not.toHaveBeenCalled();
+        expect(practitionerRepositoryMock.createPractitioner).toHaveBeenCalledWith(
+            expect.objectContaining({
+                name: 'オーナー',
+                role: 'owner',
+                storeIds: ['store-1'],
+            })
+        );
+
+        expect(result).toEqual({
+            tenantUpdated: false,
+            storeUpdated: false,
+            menuApplied: false,
             practitionerApplied: true,
         });
     });

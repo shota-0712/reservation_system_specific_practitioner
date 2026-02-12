@@ -136,7 +136,10 @@ export class OnboardingAdminSetupService {
 
         const practitionerRepository = createPractitionerRepository(tenantId);
         const practitioners = await practitionerRepository.findAll();
-        const existing = practitioners.find((practitioner) => practitioner.name === setup.practitionerName);
+        const existingOwner = practitioners.find(
+            (practitioner) =>
+                practitioner.name === setup.practitionerName && practitioner.role === 'owner'
+        );
 
         const practitionerData = {
             name: setup.practitionerName,
@@ -151,8 +154,8 @@ export class OnboardingAdminSetupService {
             storeIds: primaryStore ? [primaryStore.id] : [],
         };
 
-        if (existing) {
-            await practitionerRepository.updatePractitioner(existing.id, practitionerData);
+        if (existingOwner) {
+            await practitionerRepository.updatePractitioner(existingOwner.id, practitionerData);
         } else {
             await practitionerRepository.createPractitioner(practitionerData);
         }

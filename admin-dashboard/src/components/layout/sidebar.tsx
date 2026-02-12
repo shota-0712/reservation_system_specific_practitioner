@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import {
     LayoutDashboard,
     Calendar,
@@ -20,7 +20,7 @@ import {
     Link2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { storesApi } from "@/lib/api";
+import { getActiveStoreId, setActiveStoreId, storesApi } from "@/lib/api";
 
 const navigation = [
     { name: "ダッシュボード", href: "/", icon: LayoutDashboard },
@@ -51,6 +51,7 @@ interface SidebarProps {
 
 export function Sidebar({ className, onNavigate }: SidebarProps) {
     const pathname = usePathname();
+    const router = useRouter();
     const [showStoreSelector, setShowStoreSelector] = useState(false);
     const [stores, setStores] = useState<StoreItem[]>([]);
     const [currentStoreId, setCurrentStoreId] = useState<string | null>(null);
@@ -64,12 +65,25 @@ export function Sidebar({ className, onNavigate }: SidebarProps) {
                 const storeList = (response.data as StoreItem[] | undefined) ?? [];
                 setStores(storeList);
                 if (storeList.length > 0) {
-                    setCurrentStoreId((prev) => prev ?? storeList[0].id);
+                    const storedStoreId = getActiveStoreId();
+                    const initialStoreId = storeList.some((store) => store.id === storedStoreId)
+                        ? storedStoreId
+                        : storeList[0].id;
+
+                    if (initialStoreId) {
+                        setCurrentStoreId((prev) => prev ?? initialStoreId);
+                        setActiveStoreId(initialStoreId);
+                    }
+                } else {
+                    setCurrentStoreId(null);
+                    setActiveStoreId(null);
                 }
             })
             .catch(() => {
                 if (!mounted) return;
                 setStores([]);
+                setCurrentStoreId(null);
+                setActiveStoreId(null);
             });
 
         return () => {
@@ -80,8 +94,14 @@ export function Sidebar({ className, onNavigate }: SidebarProps) {
     const currentStore = stores.find((store) => store.id === currentStoreId) ?? stores[0] ?? null;
 
     const handleStoreChange = (store: StoreItem) => {
+        if (currentStoreId === store.id) {
+            setShowStoreSelector(false);
+            return;
+        }
         setCurrentStoreId(store.id);
+        setActiveStoreId(store.id);
         setShowStoreSelector(false);
+        window.location.reload();
     };
 
     return (
@@ -176,7 +196,14 @@ export function Sidebar({ className, onNavigate }: SidebarProps) {
                                 ))}
                             </div>
                             <div className="p-2 border-t border-gray-700">
-                                <button className="w-full text-center text-xs text-primary hover:underline py-1">
+                                <button
+                                    onClick={() => {
+                                        setShowStoreSelector(false);
+                                        router.push("/stores");
+                                        onNavigate?.();
+                                    }}
+                                    className="w-full text-center text-xs text-primary hover:underline py-1"
+                                >
                                     + 新しい店舗を追加
                                 </button>
                             </div>

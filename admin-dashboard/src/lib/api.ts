@@ -8,6 +8,7 @@ import { getIdToken } from './firebase';
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080';
 const TENANT_ID_FALLBACK = process.env.NEXT_PUBLIC_TENANT_ID || 'default';
 const TENANT_STORAGE_KEY = 'reservation_admin_tenant_key';
+const STORE_STORAGE_KEY = 'reservation_admin_store_id';
 
 interface FetchOptions extends RequestInit {
     includeAuth?: boolean;
@@ -15,6 +16,10 @@ interface FetchOptions extends RequestInit {
 
 function isTenantKeyValid(value: string): boolean {
     return /^[a-z0-9](?:[a-z0-9-]{1,38}[a-z0-9])?$/.test(value);
+}
+
+function isStoreIdValid(value: string): boolean {
+    return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
 }
 
 function readTenantKeyFromUrl(): string | null {
@@ -61,6 +66,31 @@ export function setTenantKey(tenantKey: string): void {
         throw new Error('Invalid tenant key');
     }
     window.localStorage.setItem(TENANT_STORAGE_KEY, tenantKey);
+}
+
+export function setActiveStoreId(storeId: string | null): void {
+    if (typeof window === 'undefined') {
+        return;
+    }
+    if (!storeId) {
+        window.localStorage.removeItem(STORE_STORAGE_KEY);
+        return;
+    }
+    if (!isStoreIdValid(storeId)) {
+        throw new Error('Invalid store id');
+    }
+    window.localStorage.setItem(STORE_STORAGE_KEY, storeId);
+}
+
+export function getActiveStoreId(): string | null {
+    if (typeof window === 'undefined') {
+        return null;
+    }
+    const value = window.localStorage.getItem(STORE_STORAGE_KEY);
+    if (!value || !isStoreIdValid(value)) {
+        return null;
+    }
+    return value;
 }
 
 export function getTenantKey(): string {
@@ -124,17 +154,38 @@ export async function apiClient<T = unknown>(
     }
 
     const url = getTenantApiUrl(endpoint);
-    const response = await fetch(url, {
-        ...fetchOptions,
-        headers,
-    });
+    const activeStoreId = getActiveStoreId();
 
-    const text = await response.text();
-    let json: any = {};
-    try {
-        json = text ? JSON.parse(text) : {};
-    } catch {
-        json = {};
+    const executeRequest = async (storeId: string | null) => {
+        const requestHeaders: HeadersInit = {
+            ...(headers as Record<string, string>),
+        };
+        if (storeId) {
+            (requestHeaders as Record<string, string>)['x-store-id'] = storeId;
+        }
+
+        const response = await fetch(url, {
+            ...fetchOptions,
+            headers: requestHeaders,
+        });
+
+        const text = await response.text();
+        let json: any = {};
+        try {
+            json = text ? JSON.parse(text) : {};
+        } catch {
+            json = {};
+        }
+
+        return { response, json };
+    };
+
+    let { response, json } = await executeRequest(activeStoreId);
+
+    // If the stored storeId becomes invalid (e.g. deleted store), retry once without store scope.
+    if (!response.ok && activeStoreId && json?.error?.code === 'TENANT_NOT_FOUND') {
+        setActiveStoreId(null);
+        ({ response, json } = await executeRequest(null));
     }
 
     if (!response.ok) {

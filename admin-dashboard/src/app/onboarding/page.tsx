@@ -148,13 +148,18 @@ export default function OnboardingPage() {
     };
 
     const buildApplySetupPayload = (currentStep: WizardStep): Record<string, unknown> | undefined => {
-        if (currentStep === 2 || currentStep === 3) {
+        if (currentStep === 2) {
             return {
                 tenantName: state.tenantName,
                 storeName: state.storeName,
                 timezone: state.timezone,
                 address: state.address,
                 phone: state.phone,
+            };
+        }
+
+        if (currentStep === 3) {
+            return {
                 slotDuration: state.slotDuration,
                 advanceBookingDays: state.advanceBookingDays,
                 cancelDeadlineHours: state.cancelDeadlineHours,
