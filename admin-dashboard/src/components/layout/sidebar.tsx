@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
@@ -20,6 +20,7 @@ import {
     Link2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { storesApi } from "@/lib/api";
 
 const navigation = [
     { name: "ダッシュボード", href: "/", icon: LayoutDashboard },
@@ -36,12 +37,12 @@ const navigation = [
     { name: "設定", href: "/settings", icon: Settings },
 ];
 
-// マルチテナント用の店舗一覧
-const stores = [
-    { id: "1", name: "Hair Salon ABC 渋谷店", role: "オーナー" },
-    { id: "2", name: "Hair Salon ABC 新宿店", role: "マネージャー" },
-    { id: "3", name: "Hair Salon ABC 池袋店", role: "スタッフ" },
-];
+type StoreItem = {
+    id: string;
+    name: string;
+    storeCode?: string;
+    status?: string;
+};
 
 interface SidebarProps {
     className?: string;
@@ -51,12 +52,36 @@ interface SidebarProps {
 export function Sidebar({ className, onNavigate }: SidebarProps) {
     const pathname = usePathname();
     const [showStoreSelector, setShowStoreSelector] = useState(false);
-    const [currentStore, setCurrentStore] = useState(stores[0]);
+    const [stores, setStores] = useState<StoreItem[]>([]);
+    const [currentStoreId, setCurrentStoreId] = useState<string | null>(null);
 
-    const handleStoreChange = (store: typeof stores[0]) => {
-        setCurrentStore(store);
+    useEffect(() => {
+        let mounted = true;
+        storesApi
+            .list()
+            .then((response) => {
+                if (!mounted || !response.success) return;
+                const storeList = (response.data as StoreItem[] | undefined) ?? [];
+                setStores(storeList);
+                if (storeList.length > 0) {
+                    setCurrentStoreId((prev) => prev ?? storeList[0].id);
+                }
+            })
+            .catch(() => {
+                if (!mounted) return;
+                setStores([]);
+            });
+
+        return () => {
+            mounted = false;
+        };
+    }, []);
+
+    const currentStore = stores.find((store) => store.id === currentStoreId) ?? stores[0] ?? null;
+
+    const handleStoreChange = (store: StoreItem) => {
+        setCurrentStoreId(store.id);
         setShowStoreSelector(false);
-        // In real app, this would trigger a context change or API call
     };
 
     return (
@@ -101,8 +126,12 @@ export function Sidebar({ className, onNavigate }: SidebarProps) {
                             <Building2 className="h-4 w-4 text-primary" />
                         </div>
                         <div className="flex-1 text-left min-w-0">
-                            <div className="text-sm font-medium truncate">{currentStore.name}</div>
-                            <div className="text-xs text-gray-400">{currentStore.role}</div>
+                            <div className="text-sm font-medium truncate">
+                                {currentStore?.name ?? "店舗がありません"}
+                            </div>
+                            <div className="text-xs text-gray-400">
+                                {currentStore?.storeCode ? `code: ${currentStore.storeCode}` : ""}
+                            </div>
                         </div>
                         <ChevronDown
                             className={cn(
@@ -119,13 +148,16 @@ export function Sidebar({ className, onNavigate }: SidebarProps) {
                                 <span className="text-xs text-gray-400 px-2">店舗を切り替え</span>
                             </div>
                             <div className="py-1">
+                                {stores.length === 0 && (
+                                    <div className="px-3 py-2 text-xs text-gray-400">店舗データを取得できませんでした</div>
+                                )}
                                 {stores.map((store) => (
                                     <button
                                         key={store.id}
                                         onClick={() => handleStoreChange(store)}
                                         className={cn(
                                             "w-full flex items-center gap-3 px-3 py-2 text-sm hover:bg-gray-700 transition-colors",
-                                            currentStore.id === store.id && "bg-gray-700"
+                                            currentStoreId === store.id && "bg-gray-700"
                                         )}
                                     >
                                         <div className="flex-shrink-0 w-6 h-6 rounded bg-primary/20 flex items-center justify-center">
@@ -133,9 +165,11 @@ export function Sidebar({ className, onNavigate }: SidebarProps) {
                                         </div>
                                         <div className="flex-1 text-left">
                                             <div className="text-sm truncate">{store.name}</div>
-                                            <div className="text-xs text-gray-400">{store.role}</div>
+                                            <div className="text-xs text-gray-400">
+                                                {store.storeCode ? `code: ${store.storeCode}` : ""}
+                                            </div>
                                         </div>
-                                        {currentStore.id === store.id && (
+                                        {currentStoreId === store.id && (
                                             <Check className="h-4 w-4 text-primary" />
                                         )}
                                     </button>
