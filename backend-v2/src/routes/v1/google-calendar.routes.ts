@@ -20,6 +20,14 @@ const startOAuthSchema = z.object({
     redirectTo: z.string().url().optional(),
 });
 
+function isValidRedirectTarget(url: string | undefined): boolean {
+    if (!url) {
+        return false;
+    }
+
+    return /^https?:\/\//.test(url);
+}
+
 adminRouter.get(
     '/',
     requireFirebaseAuth(),
@@ -116,7 +124,7 @@ callbackRouter.get(
             throw new ValidationError('Google OAuth callback に必要なパラメータが不足しています');
         }
 
-        decodeGoogleOAuthState(state, { expectedTenantId: tenantId });
+        const decodedState = decodeGoogleOAuthState(state, { expectedTenantId: tenantId });
 
         const service = createGoogleCalendarService(tenantId);
         const status = await service.exchangeCodeAndSave(code);
@@ -133,6 +141,14 @@ callbackRouter.get(
             newValues: { ...status },
             ...meta,
         });
+
+        if (isValidRedirectTarget(decodedState.redirectTo)) {
+            const redirectUrl = new URL(decodedState.redirectTo as string);
+            redirectUrl.searchParams.set('googleCalendar', status.connected ? 'connected' : 'failed');
+            redirectUrl.searchParams.set('tenantId', tenantId);
+            res.redirect(302, redirectUrl.toString());
+            return;
+        }
 
         const response: ApiResponse = {
             success: true,

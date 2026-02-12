@@ -497,6 +497,8 @@ export const onboardingApi = {
     updateStatus: (data: {
         status?: 'pending' | 'in_progress' | 'completed';
         onboardingPayload?: Record<string, unknown>;
+        applySetup?: boolean;
+        applySetupPayload?: Record<string, unknown>;
     }) =>
         apiClient('/admin/onboarding/status', {
             method: 'PATCH',

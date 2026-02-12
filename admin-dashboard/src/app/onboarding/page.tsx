@@ -7,11 +7,8 @@ import { Button } from "@/components/ui/button";
 import {
     getTenantKey,
     googleCalendarApi,
-    menusApi,
     onboardingApi,
-    practitionersApi,
     settingsApi,
-    storesApi,
 } from "@/lib/api";
 
 type WizardStep = 1 | 2 | 3 | 4 | 5 | 6;
@@ -134,87 +131,47 @@ export default function OnboardingPage() {
         };
     }, [router]);
 
-    const saveProgress = async (nextStep: WizardStep) => {
+    const saveProgress = async (
+        nextStep: WizardStep,
+        options?: {
+            applySetupPayload?: Record<string, unknown>;
+        }
+    ) => {
         const payload = { ...state, step: nextStep };
         await onboardingApi.updateStatus({
             status: "in_progress",
             onboardingPayload: payload,
+            applySetup: Boolean(options?.applySetupPayload),
+            applySetupPayload: options?.applySetupPayload,
         });
         setStep(nextStep);
     };
 
-    const setupStoreAndPolicy = async () => {
-        const storesResponse = await storesApi.list();
-        if (!storesResponse.success) {
-            throw new Error(storesResponse.error?.message || "店舗情報の取得に失敗しました");
-        }
-
-        const currentStore = (storesResponse.data as any[] | undefined)?.[0];
-        if (currentStore?.id) {
-            const updateResponse = await storesApi.update(currentStore.id, {
-                name: state.storeName,
-                address: state.address || undefined,
-                phone: state.phone || undefined,
+    const buildApplySetupPayload = (currentStep: WizardStep): Record<string, unknown> | undefined => {
+        if (currentStep === 2 || currentStep === 3) {
+            return {
+                tenantName: state.tenantName,
+                storeName: state.storeName,
                 timezone: state.timezone,
+                address: state.address,
+                phone: state.phone,
                 slotDuration: state.slotDuration,
                 advanceBookingDays: state.advanceBookingDays,
                 cancelDeadlineHours: state.cancelDeadlineHours,
-            });
-            if (!updateResponse.success) {
-                throw new Error(updateResponse.error?.message || "店舗情報の更新に失敗しました");
-            }
+            };
         }
 
-        const businessResponse = await settingsApi.updateBusiness({
-            slotDuration: state.slotDuration,
-            advanceBookingDays: state.advanceBookingDays,
-            cancelDeadlineHours: state.cancelDeadlineHours,
-        });
-        if (!businessResponse.success) {
-            throw new Error(businessResponse.error?.message || "予約ポリシーの更新に失敗しました");
-        }
-    };
-
-    const setupInitialMenuAndPractitioner = async () => {
-        const menusResponse = await menusApi.list();
-        if (!menusResponse.success) {
-            throw new Error(menusResponse.error?.message || "メニュー一覧の取得に失敗しました");
-        }
-        const menus = menusResponse.data as any[] | undefined;
-        if (!menus || menus.length === 0) {
-            const createMenuResponse = await menusApi.create({
-                name: state.menuName,
-                category: state.menuCategory,
-                price: state.menuPrice,
-                duration: state.menuDuration,
-                isActive: true,
-            });
-            if (!createMenuResponse.success) {
-                throw new Error(createMenuResponse.error?.message || "初期メニューの作成に失敗しました");
-            }
+        if (currentStep === 4) {
+            return {
+                menuName: state.menuName,
+                menuCategory: state.menuCategory,
+                menuPrice: state.menuPrice,
+                menuDuration: state.menuDuration,
+                practitionerName: state.practitionerName,
+            };
         }
 
-        const practitionersResponse = await practitionersApi.list();
-        if (!practitionersResponse.success) {
-            throw new Error(practitionersResponse.error?.message || "スタッフ一覧の取得に失敗しました");
-        }
-        const practitioners = practitionersResponse.data as any[] | undefined;
-        if (!practitioners || practitioners.length === 0) {
-            const createPractitionerResponse = await practitionersApi.create({
-                name: state.practitionerName,
-                role: "owner",
-                color: "#3b82f6",
-                nominationFee: 0,
-                schedule: {
-                    workDays: [1, 2, 3, 4, 5, 6],
-                    workHours: { start: "10:00", end: "19:00" },
-                },
-                isActive: true,
-            });
-            if (!createPractitionerResponse.success) {
-                throw new Error(createPractitionerResponse.error?.message || "初期スタッフの作成に失敗しました");
-            }
-        }
+        return undefined;
     };
 
     const handleNext = async () => {
@@ -222,13 +179,10 @@ export default function OnboardingPage() {
         setSubmitting(true);
         setError("");
         try {
-            if (step === 2 || step === 3) {
-                await setupStoreAndPolicy();
-            }
-            if (step === 4) {
-                await setupInitialMenuAndPractitioner();
-            }
-            await saveProgress((step + 1) as WizardStep);
+            const nextStep = (step + 1) as WizardStep;
+            await saveProgress(nextStep, {
+                applySetupPayload: buildApplySetupPayload(step),
+            });
         } catch (err: any) {
             setError(err?.message || "保存に失敗しました");
         } finally {
