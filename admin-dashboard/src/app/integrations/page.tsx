@@ -58,7 +58,8 @@ export default function IntegrationsPage() {
         setRunning(true);
         setError(null);
         try {
-            const res = await googleCalendarApi.startOAuth();
+            const redirectTo = typeof window !== "undefined" ? window.location.href : undefined;
+            const res = await googleCalendarApi.startOAuth(redirectTo);
             if (!res.success || !res.data) {
                 throw new Error(res.error?.message || "OAuth開始に失敗しました");
             }
