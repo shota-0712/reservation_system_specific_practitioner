@@ -490,6 +490,21 @@ SQL手作業は不要です。
    - 初期メニュー / スタッフ
    - Google連携（必須）
 
+### 8.1 CLIスモーク（登録 -> オンボーディング -> 予約作成）
+
+公開セルフ登録と最低限の業務導線をCLIで一括確認できます。
+
+```bash
+API_URL=https://reserve-api-xxxxx.run.app \
+FIREBASE_API_KEY=YOUR_FIREBASE_WEB_API_KEY \
+CUSTOMER_URL=https://reserve-customer-xxxxx.run.app \
+./scripts/smoke_public_onboarding.sh
+```
+
+オプション（必要時のみ）:
+- `TENANT_SLUG=smoke-xxxx`（固定slugを使う）
+- `RUN_RESERVATION_TEST=false`（登録・オンボーディング確認のみ）
+
 ---
 
 ## 9. 確認事項

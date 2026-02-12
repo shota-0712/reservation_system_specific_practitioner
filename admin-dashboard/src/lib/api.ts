@@ -473,6 +473,14 @@ export const adminJobsApi = {
             method: 'POST',
             body: JSON.stringify(limit ? { limit } : {}),
         }),
+    runGoogleCalendarRetry: (limit?: number, includeFailed = false) =>
+        apiClient('/admin/jobs/integrations/google-calendar/retry', {
+            method: 'POST',
+            body: JSON.stringify({
+                ...(limit ? { limit } : {}),
+                includeFailed,
+            }),
+        }),
 };
 
 // ============================================

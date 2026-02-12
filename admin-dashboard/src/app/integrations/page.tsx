@@ -101,7 +101,7 @@ export default function IntegrationsPage() {
         return "未連携";
     };
 
-    const runManualJob = async (job: "day-before" | "same-day" | "analytics" | "google-sync") => {
+    const runManualJob = async (job: "day-before" | "same-day" | "analytics" | "google-sync" | "google-retry-dead") => {
         setJobRunning(true);
         setJobResult(null);
         setError(null);
@@ -112,6 +112,8 @@ export default function IntegrationsPage() {
                     ? await adminJobsApi.runDayBeforeReminder()
                     : job === "same-day"
                       ? await adminJobsApi.runSameDayReminder()
+                      : job === "google-retry-dead"
+                        ? await adminJobsApi.runGoogleCalendarRetry(100, false)
                       : job === "google-sync"
                         ? await adminJobsApi.runGoogleCalendarSync()
                       : await adminJobsApi.runDailyAnalytics(analyticsDate || undefined);
@@ -135,6 +137,14 @@ export default function IntegrationsPage() {
                 const dead = Number(syncStats?.dead ?? 0);
                 const remaining = Number(syncStats?.remainingPending ?? 0);
                 setJobResult(`Google同期キューを処理しました / processed: ${processed}, ok: ${succeeded}, failed: ${failed}, dead: ${dead}, remaining: ${remaining}`);
+                await fetchStatus();
+            } else if (job === "google-retry-dead") {
+                const retryStats = stats.stats as Record<string, unknown> | undefined;
+                const reset = Number(retryStats?.reset ?? 0);
+                const fromDead = Number(retryStats?.fromDead ?? 0);
+                const fromFailed = Number(retryStats?.fromFailed ?? 0);
+                setJobResult(`Google deadキューを再投入しました / reset: ${reset}, fromDead: ${fromDead}, fromFailed: ${fromFailed}`);
+                await fetchStatus();
             } else {
                 const reminderStats = stats.stats as Record<string, unknown> | undefined;
                 const sent = Number(reminderStats?.sent ?? 0);
@@ -281,6 +291,13 @@ export default function IntegrationsPage() {
                             onClick={() => runManualJob("google-sync")}
                         >
                             Google同期キュー処理
+                        </Button>
+                        <Button
+                            variant="outline"
+                            disabled={jobRunning}
+                            onClick={() => runManualJob("google-retry-dead")}
+                        >
+                            Google deadキュー再投入
                         </Button>
                     </div>
 

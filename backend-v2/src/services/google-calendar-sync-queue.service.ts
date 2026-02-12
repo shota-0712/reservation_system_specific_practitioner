@@ -32,6 +32,12 @@ export interface ProcessGoogleCalendarSyncQueueResult {
     remainingPending: number;
 }
 
+export interface RetryGoogleCalendarSyncQueueResult {
+    reset: number;
+    fromDead: number;
+    fromFailed: number;
+}
+
 type TaskStatus = 'pending' | 'running' | 'succeeded' | 'failed' | 'dead';
 
 interface TaskRow {
@@ -180,6 +186,44 @@ export class GoogleCalendarSyncQueueService {
         return {
             ...stats,
             remainingPending: toInt(remaining?.count),
+        };
+    }
+
+    async retryDeadTasks(options: { limit?: number; includeFailed?: boolean } = {}): Promise<RetryGoogleCalendarSyncQueueResult> {
+        const includeFailed = options.includeFailed === true;
+        const limit = Number.isFinite(options.limit as number) ? Math.max(1, Math.trunc(options.limit as number)) : 100;
+        const statuses = includeFailed ? ['dead', 'failed'] : ['dead'];
+
+        const result = await DatabaseService.query<{ previous_status: TaskStatus }>(
+            `WITH candidates AS (
+                SELECT id, status
+                FROM google_calendar_sync_tasks
+                WHERE tenant_id = $1
+                  AND status = ANY($2::text[])
+                ORDER BY updated_at DESC
+                LIMIT $3
+             )
+             UPDATE google_calendar_sync_tasks t
+             SET status = 'pending',
+                 attempts = 0,
+                 next_run_at = NOW(),
+                 locked_at = NULL,
+                 last_error = NULL,
+                 updated_at = NOW()
+             FROM candidates c
+             WHERE t.id = c.id
+             RETURNING c.status AS previous_status`,
+            [this.tenantId, statuses, limit],
+            this.tenantId
+        );
+
+        const fromDead = result.filter((row) => row.previous_status === 'dead').length;
+        const fromFailed = result.filter((row) => row.previous_status === 'failed').length;
+
+        return {
+            reset: result.length,
+            fromDead,
+            fromFailed,
         };
     }
 
@@ -348,4 +392,3 @@ export class GoogleCalendarSyncQueueService {
 export function createGoogleCalendarSyncQueueService(tenantId: string): GoogleCalendarSyncQueueService {
     return new GoogleCalendarSyncQueueService(tenantId);
 }
-

@@ -30,6 +30,7 @@ READINESS_REQUIRE_LINE="${READINESS_REQUIRE_LINE:-false}"
 READINESS_REQUIRE_GOOGLE_OAUTH="${READINESS_REQUIRE_GOOGLE_OAUTH:-true}"
 PUBLIC_ONBOARDING_ENABLED="${PUBLIC_ONBOARDING_ENABLED:-true}"
 FORCE_RECREATE="${FORCE_RECREATE:-false}"
+AUTO_RECREATE_ON_UPDATE_CONFLICT="${AUTO_RECREATE_ON_UPDATE_CONFLICT:-true}"
 
 CLOUDSQL_CONNECTION="${CLOUDSQL_CONNECTION:-}"
 CLOUDSQL_INSTANCE="${CLOUDSQL_INSTANCE:-}"
@@ -209,10 +210,8 @@ update_trigger() {
   fi
 
   if echo "${output}" | grep -q "cannot set more than one trigger config"; then
-    echo "WARN: update skipped for ${trigger_name} due gcloud trigger-config conflict."
-    echo "      Existing trigger was kept unchanged."
-    echo "      Use FORCE_RECREATE=true if you need to force trigger replacement."
-    return 0
+    echo "WARN: update conflict for ${trigger_name} (cannot set more than one trigger config)."
+    return 20
   fi
 
   echo "${output}" >&2
@@ -260,7 +259,33 @@ EOF
     return
   fi
 
+  set +e
   update_trigger "${trigger_name}" "${existing_id}" "${included_files}" "${substitutions}"
+  update_status=$?
+  set -e
+
+  if [ "${update_status}" -eq 0 ]; then
+    return
+  fi
+
+  if [ "${update_status}" -eq 20 ]; then
+    if [ "${AUTO_RECREATE_ON_UPDATE_CONFLICT}" = "true" ]; then
+      echo "RECREATE: fallback due update conflict (${trigger_name})"
+      if ! probe_trigger_create "${trigger_name}" "${included_files}" "${substitutions}"; then
+        echo "ERROR: preflight create failed for ${trigger_name}. Existing trigger is kept unchanged."
+        exit 1
+      fi
+      gcloud builds triggers delete "${existing_id}" --project="${PROJECT_ID}" --region="${CB_REGION}" --quiet
+      create_trigger "${trigger_name}" "${included_files}" "${substitutions}"
+      echo "RECREATED: ${trigger_name}"
+      return
+    fi
+
+    echo "WARN: kept existing trigger unchanged for ${trigger_name} (AUTO_RECREATE_ON_UPDATE_CONFLICT=false)."
+    return
+  fi
+
+  exit "${update_status}"
 }
 
 backend_substitutions="_DEPLOY_TARGET=backend,_RUN_INTEGRATION=${RUN_INTEGRATION},_RUN_MIGRATIONS=${RUN_MIGRATIONS},_WRITE_FREEZE_MODE=${WRITE_FREEZE_MODE},_CLOUDSQL_CONNECTION=${CLOUDSQL_CONNECTION},_DB_USER=${DB_USER},_DB_NAME=${DB_NAME},_NEXT_PUBLIC_FIREBASE_PROJECT_ID=${NEXT_PUBLIC_FIREBASE_PROJECT_ID},_READINESS_REQUIRE_LINE=${READINESS_REQUIRE_LINE},_READINESS_REQUIRE_GOOGLE_OAUTH=${READINESS_REQUIRE_GOOGLE_OAUTH},_PUBLIC_ONBOARDING_ENABLED=${PUBLIC_ONBOARDING_ENABLED}"
