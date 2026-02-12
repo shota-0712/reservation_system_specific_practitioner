@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Building2, Loader2 } from "lucide-react";
@@ -8,14 +8,11 @@ import { Button } from "@/components/ui/button";
 import { useAuth } from "@/lib/auth-context";
 import { platformOnboardingApi, setTenantKey } from "@/lib/api";
 
-const slugRegex = /^[a-z0-9](?:[a-z0-9-]{1,38}[a-z0-9])?$/;
-
 export default function RegisterPage() {
     const router = useRouter();
     const { register, getAuthToken, logout, user } = useAuth();
 
     const [tenantName, setTenantName] = useState("");
-    const [slug, setSlug] = useState("");
     const [ownerName, setOwnerName] = useState("");
     const [storeName, setStoreName] = useState("");
     const [timezone, setTimezone] = useState("Asia/Tokyo");
@@ -25,8 +22,6 @@ export default function RegisterPage() {
     const [password, setPassword] = useState("");
     const [confirmPassword, setConfirmPassword] = useState("");
 
-    const [slugChecking, setSlugChecking] = useState(false);
-    const [slugAvailable, setSlugAvailable] = useState<boolean | null>(null);
     const [enabled, setEnabled] = useState(true);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState("");
@@ -45,36 +40,11 @@ export default function RegisterPage() {
         };
     }, []);
 
-    const normalizedSlug = useMemo(() => slug.trim().toLowerCase(), [slug]);
-    const isSlugFormatValid = normalizedSlug.length >= 3 && slugRegex.test(normalizedSlug);
-
     useEffect(() => {
         if (!storeName.trim() && tenantName.trim()) {
             setStoreName(`${tenantName.trim()} 本店`);
         }
     }, [tenantName, storeName]);
-
-    const checkSlug = async () => {
-        if (!isSlugFormatValid) {
-            setSlugAvailable(null);
-            return;
-        }
-
-        setSlugChecking(true);
-        setError("");
-        try {
-            const response = await platformOnboardingApi.checkSlugAvailability(normalizedSlug);
-            if (!response.success) {
-                throw new Error(response.error?.message || "slugの確認に失敗しました");
-            }
-            setSlugAvailable(Boolean(response.data?.available));
-        } catch (err: any) {
-            setError(err?.message || "slugの確認に失敗しました");
-            setSlugAvailable(null);
-        } finally {
-            setSlugChecking(false);
-        }
-    };
 
     const handleSubmit = async (event: React.FormEvent) => {
         event.preventDefault();
@@ -82,16 +52,6 @@ export default function RegisterPage() {
 
         if (!enabled) {
             setError("現在は新規登録を受け付けていません。");
-            return;
-        }
-
-        if (!isSlugFormatValid) {
-            setError("slug形式が不正です（英小文字・数字・ハイフンのみ、3〜40文字）");
-            return;
-        }
-
-        if (slugAvailable === false) {
-            setError("このslugは既に使用されています。");
             return;
         }
 
@@ -124,7 +84,6 @@ export default function RegisterPage() {
 
             const response = await platformOnboardingApi.registerTenant({
                 idToken,
-                slug: normalizedSlug,
                 tenantName,
                 ownerName: ownerName || undefined,
                 storeName: storeName || undefined,
@@ -178,24 +137,9 @@ export default function RegisterPage() {
                     </div>
 
                     <div className="md:col-span-2">
-                        <label className="block text-sm font-medium mb-1">slug（URL識別子）</label>
-                        <div className="flex items-center gap-2">
-                            <input
-                                className="w-full border rounded-lg px-3 py-2"
-                                value={slug}
-                                onChange={(e) => {
-                                    setSlug(e.target.value);
-                                    setSlugAvailable(null);
-                                }}
-                                onBlur={checkSlug}
-                                required
-                            />
-                            <Button type="button" variant="outline" onClick={checkSlug} disabled={slugChecking}>
-                                {slugChecking ? <Loader2 className="h-4 w-4 animate-spin" /> : "確認"}
-                            </Button>
-                        </div>
-                        {slugAvailable === true && <p className="text-xs text-emerald-600 mt-1">使用可能です</p>}
-                        {slugAvailable === false && <p className="text-xs text-red-600 mt-1">既に使用されています</p>}
+                        <p className="text-xs text-gray-500">
+                            URL識別子（tenantKey）は登録後にシステムが自動発行します。
+                        </p>
                     </div>
 
                     <div>

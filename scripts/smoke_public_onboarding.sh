@@ -7,7 +7,6 @@ set -euo pipefail
 RUN_RESERVATION_TEST="${RUN_RESERVATION_TEST:-true}"
 
 timestamp="$(date +%s)"
-TENANT_SLUG="${TENANT_SLUG:-smoke-${timestamp}}"
 TENANT_NAME="${TENANT_NAME:-Smoke Salon ${timestamp}}"
 OWNER_EMAIL="${OWNER_EMAIL:-smoke.${timestamp}@example.com}"
 OWNER_PASSWORD="${OWNER_PASSWORD:-SmokeTest!${timestamp}Aa}"
@@ -106,15 +105,7 @@ if [ "$(echo "${registration_config}" | jq -r '.data.enabled')" != "true" ]; the
   exit 1
 fi
 
-echo "== 2) slug availability before registration =="
-slug_pre="$(api_request GET "${API_URL}/api/platform/v1/onboarding/slug-availability?slug=${TENANT_SLUG}")"
-expect_success "${slug_pre}" "slug-availability(before)"
-if [ "$(echo "${slug_pre}" | jq -r '.data.available')" != "true" ]; then
-  echo "ERROR: slug '${TENANT_SLUG}' is already in use. Set TENANT_SLUG and rerun."
-  exit 1
-fi
-
-echo "== 3) Firebase owner signup =="
+echo "== 2) Firebase owner signup =="
 firebase_signup_payload="$(jq -cn \
   --arg email "${OWNER_EMAIL}" \
   --arg password "${OWNER_PASSWORD}" \
@@ -128,17 +119,15 @@ if [ -z "${id_token}" ] || [ "${id_token}" = "null" ]; then
   exit 1
 fi
 
-echo "== 4) public tenant registration =="
+echo "== 3) public tenant registration =="
 register_payload="$(jq -cn \
   --arg idToken "${id_token}" \
-  --arg slug "${TENANT_SLUG}" \
   --arg tenantName "${TENANT_NAME}" \
   --arg ownerName "${OWNER_NAME}" \
   --arg storeName "${STORE_NAME}" \
   --arg timezone "${TIMEZONE}" \
   '{
     idToken:$idToken,
-    slug:$slug,
     tenantName:$tenantName,
     ownerName:$ownerName,
     storeName:$storeName,
@@ -155,11 +144,11 @@ if [ -z "${tenant_key}" ] || [ "${tenant_key}" = "null" ]; then
   exit 1
 fi
 
-echo "== 5) tenant public auth config check =="
+echo "== 4) tenant public auth config check =="
 auth_config="$(api_request GET "${API_URL}/api/v1/${tenant_key}/auth/config")"
 expect_success "${auth_config}" "auth/config"
 
-echo "== 6) onboarding status update (pending -> in_progress -> completed) =="
+echo "== 5) onboarding status update (pending -> in_progress -> completed) =="
 status_before="$(api_request GET "${API_URL}/api/v1/${tenant_key}/admin/onboarding/status" "" "${id_token}")"
 expect_success "${status_before}" "onboarding/status(before)"
 
@@ -187,7 +176,7 @@ fi
 
 reservation_id=""
 if [ "${RUN_RESERVATION_TEST}" = "true" ]; then
-  echo "== 7) admin reservation flow smoke =="
+  echo "== 6) admin reservation flow smoke =="
   menu_payload='{"name":"スモークカット","category":"カット","duration":60,"price":5500,"description":"smoke test menu"}'
   menu_response="$(api_request POST "${API_URL}/api/v1/${tenant_key}/admin/menus" "${menu_payload}" "${id_token}")"
   expect_success "${menu_response}" "admin/menus(create)"
@@ -241,7 +230,7 @@ PY
   reservation_id="$(echo "${reservation_response}" | jq -r '.data.id')"
 fi
 
-echo "== 8) slug availability after registration =="
+echo "== 7) slug availability after registration =="
 slug_post="$(api_request GET "${API_URL}/api/platform/v1/onboarding/slug-availability?slug=${tenant_key}")"
 expect_success "${slug_post}" "slug-availability(after)"
 if [ "$(echo "${slug_post}" | jq -r '.data.available')" != "false" ]; then

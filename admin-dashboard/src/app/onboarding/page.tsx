@@ -18,7 +18,6 @@ type WizardStep = 1 | 2 | 3 | 4 | 5 | 6;
 
 interface WizardState {
     tenantName: string;
-    slug: string;
     storeName: string;
     timezone: string;
     address: string;
@@ -35,7 +34,6 @@ interface WizardState {
 
 const initialState: WizardState = {
     tenantName: "",
-    slug: "",
     storeName: "",
     timezone: "Asia/Tokyo",
     address: "",
@@ -104,7 +102,6 @@ export default function OnboardingPage() {
                     setState((prev) => ({
                         ...prev,
                         tenantName: tenant?.name || prev.tenantName,
-                        slug: tenant?.slug || prev.slug,
                         storeName: store?.name || prev.storeName,
                         timezone: store?.timezone || prev.timezone,
                         address: store?.address || prev.address,
@@ -315,8 +312,7 @@ export default function OnboardingPage() {
                         <h2 className="text-lg font-semibold">テナント基本情報</h2>
                         <label className="block text-sm">サロン名</label>
                         <input className="w-full border rounded-lg px-3 py-2" value={state.tenantName} onChange={(e) => setState((prev) => ({ ...prev, tenantName: e.target.value }))} />
-                        <label className="block text-sm">slug</label>
-                        <input className="w-full border rounded-lg px-3 py-2" value={state.slug} onChange={(e) => setState((prev) => ({ ...prev, slug: e.target.value }))} />
+                        <p className="text-xs text-gray-500">URL識別子（tenantKey）はシステムで自動発行・管理されます。</p>
                     </>
                 )}
 

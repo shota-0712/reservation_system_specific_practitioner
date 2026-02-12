@@ -39,7 +39,6 @@ const slugAvailabilitySchema = z.object({
 
 const registrationSchema = z.object({
     idToken: z.string().min(1),
-    slug: z.string().trim().min(3).max(40),
     tenantName: z.string().trim().min(1).max(200),
     ownerName: z.string().trim().min(1).max(100).optional(),
     storeName: z.string().trim().min(1).max(100).optional(),
@@ -131,7 +130,6 @@ router.post(
 
         const {
             idToken,
-            slug,
             tenantName,
             ownerName,
             storeName,
@@ -159,7 +157,6 @@ router.post(
             email,
             ownerName: normalizedOwnerName,
             tenantName: tenantName.trim(),
-            slug: slug.trim(),
             storeName: normalizedStoreName,
             timezone,
             address,

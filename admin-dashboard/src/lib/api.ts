@@ -512,20 +512,11 @@ export const platformOnboardingApi = {
     getRegistrationConfig: () =>
         platformApiClient<{
             enabled: boolean;
-            slugPattern: string;
-            slugMinLength: number;
-            slugMaxLength: number;
         }>('/onboarding/registration-config', {
             includeAuth: false,
         }),
-    checkSlugAvailability: (slug: string) =>
-        platformApiClient<{ slug: string; available: boolean }>(
-            `/onboarding/slug-availability${buildQuery({ slug })}`,
-            { includeAuth: false }
-        ),
     registerTenant: (data: {
         idToken: string;
-        slug: string;
         tenantName: string;
         ownerName?: string;
         storeName?: string;
