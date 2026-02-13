@@ -83,6 +83,17 @@ const reservationFiltersSchema = paginationSchema.extend({
     date: dateSchema.optional(),
 });
 
+function practitionerMatchesStore(practitionerStoreIds: string[] | undefined, storeId?: string): boolean {
+    if (!storeId) {
+        return true;
+    }
+    const ids = practitionerStoreIds ?? [];
+    if (ids.length === 0) {
+        return true;
+    }
+    return ids.includes(storeId);
+}
+
 router.get(
     '/',
     requireFirebaseAuth(),
@@ -174,6 +185,9 @@ router.post(
         }
 
         const practitioner = await practitionerRepo.findByIdOrFail(practitionerId);
+        if (!practitionerMatchesStore(practitioner.storeIds, store.id)) {
+            throw new ValidationError('選択された施術者はこの店舗では利用できません');
+        }
         const menus = await Promise.all(menuIds.map((id: string) => menuRepo.findByIdOrFail(id)));
         const options = await Promise.all((optionIds || []).map((id: string) => optionRepo.findByIdOrFail(id)));
 
@@ -350,6 +364,9 @@ router.put(
         }
 
         const practitioner = await practitionerRepo.findByIdOrFail(newPractitionerId);
+        if (!practitionerMatchesStore(practitioner.storeIds, store.id)) {
+            throw new ValidationError('選択された施術者はこの店舗では利用できません');
+        }
         const menus = await Promise.all(newMenuIds.map((menuId: string) => menuRepo.findByIdOrFail(menuId)));
         const options = await Promise.all((newOptionIds || []).map((optionId: string) => optionRepo.findByIdOrFail(optionId)));
 
