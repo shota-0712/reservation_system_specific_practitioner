@@ -28,9 +28,13 @@ require_command python3
 
 tmp_files=()
 cleanup() {
+  local file=""
   for file in "${tmp_files[@]:-}"; do
-    [ -f "${file}" ] && rm -f "${file}"
+    if [ -n "${file}" ] && [ -f "${file}" ]; then
+      rm -f "${file}"
+    fi
   done
+  return 0
 }
 trap cleanup EXIT
 
