@@ -1,14 +1,16 @@
 import { Router, Request, Response } from 'express';
 import rateLimit from 'express-rate-limit';
 import { z } from 'zod';
+import { DatabaseService } from '../../config/database.js';
 import { getAuthInstance } from '../../config/firebase.js';
 import { env } from '../../config/env.js';
 import { asyncHandler, validateBody } from '../../middleware/index.js';
+import { createBookingLinkTokenService } from '../../services/booking-link-token.service.js';
 import { createGoogleCalendarService } from '../../services/google-calendar.service.js';
 import { decodeGoogleOAuthState } from '../../services/google-oauth-state.service.js';
 import { createOnboardingService } from '../../services/onboarding.service.js';
 import { getRequestMeta, writeAuditLog } from '../../services/audit-log.service.js';
-import { ConflictError, RateLimitError, ValidationError } from '../../utils/errors.js';
+import { AuthenticationError, AuthorizationError, ConflictError, RateLimitError, ValidationError } from '../../utils/errors.js';
 import type { ApiResponse } from '../../types/index.js';
 
 const router = Router();
@@ -17,8 +19,6 @@ const onboardingService = createOnboardingService();
 const emailRateLimitStore = new Map<string, { count: number; resetAt: number }>();
 const emailRateLimitWindowMs = 15 * 60 * 1000;
 const emailRateLimitMax = 5;
-const slugPattern = '^[a-z0-9](?:[a-z0-9-]{1,38}[a-z0-9])?$';
-
 const ipLimiter = rateLimit({
     windowMs: 15 * 60 * 1000,
     max: 30,
@@ -45,6 +45,12 @@ const registrationSchema = z.object({
     timezone: z.string().trim().min(1).default('Asia/Tokyo'),
     address: z.string().trim().max(500).optional(),
     phone: z.string().trim().max(30).optional(),
+});
+const bookingLinkResolveSchema = z.object({
+    token: z.string().trim().min(16).max(128),
+});
+const adminContextQuerySchema = z.object({
+    tenantKey: z.string().trim().toLowerCase().regex(/^[a-z0-9](?:[a-z0-9-]{1,38}[a-z0-9])?$/).optional(),
 });
 
 function consumeEmailQuota(email: string): void {
@@ -76,21 +82,82 @@ function isValidRedirectTarget(url: string | undefined): boolean {
     return /^https?:\/\//.test(url);
 }
 
+function renderOAuthCompletionPage(res: Response, payload: {
+    connected: boolean;
+    email?: string;
+    tenantId: string;
+}): void {
+    const serializedPayload = JSON.stringify({
+        type: 'reserve:google-oauth-result',
+        connected: payload.connected,
+        email: payload.email ?? '',
+        tenantId: payload.tenantId,
+    }).replace(/</g, '\\u003c');
+    const statusLabel = payload.connected ? 'Google連携が完了しました。' : 'Google連携に失敗しました。';
+    const body = `<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Google連携</title>
+    <style>
+      body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; margin: 0; background: #f8fafc; color: #0f172a; }
+      main { max-width: 720px; margin: 48px auto; background: #fff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 24px; }
+      h1 { margin: 0 0 8px; font-size: 20px; }
+      p { margin: 8px 0; line-height: 1.6; }
+      code { background: #f1f5f9; padding: 2px 6px; border-radius: 6px; }
+      .sub { color: #475569; font-size: 14px; }
+      .close { margin-top: 16px; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>${statusLabel}</h1>
+      <p class="sub">このウィンドウを閉じて、元の管理画面に戻ってください。</p>
+      <p>tenantId: <code>${payload.tenantId}</code></p>
+      <p>account: <code>${payload.email ?? '-'}</code></p>
+      <button class="close" onclick="window.close()">このウィンドウを閉じる</button>
+    </main>
+    <script>
+      (function () {
+        const payload = ${serializedPayload};
+        if (window.opener && !window.opener.closed) {
+          try {
+            window.opener.postMessage(payload, '*');
+          } catch (error) {
+            console.warn('postMessage failed:', error);
+          }
+          setTimeout(function () { window.close(); }, 350);
+        }
+      })();
+    </script>
+  </body>
+</html>`;
+
+    res.status(200).type('html').send(body);
+}
+
+function getBearerToken(req: Request): string {
+    const authHeader = req.headers.authorization;
+    if (!authHeader?.startsWith('Bearer ')) {
+        throw new AuthenticationError('認証トークンが必要です');
+    }
+    return authHeader.slice('Bearer '.length);
+}
+
 router.get(
     '/onboarding/registration-config',
     asyncHandler(async (_req: Request, res: Response) => {
         const response: ApiResponse<{
             enabled: boolean;
-            slugPattern: string;
-            slugMinLength: number;
-            slugMaxLength: number;
+            tenantKeyPolicy: 'auto_generated';
+            supportsManualTenantKey: false;
         }> = {
             success: true,
             data: {
                 enabled: env.PUBLIC_ONBOARDING_ENABLED,
-                slugPattern,
-                slugMinLength: 3,
-                slugMaxLength: 40,
+                tenantKeyPolicy: 'auto_generated',
+                supportsManualTenantKey: false,
             },
         };
 
@@ -112,6 +179,130 @@ router.get(
             data: {
                 slug: parsed.data.slug.toLowerCase(),
                 available,
+            },
+        };
+
+        res.json(response);
+    })
+);
+
+router.get(
+    '/booking-links/resolve',
+    asyncHandler(async (req: Request, res: Response) => {
+        const parsed = bookingLinkResolveSchema.safeParse(req.query);
+        if (!parsed.success) {
+            throw new ValidationError('token が不正です');
+        }
+
+        const service = createBookingLinkTokenService();
+        const resolved = await service.resolve(parsed.data.token);
+        if (!resolved) {
+            res.status(404).json({
+                success: false,
+                error: {
+                    code: 'NOT_FOUND',
+                    message: '予約URLが見つかりません',
+                },
+            });
+            return;
+        }
+
+        const response: ApiResponse<{
+            tenantKey: string;
+            tenantId: string;
+            storeId?: string;
+            practitionerId: string;
+            lineMode: 'tenant' | 'store' | 'practitioner';
+            lineConfigSource: 'tenant' | 'store' | 'practitioner';
+        }> = {
+            success: true,
+            data: {
+                tenantKey: resolved.tenantKey,
+                tenantId: resolved.tenantId,
+                storeId: resolved.storeId,
+                practitionerId: resolved.practitionerId,
+                lineMode: resolved.lineMode,
+                lineConfigSource: resolved.lineConfigSource,
+            },
+        };
+        res.json(response);
+    })
+);
+
+router.get(
+    '/admin/context',
+    asyncHandler(async (req: Request, res: Response) => {
+        const token = getBearerToken(req);
+        const auth = getAuthInstance();
+        const decoded = await auth.verifyIdToken(token);
+
+        const parsed = adminContextQuerySchema.safeParse(req.query);
+        if (!parsed.success) {
+            throw new ValidationError('tenantKey が不正です');
+        }
+        const requestedTenantKey = parsed.data.tenantKey;
+
+        const adminRows = await DatabaseService.query<{
+            admin_id: string;
+            tenant_id: string;
+            tenant_key: string;
+            role: 'owner' | 'admin' | 'manager' | 'staff';
+            store_ids: string[] | null;
+        }>(
+            `SELECT a.id AS admin_id,
+                    a.tenant_id,
+                    t.slug AS tenant_key,
+                    a.role,
+                    a.store_ids
+             FROM admins a
+             INNER JOIN tenants t
+                ON t.id = a.tenant_id
+             WHERE a.firebase_uid = $1
+               AND a.is_active = true
+               AND t.status IN ('active', 'trial')
+             ORDER BY a.created_at DESC`,
+            [decoded.uid]
+        );
+
+        if (adminRows.length === 0) {
+            throw new AuthorizationError('管理者として登録されていません');
+        }
+
+        const context =
+            (requestedTenantKey
+                ? adminRows.find((row) => row.tenant_key === requestedTenantKey)
+                : undefined) ?? adminRows[0];
+
+        if (!context) {
+            throw new AuthorizationError('指定した tenantKey の管理権限がありません');
+        }
+
+        let storeIds = (context.store_ids ?? []).filter(Boolean);
+        if (storeIds.length === 0) {
+            const storeRows = await DatabaseService.query<{ id: string }>(
+                `SELECT id
+                 FROM stores
+                 WHERE tenant_id = $1
+                   AND status = 'active'
+                 ORDER BY display_order ASC, created_at ASC`,
+                [context.tenant_id],
+                context.tenant_id
+            );
+            storeIds = storeRows.map((row) => row.id);
+        }
+
+        const response: ApiResponse<{
+            tenantKey: string;
+            tenantId: string;
+            adminRole: 'owner' | 'admin' | 'manager' | 'staff';
+            storeIds: string[];
+        }> = {
+            success: true,
+            data: {
+                tenantKey: context.tenant_key,
+                tenantId: context.tenant_id,
+                adminRole: context.role,
+                storeIds,
             },
         };
 
@@ -216,6 +407,15 @@ router.get(
             redirectUrl.searchParams.set('googleCalendar', status.connected ? 'connected' : 'failed');
             redirectUrl.searchParams.set('tenantId', tenantId);
             res.redirect(302, redirectUrl.toString());
+            return;
+        }
+
+        if (req.accepts('html')) {
+            renderOAuthCompletionPage(res, {
+                connected: Boolean(status.connected),
+                email: status.email,
+                tenantId,
+            });
             return;
         }
 

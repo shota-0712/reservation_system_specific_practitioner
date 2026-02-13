@@ -24,8 +24,6 @@ interface ReminderStats {
 interface TenantRow {
     id: string;
     name: string;
-    line_channel_id?: string;
-    line_channel_access_token_encrypted?: string;
 }
 
 /**
@@ -50,16 +48,11 @@ export async function sendDayBeforeReminders(): Promise<ReminderStats> {
     try {
         // アクティブな全テナントを取得
         const tenants = await DatabaseService.query<TenantRow>(
-            `SELECT id, name, line_channel_id, line_channel_access_token_encrypted
+            `SELECT id, name
              FROM tenants WHERE status = 'active'`
         );
 
         for (const tenant of tenants) {
-            // LINE設定がないテナントはスキップ
-            if (!tenant.line_channel_access_token_encrypted) {
-                continue;
-            }
-
             try {
                 const tenantStats = await sendRemindersForTenant(
                     tenant.id,
@@ -111,15 +104,11 @@ export async function sendSameDayReminders(): Promise<ReminderStats> {
 
     try {
         const tenants = await DatabaseService.query<TenantRow>(
-            `SELECT id, name, line_channel_id, line_channel_access_token_encrypted
+            `SELECT id, name
              FROM tenants WHERE status = 'active'`
         );
 
         for (const tenant of tenants) {
-            if (!tenant.line_channel_access_token_encrypted) {
-                continue;
-            }
-
             try {
                 const tenantStats = await sendRemindersForTenant(
                     tenant.id,
@@ -189,7 +178,9 @@ async function sendRemindersForTenant(
             }
 
             // 通知トークンがなければスキップ
-            const notificationToken = customer.notificationToken;
+            const notificationToken = customer.lineNotificationToken
+                || customer.lineUserId
+                || customer.notificationToken;
 
             if (!notificationToken) {
                 logger.debug('No notification token for customer', {

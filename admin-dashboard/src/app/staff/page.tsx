@@ -1,12 +1,12 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { Plus, Edit2, Phone, Mail, Calendar, RefreshCw, AlertCircle, Trash2, Loader2, X } from "lucide-react";
+import { useState, useEffect, useMemo } from "react";
+import { Plus, Edit2, Phone, Mail, Calendar, RefreshCw, AlertCircle, Trash2, Loader2, Link as LinkIcon, Copy, Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogBody, DialogFooter, ConfirmDialog } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
-import { practitionersApi } from "@/lib/api";
+import { bookingLinksApi, getActiveStoreId, practitionersApi, STORE_CHANGED_EVENT } from "@/lib/api";
 
 const DAYS = ["日", "月", "火", "水", "木", "金", "土"];
 
@@ -21,12 +21,28 @@ interface Practitioner {
     name: string;
     nameKana?: string;
     role: 'stylist' | 'assistant' | 'owner';
+    storeIds?: string[];
     phone?: string;
     email?: string;
     color?: string;
+    lineConfig?: {
+        liffId?: string;
+        channelId?: string;
+    };
     schedule?: Schedule;
     isActive: boolean;
     createdAt: string;
+}
+
+interface BookingLinkToken {
+    id: string;
+    practitionerId: string;
+    storeId?: string;
+    token: string;
+    status: "active" | "revoked";
+    createdAt: string;
+    expiresAt?: string;
+    lastUsedAt?: string;
 }
 
 const roleLabels: Record<string, { label: string; color: string }> = {
@@ -37,9 +53,12 @@ const roleLabels: Record<string, { label: string; color: string }> = {
 
 export default function StaffPage() {
     const [practitioners, setPractitioners] = useState<Practitioner[]>([]);
+    const [bookingLinks, setBookingLinks] = useState<BookingLinkToken[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [showInactive, setShowInactive] = useState(false);
+    const [copiedLinkId, setCopiedLinkId] = useState<string | null>(null);
+    const [linkLoadingByPractitioner, setLinkLoadingByPractitioner] = useState<Record<string, boolean>>({});
 
     // Modal states
     const [isEditModalOpen, setIsEditModalOpen] = useState(false);
@@ -59,19 +78,146 @@ export default function StaffPage() {
         workDays: [] as number[],
         workStart: "10:00",
         workEnd: "19:00",
+        lineLiffId: "",
+        lineChannelId: "",
+        lineChannelAccessToken: "",
+        lineChannelSecret: "",
     });
+
+    const customerAppBaseUrl = useMemo(() => {
+        const fromEnv = (process.env.NEXT_PUBLIC_CUSTOMER_URL || "").trim().replace(/\/+$/, "");
+        if (fromEnv) return fromEnv;
+
+        if (typeof window === "undefined") return "";
+
+        const origin = window.location.origin;
+        if (origin.includes("reserve-admin")) {
+            return origin.replace("reserve-admin", "reserve-customer");
+        }
+
+        return "";
+    }, []);
+
+    const buildTokenBookingUrl = (token: string): string => {
+        if (!customerAppBaseUrl) return "";
+        try {
+            const url = new URL(customerAppBaseUrl);
+            url.searchParams.set("t", token);
+            return url.toString();
+        } catch {
+            return "";
+        }
+    };
+
+    const resolvePreferredStoreId = (practitioner: Practitioner): string | undefined => {
+        const activeStoreId = getActiveStoreId();
+        const staffStoreIds = (practitioner.storeIds || []).filter(Boolean);
+        if (activeStoreId && (staffStoreIds.length === 0 || staffStoreIds.includes(activeStoreId))) {
+            return activeStoreId;
+        }
+        return staffStoreIds[0] || undefined;
+    };
+
+    const getActiveLinkForPractitioner = (practitioner: Practitioner): BookingLinkToken | null => {
+        const preferredStoreId = resolvePreferredStoreId(practitioner);
+        const links = bookingLinks
+            .filter((link) => link.practitionerId === practitioner.id && link.status === "active")
+            .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+
+        if (links.length === 0) {
+            return null;
+        }
+
+        if (preferredStoreId) {
+            const exact = links.find((link) => link.storeId === preferredStoreId);
+            if (exact) return exact;
+        }
+
+        const tenantLevel = links.find((link) => !link.storeId);
+        return tenantLevel || links[0] || null;
+    };
+
+    const withLinkLoading = (practitionerId: string, loading: boolean) => {
+        setLinkLoadingByPractitioner((prev) => ({ ...prev, [practitionerId]: loading }));
+    };
+
+    const refreshBookingLinks = async () => {
+        const response = await bookingLinksApi.list();
+        if (response.success && response.data) {
+            setBookingLinks(response.data as BookingLinkToken[]);
+            return;
+        }
+        throw new Error(response.error?.message || "予約URL一覧の取得に失敗しました");
+    };
+
+    const issueBookingLink = async (practitioner: Practitioner, reissue: boolean) => {
+        withLinkLoading(practitioner.id, true);
+        try {
+            const response = await bookingLinksApi.create({
+                practitionerId: practitioner.id,
+                storeId: resolvePreferredStoreId(practitioner),
+                reissue,
+            });
+            if (!response.success || !response.data) {
+                throw new Error(response.error?.message || "予約URLの発行に失敗しました");
+            }
+            await refreshBookingLinks();
+        } finally {
+            withLinkLoading(practitioner.id, false);
+        }
+    };
+
+    const revokeBookingLink = async (practitioner: Practitioner, linkId: string) => {
+        withLinkLoading(practitioner.id, true);
+        try {
+            const response = await bookingLinksApi.revoke(linkId);
+            if (!response.success) {
+                throw new Error(response.error?.message || "予約URLの無効化に失敗しました");
+            }
+            await refreshBookingLinks();
+        } finally {
+            withLinkLoading(practitioner.id, false);
+        }
+    };
+
+    const copyPractitionerBookingUrl = async (link: BookingLinkToken) => {
+        const url = buildTokenBookingUrl(link.token);
+        if (!url) {
+            alert("予約URLの生成に失敗しました。NEXT_PUBLIC_CUSTOMER_URL を設定してください。");
+            return;
+        }
+
+        try {
+            await navigator.clipboard.writeText(url);
+            setCopiedLinkId(link.id);
+            window.setTimeout(() => setCopiedLinkId((current) => (current === link.id ? null : current)), 1800);
+        } catch (error) {
+            console.error(error);
+            alert("URLのコピーに失敗しました");
+        }
+    };
 
     // データ取得
     const fetchData = async () => {
         setIsLoading(true);
         setError(null);
         try {
-            const res = await practitionersApi.listAll();
-            if (res.success && res.data) {
-                setPractitioners(res.data as Practitioner[]);
-            } else {
-                setError(res.error?.message || 'データの取得に失敗しました');
+            const [practitionerRes, bookingLinkRes] = await Promise.all([
+                practitionersApi.listAll(),
+                bookingLinksApi.list(),
+            ]);
+
+            if (!practitionerRes.success || !practitionerRes.data) {
+                setError(practitionerRes.error?.message || 'スタッフデータの取得に失敗しました');
+                return;
             }
+            setPractitioners(practitionerRes.data as Practitioner[]);
+
+            if (!bookingLinkRes.success || !bookingLinkRes.data) {
+                setError(bookingLinkRes.error?.message || '予約URLデータの取得に失敗しました');
+                return;
+            }
+            setBookingLinks(bookingLinkRes.data as BookingLinkToken[]);
         } catch (err) {
             console.error(err);
             setError('データの取得に失敗しました');
@@ -82,6 +228,18 @@ export default function StaffPage() {
 
     useEffect(() => {
         fetchData();
+    }, []);
+
+    useEffect(() => {
+        const onStoreChanged = () => {
+            fetchData().catch(() => {
+                // noop
+            });
+        };
+        window.addEventListener(STORE_CHANGED_EVENT, onStoreChanged);
+        return () => {
+            window.removeEventListener(STORE_CHANGED_EVENT, onStoreChanged);
+        };
     }, []);
 
     // Open create modal
@@ -98,6 +256,10 @@ export default function StaffPage() {
             workDays: [1, 2, 3, 4, 5], // Mon-Fri default
             workStart: "10:00",
             workEnd: "19:00",
+            lineLiffId: "",
+            lineChannelId: "",
+            lineChannelAccessToken: "",
+            lineChannelSecret: "",
         });
         setIsEditModalOpen(true);
     };
@@ -116,6 +278,10 @@ export default function StaffPage() {
             workDays: staff.schedule?.workDays || [],
             workStart: staff.schedule?.workHours?.start || "10:00",
             workEnd: staff.schedule?.workHours?.end || "19:00",
+            lineLiffId: staff.lineConfig?.liffId || "",
+            lineChannelId: staff.lineConfig?.channelId || "",
+            lineChannelAccessToken: "",
+            lineChannelSecret: "",
         });
         setIsEditModalOpen(true);
     };
@@ -146,6 +312,12 @@ export default function StaffPage() {
                 schedule: {
                     workDays: formData.workDays,
                     workHours: { start: formData.workStart, end: formData.workEnd },
+                },
+                lineConfig: {
+                    liffId: formData.lineLiffId || undefined,
+                    channelId: formData.lineChannelId || undefined,
+                    channelAccessToken: formData.lineChannelAccessToken || undefined,
+                    channelSecret: formData.lineChannelSecret || undefined,
                 },
             };
 
@@ -293,6 +465,10 @@ export default function StaffPage() {
                 <div className="grid gap-4 md:grid-cols-2">
                     {filteredStaff.map((staff) => {
                         const role = roleLabels[staff.role] || { label: staff.role, color: "bg-gray-100 text-gray-600" };
+                        const activeLink = getActiveLinkForPractitioner(staff);
+                        const bookingUrl = activeLink ? buildTokenBookingUrl(activeLink.token) : "";
+                        const copied = activeLink ? copiedLinkId === activeLink.id : false;
+                        const linkLoading = Boolean(linkLoadingByPractitioner[staff.id]);
                         return (
                             <Card key={staff.id} className={cn(!staff.isActive && "opacity-60")}>
                                 <CardContent className="p-4">
@@ -386,6 +562,71 @@ export default function StaffPage() {
                                                     勤務時間: {staff.schedule.workHours.start} - {staff.schedule.workHours.end}
                                                 </div>
                                             )}
+
+                                            <div className="mt-3 rounded-md border border-gray-200 bg-gray-50 p-2">
+                                                <div className="mb-1 flex items-center justify-between gap-2">
+                                                    <div className="flex items-center gap-1 text-xs font-semibold text-gray-700">
+                                                        <LinkIcon className="h-3 w-3" />
+                                                        スタッフ別予約URL
+                                                    </div>
+                                                    <div className="flex items-center gap-1">
+                                                        {activeLink && (
+                                                            <Button
+                                                                type="button"
+                                                                variant="outline"
+                                                                size="sm"
+                                                                className="h-7 px-2 text-xs"
+                                                                onClick={() => copyPractitionerBookingUrl(activeLink)}
+                                                                disabled={!bookingUrl || linkLoading}
+                                                            >
+                                                                {copied ? <Check className="mr-1 h-3 w-3" /> : <Copy className="mr-1 h-3 w-3" />}
+                                                                {copied ? "コピー済み" : "コピー"}
+                                                            </Button>
+                                                        )}
+                                                        <Button
+                                                            type="button"
+                                                            variant="outline"
+                                                            size="sm"
+                                                            className="h-7 px-2 text-xs"
+                                                            onClick={() => issueBookingLink(staff, Boolean(activeLink)).catch((err: any) => alert(err?.message || "予約URLの発行に失敗しました"))}
+                                                            disabled={linkLoading}
+                                                        >
+                                                            {linkLoading ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : null}
+                                                            {activeLink ? "再発行" : "URL発行"}
+                                                        </Button>
+                                                        {activeLink && (
+                                                            <Button
+                                                                type="button"
+                                                                variant="outline"
+                                                                size="sm"
+                                                                className="h-7 px-2 text-xs text-red-600"
+                                                                onClick={() => revokeBookingLink(staff, activeLink.id).catch((err: any) => alert(err?.message || "予約URLの無効化に失敗しました"))}
+                                                                disabled={linkLoading}
+                                                            >
+                                                                無効化
+                                                            </Button>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                                {bookingUrl ? (
+                                                    <>
+                                                        <code className="block break-all text-[11px] text-gray-600">{bookingUrl}</code>
+                                                        <div className="mt-1 text-[10px] text-gray-500">
+                                                            token: {activeLink?.token}
+                                                            {activeLink?.storeId ? ` / storeId: ${activeLink.storeId}` : " / store: tenant-default"}
+                                                        </div>
+                                                    </>
+                                                ) : (
+                                                    <p className="text-[11px] text-muted-foreground">
+                                                        まだURLが発行されていません。「URL発行」を押してください。
+                                                    </p>
+                                                )}
+                                                {!customerAppBaseUrl && (
+                                                    <p className="mt-1 text-[11px] text-amber-600">
+                                                        NEXT_PUBLIC_CUSTOMER_URL 未設定のためコピーできません。
+                                                    </p>
+                                                )}
+                                            </div>
                                         </div>
                                     </div>
                                 </CardContent>
@@ -506,6 +747,54 @@ export default function StaffPage() {
                                     onChange={(e) => setFormData({ ...formData, workEnd: e.target.value })}
                                     className="w-full h-10 px-3 rounded-lg border border-gray-200 focus:border-primary focus:outline-none"
                                 />
+                            </div>
+                        </div>
+                        <div className="rounded-lg border border-gray-200 p-3">
+                            <div className="mb-2 text-sm font-medium">LINE設定（施術者別）</div>
+                            <p className="mb-3 text-xs text-muted-foreground">
+                                設定画面で「施術者ごと」を選択した場合に使用されます。未入力項目は店舗共通設定を利用します。
+                            </p>
+                            <div className="space-y-3">
+                                <div>
+                                    <label className="block text-sm font-medium mb-1">LIFF ID</label>
+                                    <input
+                                        type="text"
+                                        value={formData.lineLiffId}
+                                        onChange={(e) => setFormData({ ...formData, lineLiffId: e.target.value })}
+                                        className="w-full h-10 px-3 rounded-lg border border-gray-200 focus:border-primary focus:outline-none"
+                                        placeholder="200xxxxxxxxx"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium mb-1">Channel ID</label>
+                                    <input
+                                        type="text"
+                                        value={formData.lineChannelId}
+                                        onChange={(e) => setFormData({ ...formData, lineChannelId: e.target.value })}
+                                        className="w-full h-10 px-3 rounded-lg border border-gray-200 focus:border-primary focus:outline-none"
+                                        placeholder="1234567890"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium mb-1">Channel Access Token（更新時のみ入力）</label>
+                                    <input
+                                        type="password"
+                                        value={formData.lineChannelAccessToken}
+                                        onChange={(e) => setFormData({ ...formData, lineChannelAccessToken: e.target.value })}
+                                        className="w-full h-10 px-3 rounded-lg border border-gray-200 focus:border-primary focus:outline-none"
+                                        placeholder="未入力なら既存値を保持"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium mb-1">Channel Secret（更新時のみ入力）</label>
+                                    <input
+                                        type="password"
+                                        value={formData.lineChannelSecret}
+                                        onChange={(e) => setFormData({ ...formData, lineChannelSecret: e.target.value })}
+                                        className="w-full h-10 px-3 rounded-lg border border-gray-200 focus:border-primary focus:outline-none"
+                                        placeholder="未入力なら既存値を保持"
+                                    />
+                                </div>
                             </div>
                         </div>
                         <label className="flex items-center gap-2 cursor-pointer">

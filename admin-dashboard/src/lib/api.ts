@@ -9,6 +9,8 @@ const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080';
 const TENANT_ID_FALLBACK = process.env.NEXT_PUBLIC_TENANT_ID || 'default';
 const TENANT_STORAGE_KEY = 'reservation_admin_tenant_key';
 const STORE_STORAGE_KEY = 'reservation_admin_store_id';
+export const STORE_CHANGED_EVENT = 'reserve:store-changed';
+export const TENANT_CHANGED_EVENT = 'reserve:tenant-changed';
 
 interface FetchOptions extends RequestInit {
     includeAuth?: boolean;
@@ -66,6 +68,7 @@ export function setTenantKey(tenantKey: string): void {
         throw new Error('Invalid tenant key');
     }
     window.localStorage.setItem(TENANT_STORAGE_KEY, tenantKey);
+    window.dispatchEvent(new CustomEvent(TENANT_CHANGED_EVENT, { detail: { tenantKey } }));
 }
 
 export function setActiveStoreId(storeId: string | null): void {
@@ -74,12 +77,14 @@ export function setActiveStoreId(storeId: string | null): void {
     }
     if (!storeId) {
         window.localStorage.removeItem(STORE_STORAGE_KEY);
+        window.dispatchEvent(new CustomEvent(STORE_CHANGED_EVENT, { detail: { storeId: null } }));
         return;
     }
     if (!isStoreIdValid(storeId)) {
         throw new Error('Invalid store id');
     }
     window.localStorage.setItem(STORE_STORAGE_KEY, storeId);
+    window.dispatchEvent(new CustomEvent(STORE_CHANGED_EVENT, { detail: { storeId } }));
 }
 
 export function getActiveStoreId(): string | null {
@@ -251,6 +256,16 @@ export async function platformApiClient<T = unknown>(
         meta: json.meta ?? json.pagination,
     };
 }
+
+type AdminContextRole = 'owner' | 'admin' | 'manager' | 'staff';
+type AdminContextData = {
+    tenantKey: string;
+    tenantId: string;
+    adminRole: AdminContextRole;
+    storeIds: string[];
+};
+
+let adminContextSyncPromise: Promise<AdminContextData | null> | null = null;
 
 // ============================================
 // 予約 API
@@ -471,6 +486,31 @@ export const settingsApi = {
             method: 'PUT',
             body: JSON.stringify(data),
         }),
+    resolveLinePreview: (params?: { storeId?: string; practitionerId?: string }) =>
+        apiClient('/admin/settings/line/resolve-preview' + buildQuery(params || {})),
+};
+
+// ============================================
+// 予約URLトークン API
+// ============================================
+
+export const bookingLinksApi = {
+    list: (params?: { status?: 'active' | 'revoked' }) =>
+        apiClient('/admin/booking-links' + buildQuery(params || {})),
+    create: (data: {
+        practitionerId: string;
+        storeId?: string;
+        expiresAt?: string;
+        reissue?: boolean;
+    }) =>
+        apiClient('/admin/booking-links', {
+            method: 'POST',
+            body: JSON.stringify(data),
+        }),
+    revoke: (id: string) =>
+        apiClient(`/admin/booking-links/${id}`, {
+            method: 'DELETE',
+        }),
 };
 
 // ============================================
@@ -565,6 +605,8 @@ export const platformOnboardingApi = {
     getRegistrationConfig: () =>
         platformApiClient<{
             enabled: boolean;
+            tenantKeyPolicy?: 'auto_generated';
+            supportsManualTenantKey?: boolean;
         }>('/onboarding/registration-config', {
             includeAuth: false,
         }),
@@ -587,4 +629,46 @@ export const platformOnboardingApi = {
             includeAuth: false,
             body: JSON.stringify(data),
         }),
+};
+
+// ============================================
+// 管理コンテキスト API
+// ============================================
+
+export const adminContextApi = {
+    get: (tenantKey?: string) =>
+        platformApiClient<AdminContextData>('/admin/context' + buildQuery({ tenantKey })),
+    sync: async (tenantKey?: string): Promise<AdminContextData | null> => {
+        if (typeof window === 'undefined') {
+            return null;
+        }
+
+        if (!adminContextSyncPromise) {
+            adminContextSyncPromise = (async () => {
+                const response = await adminContextApi.get(tenantKey);
+                if (!response.success || !response.data) {
+                    return null;
+                }
+
+                const context = response.data;
+                if (isTenantKeyValid(context.tenantKey)) {
+                    setTenantKey(context.tenantKey);
+                }
+
+                const validStoreIds = (context.storeIds || []).filter((id) => isStoreIdValid(id));
+                const currentStoreId = getActiveStoreId();
+
+                if (!currentStoreId || (validStoreIds.length > 0 && !validStoreIds.includes(currentStoreId))) {
+                    setActiveStoreId(validStoreIds[0] || null);
+                }
+
+                return context;
+            })()
+                .finally(() => {
+                    adminContextSyncPromise = null;
+                });
+        }
+
+        return adminContextSyncPromise;
+    },
 };

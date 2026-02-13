@@ -7,7 +7,7 @@ import { Header } from "./header";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/lib/auth-context";
 import { Loader2 } from "lucide-react";
-import { onboardingApi } from "@/lib/api";
+import { adminContextApi, onboardingApi } from "@/lib/api";
 
 interface MainLayoutProps {
     children: React.ReactNode;
@@ -61,14 +61,22 @@ export function MainLayout({ children }: MainLayoutProps) {
 
         let mounted = true;
         setOnboardingLoading(true);
-        onboardingApi.getStatus().then((response) => {
+        (async () => {
+            try {
+                // Resolve admin context first to avoid stale tenant/store localStorage state.
+                await adminContextApi.sync();
+            } catch {
+                // continue with existing tenant context
+            }
+
+            const response = await onboardingApi.getStatus();
             if (!mounted) return;
             if (!response.success) {
                 setOnboardingStatus('pending');
                 return;
             }
             setOnboardingStatus(response.data?.onboardingStatus ?? 'pending');
-        }).catch(() => {
+        })().catch(() => {
             if (mounted) {
                 setOnboardingStatus('pending');
             }

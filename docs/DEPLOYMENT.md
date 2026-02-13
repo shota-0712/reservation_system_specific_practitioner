@@ -296,6 +296,18 @@ _NEXT_PUBLIC_ADMIN_URL=https://reserve-admin-xxxxx.run.app
 - `backend` 以外を指定した場合、`_RUN_MIGRATIONS` と `_RUN_INTEGRATION` は無視される
 - `backend` は `_WRITE_FREEZE_MODE` で書き込み凍結状態を指定できる（`true`/`false`）
 
+### 6.2.1 公開オンボーディング / 予約URL運用メモ
+
+- 公開登録 UI では `tenantKey(slug)` を入力させない（サーバー自動採番）。
+- `GET /api/platform/v1/onboarding/slug-availability` は互換のため残すが、運用上は内部診断 API 扱い。
+- 施術者別予約URLは `?t=<token>` を正式形式とする。
+- 予約URLトークン解決 API:
+  - `GET /api/platform/v1/booking-links/resolve?token=...`
+- 管理API:
+  - `POST /api/v1/:tenantKey/admin/booking-links`
+  - `GET /api/v1/:tenantKey/admin/booking-links`
+  - `DELETE /api/v1/:tenantKey/admin/booking-links/:id`
+
 ### 6.3 品質ゲート（ローカル実行）
 
 ```bash
@@ -316,6 +328,22 @@ npm run build
 # Integration tests (必要時のみ)
 RUN_INTEGRATION=true npm run test:integration
 ```
+
+### 6.3.1 公開オンボーディング スモーク（推奨）
+
+```bash
+API_URL="https://reserve-api-xxxxx.run.app" \
+FIREBASE_API_KEY="YOUR_FIREBASE_WEB_API_KEY" \
+CUSTOMER_URL="https://reserve-customer-xxxxx.run.app" \
+./scripts/smoke_public_onboarding.sh
+```
+
+- スクリプトは以下を検証する:
+  - 公開登録
+  - Firebase signup
+  - onboarding status 更新
+  - 管理予約作成
+  - 予約URLトークン発行/解決（`?t=` 導線）
 
 ### 6.4 Cloud Scheduler設定（リマインダー）
 

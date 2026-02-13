@@ -28,6 +28,61 @@ function isValidRedirectTarget(url: string | undefined): boolean {
     return /^https?:\/\//.test(url);
 }
 
+function renderOAuthCompletionPage(res: Response, payload: {
+    connected: boolean;
+    email?: string;
+    tenantId: string;
+}): void {
+    const serializedPayload = JSON.stringify({
+        type: 'reserve:google-oauth-result',
+        connected: payload.connected,
+        email: payload.email ?? '',
+        tenantId: payload.tenantId,
+    }).replace(/</g, '\\u003c');
+    const statusLabel = payload.connected ? 'Google連携が完了しました。' : 'Google連携に失敗しました。';
+    const body = `<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Google連携</title>
+    <style>
+      body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; margin: 0; background: #f8fafc; color: #0f172a; }
+      main { max-width: 720px; margin: 48px auto; background: #fff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 24px; }
+      h1 { margin: 0 0 8px; font-size: 20px; }
+      p { margin: 8px 0; line-height: 1.6; }
+      code { background: #f1f5f9; padding: 2px 6px; border-radius: 6px; }
+      .sub { color: #475569; font-size: 14px; }
+      .close { margin-top: 16px; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>${statusLabel}</h1>
+      <p class="sub">このウィンドウを閉じて、元の管理画面に戻ってください。</p>
+      <p>tenantId: <code>${payload.tenantId}</code></p>
+      <p>account: <code>${payload.email ?? '-'}</code></p>
+      <button class="close" onclick="window.close()">このウィンドウを閉じる</button>
+    </main>
+    <script>
+      (function () {
+        const payload = ${serializedPayload};
+        if (window.opener && !window.opener.closed) {
+          try {
+            window.opener.postMessage(payload, '*');
+          } catch (error) {
+            console.warn('postMessage failed:', error);
+          }
+          setTimeout(function () { window.close(); }, 350);
+        }
+      })();
+    </script>
+  </body>
+</html>`;
+
+    res.status(200).type('html').send(body);
+}
+
 adminRouter.get(
     '/',
     requireFirebaseAuth(),
@@ -147,6 +202,15 @@ callbackRouter.get(
             redirectUrl.searchParams.set('googleCalendar', status.connected ? 'connected' : 'failed');
             redirectUrl.searchParams.set('tenantId', tenantId);
             res.redirect(302, redirectUrl.toString());
+            return;
+        }
+
+        if (req.accepts('html')) {
+            renderOAuthCompletionPage(res, {
+                connected: Boolean(status.connected),
+                email: status.email,
+                tenantId,
+            });
             return;
         }
 

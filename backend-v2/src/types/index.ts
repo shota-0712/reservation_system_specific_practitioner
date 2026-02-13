@@ -44,6 +44,11 @@ export type TenantOnboardingStatus =
     | 'in_progress'
     | 'completed';
 
+export type LineConfigMode =
+    | 'tenant'
+    | 'store'
+    | 'practitioner';
+
 // ============================================
 // Tenant (企業)
 // ============================================
@@ -58,6 +63,7 @@ export interface Tenant extends Omit<BaseEntity, 'tenantId'> {
     onboardingPayload?: Record<string, unknown>;
 
     lineConfig?: {
+        mode?: LineConfigMode;
         channelId?: string;
         channelSecret?: string;
         channelAccessToken?: string;
@@ -94,6 +100,12 @@ export interface Store extends BaseEntity {
     requireEmail?: boolean;
     status?: 'active' | 'inactive';
     displayOrder?: number;
+    lineConfig?: {
+        channelId?: string;
+        channelSecret?: string;
+        channelAccessToken?: string;
+        liffId?: string;
+    };
 }
 
 export interface BusinessHour {
@@ -154,6 +166,14 @@ export interface Practitioner extends BaseEntity {
 
     // SalonBoard連携
     salonboardStaffId?: string;
+
+    // LINE連携（施術者単位）
+    lineConfig?: {
+        channelId?: string;
+        channelSecret?: string;
+        channelAccessToken?: string;
+        liffId?: string;
+    };
 
     displayOrder: number;
     isActive: boolean;

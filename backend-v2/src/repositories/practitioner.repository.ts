@@ -4,6 +4,7 @@
 
 import { DatabaseService } from '../config/database.js';
 import { NotFoundError } from '../utils/errors.js';
+import { encrypt } from '../utils/crypto.js';
 import type { Practitioner } from '../types/index.js';
 
 type WorkScheduleDay = {
@@ -86,6 +87,14 @@ function scheduleToWorkSchedule(schedule?: Practitioner['schedule']): WorkSchedu
 
 function mapPractitioner(row: Record<string, any>): Practitioner {
     const schedule = mapWorkScheduleToSchedule(row.work_schedule as WorkSchedule | undefined);
+    const lineConfig = (row.line_liff_id || row.line_channel_id || row.line_channel_access_token_encrypted || row.line_channel_secret_encrypted)
+        ? {
+            liffId: row.line_liff_id ?? undefined,
+            channelId: row.line_channel_id ?? undefined,
+            channelAccessToken: row.line_channel_access_token_encrypted ?? undefined,
+            channelSecret: row.line_channel_secret_encrypted ?? undefined,
+        }
+        : undefined;
 
     return {
         id: row.id,
@@ -110,6 +119,7 @@ function mapPractitioner(row: Record<string, any>): Practitioner {
         availableMenuIds: row.available_menu_ids ?? undefined,
         calendarId: row.google_calendar_id ?? undefined,
         salonboardStaffId: row.salonboard_staff_id ?? undefined,
+        lineConfig,
         displayOrder: row.display_order ?? 0,
         isActive: row.is_active,
         createdAt: row.created_at,
@@ -117,8 +127,19 @@ function mapPractitioner(row: Record<string, any>): Practitioner {
     } as Practitioner;
 }
 
+function maybeEncrypt(value?: string): string | null {
+    if (!value) return null;
+    const parts = value.split(':');
+    if (parts.length === 3) return value;
+    return encrypt(value);
+}
+
 export class PractitionerRepository {
     constructor(private tenantId: string) {}
+
+    private storeScopeSql(parameterIndex: number): string {
+        return `(COALESCE(array_length(store_ids, 1), 0) = 0 OR $${parameterIndex} = ANY(store_ids))`;
+    }
 
     async findById(id: string): Promise<Practitioner | null> {
         const row = await DatabaseService.queryOne(
@@ -144,6 +165,23 @@ export class PractitionerRepository {
         return rows.map(mapPractitioner);
     }
 
+    async findAllActiveScoped(storeId?: string): Promise<Practitioner[]> {
+        if (!storeId) {
+            return this.findAllActive();
+        }
+
+        const rows = await DatabaseService.query(
+            `SELECT * FROM practitioners
+             WHERE tenant_id = $1
+               AND is_active = true
+               AND ${this.storeScopeSql(2)}
+             ORDER BY display_order ASC`,
+            [this.tenantId, storeId],
+            this.tenantId
+        );
+        return rows.map(mapPractitioner);
+    }
+
     async findAll(): Promise<Practitioner[]> {
         const rows = await DatabaseService.query(
             'SELECT * FROM practitioners WHERE tenant_id = $1 ORDER BY display_order ASC',
@@ -157,6 +195,24 @@ export class PractitionerRepository {
         const rows = await DatabaseService.query(
             'SELECT * FROM practitioners WHERE tenant_id = $1 AND role = $2 AND is_active = true ORDER BY display_order ASC',
             [this.tenantId, role],
+            this.tenantId
+        );
+        return rows.map(mapPractitioner);
+    }
+
+    async findByRoleScoped(role: string, storeId?: string): Promise<Practitioner[]> {
+        if (!storeId) {
+            return this.findByRole(role);
+        }
+
+        const rows = await DatabaseService.query(
+            `SELECT * FROM practitioners
+             WHERE tenant_id = $1
+               AND role = $2
+               AND is_active = true
+               AND ${this.storeScopeSql(3)}
+             ORDER BY display_order ASC`,
+            [this.tenantId, role, storeId],
             this.tenantId
         );
         return rows.map(mapPractitioner);
@@ -189,8 +245,53 @@ export class PractitionerRepository {
         return rows.map(mapPractitioner);
     }
 
+    async findByMenuIdScoped(menuId: string, storeId?: string): Promise<Practitioner[]> {
+        if (!storeId) {
+            return this.findByMenuId(menuId);
+        }
+
+        const menuRow = await DatabaseService.queryOne(
+            'SELECT practitioner_ids FROM menus WHERE id = $1 AND tenant_id = $2',
+            [menuId, this.tenantId],
+            this.tenantId
+        );
+
+        const ids = (menuRow?.practitioner_ids as string[] | null) ?? [];
+
+        let rows: Array<Record<string, any>>;
+        if (ids.length === 0) {
+            rows = await DatabaseService.query(
+                `SELECT * FROM practitioners
+                 WHERE tenant_id = $1
+                   AND is_active = true
+                   AND ${this.storeScopeSql(2)}
+                 ORDER BY display_order ASC`,
+                [this.tenantId, storeId],
+                this.tenantId
+            );
+        } else {
+            rows = await DatabaseService.query(
+                `SELECT * FROM practitioners
+                 WHERE tenant_id = $1
+                   AND id = ANY($2)
+                   AND is_active = true
+                   AND ${this.storeScopeSql(3)}
+                 ORDER BY display_order ASC`,
+                [this.tenantId, ids, storeId],
+                this.tenantId
+            );
+        }
+
+        return rows.map(mapPractitioner);
+    }
+
     async findByWorkDay(dayOfWeek: number): Promise<Practitioner[]> {
         const rows = await this.findAllActive();
+        return rows.filter(p => p.schedule?.workDays?.includes(dayOfWeek));
+    }
+
+    async findByWorkDayScoped(dayOfWeek: number, storeId?: string): Promise<Practitioner[]> {
+        const rows = await this.findAllActiveScoped(storeId);
         return rows.filter(p => p.schedule?.workDays?.includes(dayOfWeek));
     }
 
@@ -202,8 +303,9 @@ export class PractitionerRepository {
                 tenant_id, name, role, name_kana, title, image_url, description,
                 experience, pr_title, specialties, sns_instagram, sns_twitter,
                 google_calendar_id, salonboard_staff_id, nomination_fee,
-                work_schedule, store_ids, is_active, display_order, color
-            ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)
+                work_schedule, store_ids, is_active, display_order, color,
+                line_liff_id, line_channel_id, line_channel_access_token_encrypted, line_channel_secret_encrypted
+            ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24)
             RETURNING *`,
             [
                 this.tenantId,
@@ -226,6 +328,10 @@ export class PractitionerRepository {
                 data.isActive ?? true,
                 data.displayOrder ?? 0,
                 data.color ?? '#3b82f6',
+                data.lineConfig?.liffId ?? null,
+                data.lineConfig?.channelId ?? null,
+                maybeEncrypt(data.lineConfig?.channelAccessToken),
+                maybeEncrypt(data.lineConfig?.channelSecret),
             ],
             this.tenantId
         );
@@ -257,6 +363,10 @@ export class PractitionerRepository {
                 is_active = COALESCE($19, is_active),
                 display_order = COALESCE($20, display_order),
                 color = COALESCE($21, color),
+                line_liff_id = COALESCE($22, line_liff_id),
+                line_channel_id = COALESCE($23, line_channel_id),
+                line_channel_access_token_encrypted = COALESCE($24, line_channel_access_token_encrypted),
+                line_channel_secret_encrypted = COALESCE($25, line_channel_secret_encrypted),
                 updated_at = NOW()
              WHERE id = $1 AND tenant_id = $2
              RETURNING *`,
@@ -282,6 +392,10 @@ export class PractitionerRepository {
                 data.isActive ?? null,
                 data.displayOrder ?? null,
                 data.color ?? null,
+                data.lineConfig?.liffId ?? null,
+                data.lineConfig?.channelId ?? null,
+                maybeEncrypt(data.lineConfig?.channelAccessToken),
+                maybeEncrypt(data.lineConfig?.channelSecret),
             ],
             this.tenantId
         );

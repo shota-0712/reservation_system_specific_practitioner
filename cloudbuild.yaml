@@ -53,6 +53,7 @@ substitutions:
 
   # Build-time environment variables
   _NEXT_PUBLIC_API_URL: ""
+  _NEXT_PUBLIC_CUSTOMER_URL: ""
   _CUSTOMER_API_URL: ""
   _NEXT_PUBLIC_ADMIN_URL: ""
   _NEXT_PUBLIC_FIREBASE_API_KEY: ""
@@ -116,6 +117,7 @@ steps:
     entrypoint: bash
     env:
       - NEXT_PUBLIC_API_URL=${_NEXT_PUBLIC_API_URL}
+      - NEXT_PUBLIC_CUSTOMER_URL=${_NEXT_PUBLIC_CUSTOMER_URL}
       - NEXT_PUBLIC_TENANT_ID=${_NEXT_PUBLIC_TENANT_ID}
       - NEXT_PUBLIC_FIREBASE_API_KEY=${_NEXT_PUBLIC_FIREBASE_API_KEY}
       - NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=${_NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN}
@@ -256,6 +258,17 @@ steps:
           FIREBASE_PROJECT_ID="${PROJECT_ID}"
         fi
 
+        if [ "${_READINESS_REQUIRE_GOOGLE_OAUTH}" = "true" ]; then
+          if [ -z "${_GOOGLE_OAUTH_CLIENT_ID}" ] || [ -z "${_GOOGLE_OAUTH_REDIRECT_URI}" ]; then
+            echo "ERROR: Google OAuth is required but _GOOGLE_OAUTH_CLIENT_ID or _GOOGLE_OAUTH_REDIRECT_URI is empty."
+            exit 1
+          fi
+          if ! gcloud secrets describe google-oauth-client-secret >/dev/null 2>&1; then
+            echo "ERROR: Google OAuth is required but secret google-oauth-client-secret is missing."
+            exit 1
+          fi
+        fi
+
         ENV_VARS_FILE="/tmp/backend-env.yaml"
         {
           echo 'NODE_ENV: "production"'
@@ -307,6 +320,7 @@ steps:
           -t gcr.io/$PROJECT_ID/${_ADMIN_SERVICE}:$BUILD_ID \
           -t gcr.io/$PROJECT_ID/${_ADMIN_SERVICE}:latest \
           --build-arg NEXT_PUBLIC_API_URL=${_NEXT_PUBLIC_API_URL} \
+          --build-arg NEXT_PUBLIC_CUSTOMER_URL=${_NEXT_PUBLIC_CUSTOMER_URL} \
           --build-arg NEXT_PUBLIC_TENANT_ID=${_NEXT_PUBLIC_TENANT_ID} \
           --build-arg NEXT_PUBLIC_FIREBASE_API_KEY=${_NEXT_PUBLIC_FIREBASE_API_KEY} \
           --build-arg NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=${_NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN} \
@@ -462,6 +476,26 @@ steps:
           cat /tmp/customer-auth-config.json
           exit 1
         fi
+
+        if [ -z "${_NEXT_PUBLIC_FIREBASE_API_KEY}" ]; then
+          echo "ERROR: _NEXT_PUBLIC_FIREBASE_API_KEY is required for smoke_public_onboarding.sh"
+          exit 1
+        fi
+
+        if ! command -v jq >/dev/null 2>&1; then
+          echo "Installing jq for smoke script..."
+          apt-get update && apt-get install -y jq
+        fi
+        if ! command -v python3 >/dev/null 2>&1; then
+          echo "Installing python3 for smoke script..."
+          apt-get update && apt-get install -y python3
+        fi
+
+        API_URL="$$API_URL" \
+        CUSTOMER_URL="$$CUSTOMER_URL" \
+        FIREBASE_API_KEY="${_NEXT_PUBLIC_FIREBASE_API_KEY}" \
+        RUN_RESERVATION_TEST=true \
+        ./scripts/smoke_public_onboarding.sh
     waitFor: ['customer-deploy']
 
   # ============================================================

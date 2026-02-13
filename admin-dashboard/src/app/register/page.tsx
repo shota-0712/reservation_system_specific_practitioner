@@ -97,7 +97,7 @@ export default function RegisterPage() {
             }
 
             setTenantKey(response.data.tenantKey);
-            router.push(`/onboarding?tenant=${encodeURIComponent(response.data.tenantKey)}`);
+            router.push("/onboarding");
         } catch (err: any) {
             setError(err?.message || "登録に失敗しました");
         } finally {

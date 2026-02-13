@@ -32,6 +32,7 @@ export default function IntegrationsPage() {
     const [jobResult, setJobResult] = useState<string | null>(null);
     const [analyticsDate, setAnalyticsDate] = useState("");
     const [error, setError] = useState<string | null>(null);
+    const [notice, setNotice] = useState<string | null>(null);
 
     const fetchStatus = async () => {
         setLoading(true);
@@ -54,6 +55,68 @@ export default function IntegrationsPage() {
         fetchStatus();
     }, []);
 
+    useEffect(() => {
+        if (typeof window === "undefined") {
+            return;
+        }
+
+        const params = new URLSearchParams(window.location.search);
+        const queryStatus = params.get("googleCalendar");
+        if (queryStatus === "connected" || queryStatus === "failed") {
+            const connected = queryStatus === "connected";
+            fetchStatus().catch(() => {
+                // noop
+            });
+            if (connected) {
+                setNotice("Google連携が完了しました。");
+                setError(null);
+            } else {
+                setNotice(null);
+                setError("Google連携に失敗しました。もう一度お試しください。");
+            }
+
+            if (window.opener && !window.opener.closed) {
+                try {
+                    window.opener.postMessage({
+                        type: "reserve:google-oauth-result",
+                        connected,
+                    }, "*");
+                    window.setTimeout(() => window.close(), 200);
+                } catch {
+                    // noop
+                }
+            }
+
+            params.delete("googleCalendar");
+            params.delete("tenantId");
+            const next = params.toString();
+            const nextUrl = `${window.location.pathname}${next ? `?${next}` : ""}${window.location.hash}`;
+            window.history.replaceState({}, "", nextUrl);
+        }
+
+        const onMessage = (event: MessageEvent) => {
+            const payload = event.data as { type?: string; connected?: boolean };
+            if (payload?.type !== "reserve:google-oauth-result") {
+                return;
+            }
+            fetchStatus().catch(() => {
+                // noop
+            });
+            if (payload.connected) {
+                setNotice("Google連携が完了しました。");
+                setError(null);
+            } else {
+                setNotice(null);
+                setError("Google連携に失敗しました。もう一度お試しください。");
+            }
+        };
+
+        window.addEventListener("message", onMessage);
+        return () => {
+            window.removeEventListener("message", onMessage);
+        };
+    }, []);
+
     const startOAuth = async () => {
         setRunning(true);
         setError(null);
@@ -67,7 +130,14 @@ export default function IntegrationsPage() {
             if (!authUrl) {
                 throw new Error("OAuth URL が返却されませんでした");
             }
-            window.open(authUrl, "_blank", "noopener,noreferrer");
+            const popup = window.open(
+                authUrl,
+                "reserve-google-oauth",
+                "popup,width=620,height=780"
+            );
+            if (!popup) {
+                window.location.href = authUrl;
+            }
         } catch (err: any) {
             console.error(err);
             setError(err.message || "OAuth開始に失敗しました");
@@ -176,6 +246,13 @@ export default function IntegrationsPage() {
                 <div className="bg-red-50 text-red-600 p-4 rounded-lg flex items-center gap-2">
                     <AlertCircle className="h-5 w-5" />
                     {error}
+                </div>
+            )}
+
+            {notice && (
+                <div className="bg-green-50 text-green-700 p-4 rounded-lg flex items-center gap-2">
+                    <CheckCircle2 className="h-5 w-5" />
+                    {notice}
                 </div>
             )}
 

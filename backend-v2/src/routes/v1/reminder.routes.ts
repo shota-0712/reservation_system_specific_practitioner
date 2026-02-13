@@ -52,7 +52,9 @@ router.post(
             return;
         }
 
-        const notificationToken = customer.notificationToken;
+        const notificationToken = customer.lineNotificationToken
+            || customer.lineUserId
+            || customer.notificationToken;
 
         if (!notificationToken) {
             res.status(400).json({ success: false, error: 'Customer has no notification token' });

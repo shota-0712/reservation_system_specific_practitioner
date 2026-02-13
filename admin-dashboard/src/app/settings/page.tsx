@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import Link from "next/link";
 import { Save, Upload, ExternalLink, Bell, Shield, CreditCard, Mail, Clock, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -8,6 +9,7 @@ import { cn } from "@/lib/utils";
 import { settingsApi } from "@/lib/api";
 
 const DAYS = ["日", "月", "火", "水", "木", "金", "土"];
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 const tabs = [
     { id: "general", name: "店舗情報", icon: ExternalLink },
@@ -22,6 +24,7 @@ interface SettingsResponse {
         id: string;
         name: string;
         lineConfig?: {
+            mode?: 'tenant' | 'store' | 'practitioner';
             channelId?: string;
             liffId?: string;
         };
@@ -32,6 +35,10 @@ interface SettingsResponse {
         address?: string;
         phone?: string;
         email?: string;
+        lineConfig?: {
+            channelId?: string;
+            liffId?: string;
+        };
         businessHours?: Record<string, { isOpen: boolean; openTime?: string; closeTime?: string }>;
         regularHolidays?: number[];
         slotDuration?: number;
@@ -40,11 +47,24 @@ interface SettingsResponse {
     };
 }
 
+interface LineResolvePreviewResponse {
+    mode: "tenant" | "store" | "practitioner";
+    source: "tenant" | "store" | "practitioner";
+    liffId: string;
+    channelId: string;
+    storeId?: string;
+    practitionerId?: string;
+}
+
 export default function SettingsPage() {
     const [activeTab, setActiveTab] = useState("general");
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
     const [saveMessage, setSaveMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+    const [linePreview, setLinePreview] = useState<LineResolvePreviewResponse | null>(null);
+    const [linePreviewLoading, setLinePreviewLoading] = useState(false);
+    const [linePreviewError, setLinePreviewError] = useState<string | null>(null);
+    const [linePreviewPractitionerId, setLinePreviewPractitionerId] = useState("");
 
     const [storeName, setStoreName] = useState("");
     const [storePhone, setStorePhone] = useState("");
@@ -84,6 +104,7 @@ export default function SettingsPage() {
     });
 
     const [integrations, setIntegrations] = useState({
+        lineMode: "tenant" as "tenant" | "store" | "practitioner",
         lineConnected: false,
         lineChannelId: "",
         lineLiffId: "",
@@ -94,6 +115,27 @@ export default function SettingsPage() {
         googleCalendarConnected: false,
         googleCalendarId: "",
     });
+
+    const lineDirectInputDisabled = integrations.lineMode === "practitioner";
+
+    const fetchLinePreview = async (practitionerId?: string) => {
+        setLinePreviewLoading(true);
+        setLinePreviewError(null);
+        try {
+            const response = await settingsApi.resolveLinePreview({
+                practitionerId: practitionerId || undefined,
+            });
+            if (!response.success || !response.data) {
+                throw new Error(response.error?.message || "LINE解決プレビューの取得に失敗しました");
+            }
+            setLinePreview(response.data as LineResolvePreviewResponse);
+        } catch (error: any) {
+            setLinePreview(null);
+            setLinePreviewError(error?.message || "LINE解決プレビューの取得に失敗しました");
+        } finally {
+            setLinePreviewLoading(false);
+        }
+    };
 
     // 設定を取得
     useEffect(() => {
@@ -131,11 +173,21 @@ export default function SettingsPage() {
                     }));
 
                     if (data.tenant?.lineConfig) {
+                        const lineMode: "tenant" | "store" | "practitioner" = data.tenant?.lineConfig?.mode === 'store'
+                            ? 'store'
+                            : data.tenant?.lineConfig?.mode === 'practitioner'
+                                ? 'practitioner'
+                                : 'tenant';
+                        const modeConfig = lineMode === 'store'
+                            ? data.store?.lineConfig
+                            : data.tenant?.lineConfig;
+
                         setIntegrations(prev => ({
                             ...prev,
-                            lineConnected: !!data.tenant.lineConfig?.channelId,
-                            lineChannelId: data.tenant.lineConfig?.channelId || "",
-                            lineLiffId: data.tenant.lineConfig?.liffId || "",
+                            lineMode,
+                            lineConnected: !!modeConfig?.channelId,
+                            lineChannelId: modeConfig?.channelId || "",
+                            lineLiffId: modeConfig?.liffId || "",
                         }));
                     }
                 }
@@ -194,15 +246,22 @@ export default function SettingsPage() {
 
             // LINE連携を保存
             if (activeTab === "integrations") {
+                const linePayload = integrations.lineMode === "practitioner"
+                    ? { mode: "practitioner" }
+                    : {
+                        mode: integrations.lineMode,
+                        channelId: integrations.lineChannelId || undefined,
+                        liffId: integrations.lineLiffId || undefined,
+                        channelAccessToken: integrations.lineChannelAccessToken || undefined,
+                        channelSecret: integrations.lineChannelSecret || undefined,
+                    };
                 const lineResult = await settingsApi.updateLine({
-                    channelId: integrations.lineChannelId || undefined,
-                    liffId: integrations.lineLiffId || undefined,
-                    channelAccessToken: integrations.lineChannelAccessToken || undefined,
-                    channelSecret: integrations.lineChannelSecret || undefined,
+                    ...linePayload,
                 });
                 if (!lineResult.success) {
                     throw new Error(lineResult.error?.message || 'Failed to save LINE settings');
                 }
+                await fetchLinePreview(linePreviewPractitionerId || undefined);
             }
 
             setSaveMessage({ type: 'success', text: '設定を保存しました' });
@@ -214,6 +273,20 @@ export default function SettingsPage() {
             setSaving(false);
         }
     };
+
+    useEffect(() => {
+        if (activeTab !== "integrations") {
+            return;
+        }
+        if (linePreviewPractitionerId && !UUID_REGEX.test(linePreviewPractitionerId)) {
+            setLinePreview(null);
+            setLinePreviewError("施術者IDはUUID形式で入力してください。");
+            return;
+        }
+        fetchLinePreview(linePreviewPractitionerId || undefined).catch(() => {
+            // noop
+        });
+    }, [activeTab, integrations.lineMode, linePreviewPractitionerId]);
 
     if (loading) {
         return (
@@ -566,6 +639,70 @@ export default function SettingsPage() {
                             </CardHeader>
                             <CardContent>
                                 <div className="space-y-4 p-4 bg-gray-50 rounded-lg">
+                                    <div>
+                                        <label className="text-sm font-medium">LINE運用モード</label>
+                                        <div className="mt-2 grid gap-2 md:grid-cols-3">
+                                            <button
+                                                type="button"
+                                                onClick={() => setIntegrations(prev => ({ ...prev, lineMode: 'tenant' }))}
+                                                className={cn(
+                                                    "rounded-lg border px-3 py-2 text-left text-sm transition-colors",
+                                                    integrations.lineMode === 'tenant'
+                                                        ? "border-primary bg-red-50 text-red-600"
+                                                        : "border-gray-200 bg-white text-gray-600"
+                                                )}
+                                            >
+                                                <div className="font-semibold">店舗共通</div>
+                                                <div className="text-xs text-muted-foreground">
+                                                    すべての施術者で同じLIFF/Channelを使う
+                                                </div>
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={() => setIntegrations(prev => ({ ...prev, lineMode: 'store' }))}
+                                                className={cn(
+                                                    "rounded-lg border px-3 py-2 text-left text-sm transition-colors",
+                                                    integrations.lineMode === 'store'
+                                                        ? "border-primary bg-red-50 text-red-600"
+                                                        : "border-gray-200 bg-white text-gray-600"
+                                                )}
+                                            >
+                                                <div className="font-semibold">店舗ごと</div>
+                                                <div className="text-xs text-muted-foreground">
+                                                    店舗管理で選択中の店舗単位にLIFF/Channelを設定
+                                                </div>
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={() => setIntegrations(prev => ({ ...prev, lineMode: 'practitioner' }))}
+                                                className={cn(
+                                                    "rounded-lg border px-3 py-2 text-left text-sm transition-colors",
+                                                    integrations.lineMode === 'practitioner'
+                                                        ? "border-primary bg-red-50 text-red-600"
+                                                        : "border-gray-200 bg-white text-gray-600"
+                                                )}
+                                            >
+                                                <div className="font-semibold">施術者ごと</div>
+                                                <div className="text-xs text-muted-foreground">
+                                                    スタッフ管理で施術者単位のLIFF/Channelを設定
+                                                </div>
+                                            </button>
+                                        </div>
+                                        <p className="mt-2 text-xs text-muted-foreground">
+                                            施術者モードでは「スタッフ設定→LINE」が優先され、未設定時は店舗/共通設定にフォールバックします。
+                                        </p>
+                                        {integrations.lineMode === "practitioner" && (
+                                            <p className="mt-2 text-xs text-amber-700">
+                                                施術者モードではこの画面の LIFF/Channel 入力は編集できません。施術者ごとの設定は
+                                                {" "}
+                                                <Link href="/staff" className="underline">
+                                                    スタッフ管理
+                                                </Link>
+                                                {" "}
+                                                で更新してください。
+                                            </p>
+                                        )}
+                                    </div>
                                     <div className="flex items-center gap-3">
                                         <div className={cn(
                                             "w-3 h-3 rounded-full",
@@ -590,6 +727,8 @@ export default function SettingsPage() {
                                                 onChange={(e) => setIntegrations(prev => ({ ...prev, lineChannelId: e.target.value }))}
                                                 className="mt-1 w-full h-10 rounded-lg border border-gray-200 px-3 text-sm"
                                                 placeholder="1234567890"
+                                                readOnly={lineDirectInputDisabled}
+                                                disabled={lineDirectInputDisabled}
                                             />
                                         </div>
                                         <div>
@@ -599,6 +738,8 @@ export default function SettingsPage() {
                                                 onChange={(e) => setIntegrations(prev => ({ ...prev, lineLiffId: e.target.value }))}
                                                 className="mt-1 w-full h-10 rounded-lg border border-gray-200 px-3 text-sm"
                                                 placeholder="xxxxxxxxxxxxxxxx"
+                                                readOnly={lineDirectInputDisabled}
+                                                disabled={lineDirectInputDisabled}
                                             />
                                         </div>
                                         <div>
@@ -609,6 +750,8 @@ export default function SettingsPage() {
                                                 onChange={(e) => setIntegrations(prev => ({ ...prev, lineChannelAccessToken: e.target.value }))}
                                                 className="mt-1 w-full h-10 rounded-lg border border-gray-200 px-3 text-sm"
                                                 placeholder="アクセストークン"
+                                                readOnly={lineDirectInputDisabled}
+                                                disabled={lineDirectInputDisabled}
                                             />
                                         </div>
                                         <div>
@@ -619,8 +762,46 @@ export default function SettingsPage() {
                                                 onChange={(e) => setIntegrations(prev => ({ ...prev, lineChannelSecret: e.target.value }))}
                                                 className="mt-1 w-full h-10 rounded-lg border border-gray-200 px-3 text-sm"
                                                 placeholder="シークレット"
+                                                readOnly={lineDirectInputDisabled}
+                                                disabled={lineDirectInputDisabled}
                                             />
                                         </div>
+                                    </div>
+                                    <div className="rounded-lg border border-dashed border-gray-300 bg-white p-3">
+                                        <div className="mb-2 flex items-center justify-between gap-2">
+                                            <div className="text-sm font-semibold">解決結果プレビュー</div>
+                                            <Button
+                                                type="button"
+                                                variant="outline"
+                                                size="sm"
+                                                onClick={() => fetchLinePreview(linePreviewPractitionerId || undefined)}
+                                                disabled={linePreviewLoading}
+                                            >
+                                                {linePreviewLoading ? <Loader2 className="h-3 w-3 animate-spin" /> : "再取得"}
+                                            </Button>
+                                        </div>
+                                        <div className="mb-2">
+                                            <label className="text-xs text-muted-foreground">施術者ID（任意）</label>
+                                            <input
+                                                value={linePreviewPractitionerId}
+                                                onChange={(e) => setLinePreviewPractitionerId(e.target.value.trim())}
+                                                className="mt-1 w-full h-9 rounded-lg border border-gray-200 px-3 text-xs"
+                                                placeholder="UUIDを指定すると施術者指定でプレビュー"
+                                            />
+                                        </div>
+                                        {linePreviewError && (
+                                            <p className="text-xs text-red-600">{linePreviewError}</p>
+                                        )}
+                                        {linePreview && (
+                                            <div className="space-y-1 text-xs text-gray-600">
+                                                <div>mode: <span className="font-mono">{linePreview.mode}</span></div>
+                                                <div>source: <span className="font-mono">{linePreview.source}</span></div>
+                                                <div>liffId: <span className="font-mono">{linePreview.liffId || "(empty)"}</span></div>
+                                                <div>channelId: <span className="font-mono">{linePreview.channelId || "(empty)"}</span></div>
+                                                <div>storeId: <span className="font-mono">{linePreview.storeId || "(none)"}</span></div>
+                                                <div>practitionerId: <span className="font-mono">{linePreview.practitionerId || "(none)"}</span></div>
+                                            </div>
+                                        )}
                                     </div>
                                 </div>
                             </CardContent>

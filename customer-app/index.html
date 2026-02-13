@@ -624,6 +624,9 @@
     const queryParams = new URLSearchParams(window.location.search);
     const TENANT_STORAGE_KEY = 'reservation_customer_tenant_key';
     const TENANT_KEY_REGEX = /^[a-z0-9](?:[a-z0-9-]{1,38}[a-z0-9])?$/;
+    const PRACTITIONER_ID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+    const STORE_ID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+    const BOOKING_LINK_TOKEN_REGEX = /^[A-Za-z0-9_-]{16,128}$/;
 
     function normalizeApiBaseUrl(value) {
       return (value || '').trim().replace(/\/+$/, '');
@@ -631,6 +634,18 @@
 
     function isTenantKeyValid(value) {
       return TENANT_KEY_REGEX.test(String(value || '').trim());
+    }
+
+    function isPractitionerIdValid(value) {
+      return PRACTITIONER_ID_REGEX.test(String(value || '').trim());
+    }
+
+    function isStoreIdValid(value) {
+      return STORE_ID_REGEX.test(String(value || '').trim());
+    }
+
+    function isBookingLinkTokenValid(value) {
+      return BOOKING_LINK_TOKEN_REGEX.test(String(value || '').trim());
     }
 
     function resolveTenantKey() {
@@ -671,8 +686,37 @@
       return isLocalRuntime ? 'http://localhost:8080' : '';
     }
 
+    function resolvePreselectedPractitionerId() {
+      const fromQuery = (queryParams.get('practitionerId') || queryParams.get('staff') || '').trim();
+      if (isPractitionerIdValid(fromQuery)) {
+        return fromQuery;
+      }
+      return '';
+    }
+
+    function resolveStoreId() {
+      const fromQuery = (queryParams.get('storeId') || '').trim();
+      if (isStoreIdValid(fromQuery)) {
+        return fromQuery;
+      }
+      return '';
+    }
+
+    function resolveBookingLinkToken() {
+      const fromQuery = (queryParams.get('t') || queryParams.get('token') || '').trim();
+      if (isBookingLinkTokenValid(fromQuery)) {
+        return fromQuery;
+      }
+      return '';
+    }
+
     const API_BASE_URL = resolveApiBaseUrl();
-    const TENANT_KEY = resolveTenantKey();
+    const BOOKING_LINK_TOKEN = resolveBookingLinkToken();
+    let TENANT_KEY = resolveTenantKey();
+    let PRESELECTED_PRACTITIONER_ID = resolvePreselectedPractitionerId();
+    let SELECTED_STORE_ID = resolveStoreId();
+    let RESOLVED_LINE_MODE = '';
+    let RESOLVED_LINE_CONFIG_SOURCE = '';
     const DEBUG_CONFIG_ENABLED = isLocalRuntime || queryParams.get('debugConfig') === '1';
     let LIFF_ID = null;
     let idToken = null; // LINE ID Token for API authentication
@@ -729,6 +773,11 @@
       const diagnostics = [
         ['API_BASE_URL', API_BASE_URL || '(empty)'],
         ['TENANT_KEY', TENANT_KEY || '(empty)'],
+        ['SELECTED_STORE_ID', SELECTED_STORE_ID || '(empty)'],
+        ['PRESELECTED_PRACTITIONER_ID', PRESELECTED_PRACTITIONER_ID || '(empty)'],
+        ['BOOKING_LINK_TOKEN', BOOKING_LINK_TOKEN || '(empty)'],
+        ['RESOLVED_LINE_MODE', RESOLVED_LINE_MODE || '(empty)'],
+        ['RESOLVED_LINE_CONFIG_SOURCE', RESOLVED_LINE_CONFIG_SOURCE || '(empty)'],
         ['RESERVATION_API_URL', window.RESERVATION_API_URL || '(empty)'],
         ['RESERVATION_TENANT_KEY', window.RESERVATION_TENANT_KEY || '(empty)'],
         ['RESERVATION_ENABLE_MOCK', window.RESERVATION_ENABLE_MOCK || 'false'],
@@ -776,8 +825,62 @@
       container.classList.remove('hidden');
     }
 
+    async function resolveBookingLinkContext() {
+      if (!BOOKING_LINK_TOKEN) {
+        return;
+      }
+      if (!API_BASE_URL) {
+        throw new Error('API URL が未設定のため予約URLトークンを解決できません。');
+      }
+
+      const endpoint = `${API_BASE_URL}/api/platform/v1/booking-links/resolve?token=${encodeURIComponent(BOOKING_LINK_TOKEN)}`;
+      const response = await fetch(endpoint, {
+        method: 'GET',
+        headers: { 'Content-Type': 'application/json' },
+      });
+
+      let body = {};
+      try {
+        body = await response.json();
+      } catch (error) {
+        throw new Error('予約URLトークン解決のレスポンス解析に失敗しました。');
+      }
+
+      if (!response.ok || body.success !== true || !body.data) {
+        const message = body?.error?.message || `HTTP ${response.status}`;
+        throw new Error(`予約URLトークンが無効です: ${message}`);
+      }
+
+      const resolvedTenantKey = String(body.data.tenantKey || '').trim().toLowerCase();
+      if (!isTenantKeyValid(resolvedTenantKey)) {
+        throw new Error('予約URLトークンの tenantKey が不正です。');
+      }
+      TENANT_KEY = resolvedTenantKey;
+      try {
+        window.localStorage.setItem(TENANT_STORAGE_KEY, TENANT_KEY);
+      } catch (e) {
+        console.warn('Failed to persist tenant key from token:', e);
+      }
+
+      const resolvedStoreId = String(body.data.storeId || '').trim();
+      if (isStoreIdValid(resolvedStoreId)) {
+        SELECTED_STORE_ID = resolvedStoreId;
+      }
+
+      const resolvedPractitionerId = String(body.data.practitionerId || '').trim();
+      if (isPractitionerIdValid(resolvedPractitionerId)) {
+        PRESELECTED_PRACTITIONER_ID = resolvedPractitionerId;
+      }
+
+      RESOLVED_LINE_MODE = String(body.data.lineMode || '').trim();
+      RESOLVED_LINE_CONFIG_SOURCE = String(body.data.lineConfigSource || '').trim();
+    }
+
     async function establishAuthSession(profile) {
       if (!idToken) return;
+
+      const practitionerId = PRESELECTED_PRACTITIONER_ID || state.selectedPractitioner?.id || null;
+      const storeId = SELECTED_STORE_ID || null;
 
       const response = await fetch(`${API_BASE_URL}/api/v1/${TENANT_KEY}/auth/session`, {
         method: 'POST',
@@ -790,6 +893,8 @@
             pictureUrl: profile.pictureUrl,
           },
           notificationToken: profile.userId || profile.sub,
+          storeId: storeId || undefined,
+          practitionerId: practitionerId || undefined,
         }),
       });
 
@@ -813,6 +918,19 @@
         });
         return;
       }
+
+      try {
+        await resolveBookingLinkContext();
+      } catch (error) {
+        showInitError('初期化エラー: 予約URLトークンの解決に失敗しました。', {
+          token: BOOKING_LINK_TOKEN || '(empty)',
+          detail: error?.message || String(error),
+        });
+        renderConfigDiagnostics();
+        return;
+      }
+
+      renderConfigDiagnostics();
 
       if (!TENANT_KEY) {
         showInitError('初期化エラー: tenantKey が未設定です。', {
@@ -854,7 +972,14 @@
 
       try {
         console.log('Fetching Config...');
-        const configUrl = `${API_BASE_URL}/api/v1/${TENANT_KEY}/auth/config`;
+        const configQuery = new URLSearchParams();
+        if (PRESELECTED_PRACTITIONER_ID) {
+          configQuery.set('practitionerId', PRESELECTED_PRACTITIONER_ID);
+        }
+        if (SELECTED_STORE_ID) {
+          configQuery.set('storeId', SELECTED_STORE_ID);
+        }
+        const configUrl = `${API_BASE_URL}/api/v1/${TENANT_KEY}/auth/config${configQuery.toString() ? `?${configQuery.toString()}` : ''}`;
         const configRes = await fetch(configUrl);
         if (!configRes.ok) {
           const errorBody = await configRes.text().catch(() => '');
@@ -1132,7 +1257,12 @@
             }
           ];
         } else {
-          const res = await fetch(`${API_BASE_URL}/api/v1/${TENANT_KEY}/practitioners`);
+          const practitionerQuery = new URLSearchParams();
+          if (SELECTED_STORE_ID) {
+            practitionerQuery.set('storeId', SELECTED_STORE_ID);
+          }
+          const practitionersUrl = `${API_BASE_URL}/api/v1/${TENANT_KEY}/practitioners${practitionerQuery.toString() ? `?${practitionerQuery.toString()}` : ''}`;
+          const res = await fetch(practitionersUrl);
           const data = await res.json();
           const list = data.data || data || [];
           state.practitioners = list.map(p => ({
@@ -1145,6 +1275,13 @@
             description: p.description || '',
             imageUrl: p.imageUrl || p.image_url || '',
           }));
+        }
+
+        if (PRESELECTED_PRACTITIONER_ID) {
+          const matched = state.practitioners.find(p => String(p.id) === PRESELECTED_PRACTITIONER_ID);
+          if (matched) {
+            state.selectedPractitioner = matched;
+          }
         }
       } catch (e) {
         console.error('Failed to load practitioners', e);
@@ -1199,8 +1336,7 @@
       updateStepIndicator(2);
 
       // Initialize Views
-      updateDateView();
-      renderPractitionerPills();
+      selectPractitioner(state.selectedPractitioner?.id || null);
 
       // Reset Date/Time
       state.date = null;
@@ -1647,10 +1783,17 @@
           }
           const menuIds = menuIdList.join(',');
 
-          let url = `${API_BASE_URL}/api/v1/${TENANT_KEY}/slots/week?startDate=${startDateStr}&menuIds=${menuIds}`;
-          if (state.selectedPractitioner) {
-            url += `&practitionerId=${state.selectedPractitioner.id}`;
+          const slotQuery = new URLSearchParams({
+            startDate: startDateStr,
+            menuIds,
+          });
+          if (SELECTED_STORE_ID) {
+            slotQuery.set('storeId', SELECTED_STORE_ID);
           }
+          if (state.selectedPractitioner) {
+            slotQuery.set('practitionerId', state.selectedPractitioner.id);
+          }
+          const url = `${API_BASE_URL}/api/v1/${TENANT_KEY}/slots/week?${slotQuery.toString()}`;
           const res = await fetch(url);
           if (!res.ok) {
             const errorBody = await res.json().catch(() => ({}));

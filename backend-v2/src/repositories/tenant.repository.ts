@@ -17,6 +17,7 @@ interface TenantRow {
     onboarding_status?: Tenant['onboardingStatus'];
     onboarding_completed_at?: Date;
     onboarding_payload?: Record<string, unknown>;
+    line_mode?: Tenant['lineConfig'] extends { mode?: infer M } ? M : string;
     line_liff_id?: string;
     line_channel_id?: string;
     line_channel_access_token_encrypted?: string;
@@ -42,7 +43,8 @@ function mapTenant(row: TenantRow): Tenant {
         onboardingStatus: row.onboarding_status,
         onboardingCompletedAt: row.onboarding_completed_at,
         onboardingPayload: row.onboarding_payload,
-        lineConfig: row.line_channel_id ? {
+        lineConfig: (row.line_channel_id || row.line_liff_id || row.line_mode) ? {
+            mode: (row.line_mode as Tenant['lineConfig'] extends { mode?: infer M } ? M : never) ?? 'tenant',
             channelId: row.line_channel_id,
             channelSecret: row.line_channel_secret_encrypted ?? undefined,
             channelAccessToken: row.line_channel_access_token_encrypted ?? undefined,
@@ -63,6 +65,15 @@ function mapTenant(row: TenantRow): Tenant {
 }
 
 function mapStore(row: Record<string, any>): Store {
+    const lineConfig = (row.line_channel_id || row.line_liff_id || row.line_channel_access_token_encrypted || row.line_channel_secret_encrypted)
+        ? {
+            channelId: row.line_channel_id ?? undefined,
+            channelSecret: row.line_channel_secret_encrypted ?? undefined,
+            channelAccessToken: row.line_channel_access_token_encrypted ?? undefined,
+            liffId: row.line_liff_id ?? undefined,
+        }
+        : undefined;
+
     return {
         id: row.id,
         tenantId: row.tenant_id,
@@ -83,9 +94,17 @@ function mapStore(row: Record<string, any>): Store {
         requireEmail: row.require_email ?? false,
         status: row.status ?? 'active',
         displayOrder: row.display_order ?? 0,
+        lineConfig,
         createdAt: row.created_at,
         updatedAt: row.updated_at,
     };
+}
+
+function maybeEncrypt(value?: string): string | null {
+    if (!value) return null;
+    const parts = value.split(':');
+    if (parts.length === 3) return value;
+    return encrypt(value);
 }
 
 /**
@@ -188,9 +207,10 @@ export class TenantRepository {
             `INSERT INTO tenants (
                 slug, name, plan, status,
                 onboarding_status, onboarding_payload,
+                line_mode,
                 line_liff_id, line_channel_id,
                 branding_primary_color, branding_logo_url
-            ) VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8, $9, $10)
+            ) VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8, $9, $10, $11)
             RETURNING *`,
             [
                 data.slug,
@@ -199,6 +219,7 @@ export class TenantRepository {
                 data.status ?? 'trial',
                 data.onboardingStatus ?? 'pending',
                 JSON.stringify(data.onboardingPayload ?? {}),
+                data.lineConfig?.mode ?? 'tenant',
                 data.lineConfig?.liffId ?? null,
                 data.lineConfig?.channelId ?? null,
                 data.branding?.primaryColor ?? '#4F46E5',
@@ -227,15 +248,16 @@ export class TenantRepository {
                 status = COALESCE($4, status),
                 line_liff_id = COALESCE($5, line_liff_id),
                 line_channel_id = COALESCE($6, line_channel_id),
-                branding_primary_color = COALESCE($7, branding_primary_color),
-                branding_logo_url = COALESCE($8, branding_logo_url),
-                max_stores = COALESCE($9, max_stores),
-                max_practitioners = COALESCE($10, max_practitioners),
-                onboarding_status = COALESCE($11, onboarding_status),
-                onboarding_payload = COALESCE($12::jsonb, onboarding_payload),
+                line_mode = COALESCE($7, line_mode),
+                branding_primary_color = COALESCE($8, branding_primary_color),
+                branding_logo_url = COALESCE($9, branding_logo_url),
+                max_stores = COALESCE($10, max_stores),
+                max_practitioners = COALESCE($11, max_practitioners),
+                onboarding_status = COALESCE($12, onboarding_status),
+                onboarding_payload = COALESCE($13::jsonb, onboarding_payload),
                 onboarding_completed_at = CASE
-                    WHEN $11 = 'completed' THEN NOW()
-                    WHEN $11 IS NULL THEN onboarding_completed_at
+                    WHEN $12 = 'completed' THEN NOW()
+                    WHEN $12 IS NULL THEN onboarding_completed_at
                     ELSE NULL
                 END,
                 updated_at = NOW()
@@ -248,6 +270,7 @@ export class TenantRepository {
                 data.status ?? null,
                 data.lineConfig?.liffId ?? null,
                 data.lineConfig?.channelId ?? null,
+                data.lineConfig?.mode ?? null,
                 data.branding?.primaryColor ?? null,
                 data.branding?.logoUrl ?? null,
                 data.maxStores ?? null,
@@ -284,6 +307,7 @@ export class TenantRepository {
                 line_channel_id = COALESCE($3, line_channel_id),
                 line_channel_access_token_encrypted = COALESCE($4, line_channel_access_token_encrypted),
                 line_channel_secret_encrypted = COALESCE($5, line_channel_secret_encrypted),
+                line_mode = COALESCE($6, line_mode),
                 updated_at = NOW()
              WHERE id = $1
              RETURNING *`,
@@ -293,6 +317,7 @@ export class TenantRepository {
                 config?.channelId ?? null,
                 maybeEncrypt(config?.channelAccessToken) ?? null,
                 maybeEncrypt(config?.channelSecret) ?? null,
+                config?.mode ?? null,
             ]
         );
 
@@ -419,9 +444,16 @@ export class StoreRepository {
     /**
      * Find all stores for tenant
      */
-    async findAll(): Promise<Store[]> {
+    async findAll(options: { includeInactive?: boolean } = {}): Promise<Store[]> {
+        const includeInactive = options.includeInactive ?? false;
+        let sql = `SELECT * FROM stores WHERE tenant_id = $1`;
+        if (!includeInactive) {
+            sql += ` AND status = 'active'`;
+        }
+        sql += ' ORDER BY display_order ASC, created_at ASC';
+
         const rows = await DatabaseService.query(
-            `SELECT * FROM stores WHERE tenant_id = $1 ORDER BY display_order ASC`,
+            sql,
             [this.tenantId],
             this.tenantId
         );
@@ -445,8 +477,9 @@ export class StoreRepository {
             `INSERT INTO stores (
                 tenant_id, store_code, name, address, phone, email, timezone,
                 business_hours, regular_holidays, slot_duration, advance_booking_days,
-                cancel_deadline_hours, require_phone, require_email, status, display_order
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+                cancel_deadline_hours, require_phone, require_email, status, display_order,
+                line_liff_id, line_channel_id, line_channel_access_token_encrypted, line_channel_secret_encrypted
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
             RETURNING *`,
             [
                 this.tenantId,
@@ -465,6 +498,10 @@ export class StoreRepository {
                 data.requireEmail ?? false,
                 data.status ?? 'active',
                 data.displayOrder ?? 0,
+                data.lineConfig?.liffId ?? null,
+                data.lineConfig?.channelId ?? null,
+                maybeEncrypt(data.lineConfig?.channelAccessToken),
+                maybeEncrypt(data.lineConfig?.channelSecret),
             ],
             this.tenantId
         );
@@ -492,6 +529,10 @@ export class StoreRepository {
                 require_email = COALESCE($14, require_email),
                 status = COALESCE($15, status),
                 display_order = COALESCE($16, display_order),
+                line_liff_id = COALESCE($17, line_liff_id),
+                line_channel_id = COALESCE($18, line_channel_id),
+                line_channel_access_token_encrypted = COALESCE($19, line_channel_access_token_encrypted),
+                line_channel_secret_encrypted = COALESCE($20, line_channel_secret_encrypted),
                 updated_at = NOW()
              WHERE id = $1 AND tenant_id = $2
              RETURNING *`,
@@ -512,6 +553,10 @@ export class StoreRepository {
                 data.requireEmail ?? null,
                 data.status ?? null,
                 data.displayOrder ?? null,
+                data.lineConfig?.liffId ?? null,
+                data.lineConfig?.channelId ?? null,
+                maybeEncrypt(data.lineConfig?.channelAccessToken),
+                maybeEncrypt(data.lineConfig?.channelSecret),
             ],
             this.tenantId
         );

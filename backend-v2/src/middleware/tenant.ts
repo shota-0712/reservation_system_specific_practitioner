@@ -32,6 +32,7 @@ function mapTenantRow(row: Record<string, any>): Tenant {
         onboardingCompletedAt: row.onboarding_completed_at ?? undefined,
         onboardingPayload: row.onboarding_payload ?? undefined,
         lineConfig: {
+            mode: row.line_mode ?? 'tenant',
             channelId: row.line_channel_id ?? undefined,
             channelSecret: row.line_channel_secret_encrypted ?? undefined,
             channelAccessToken: row.line_channel_access_token_encrypted ?? undefined,
@@ -94,6 +95,7 @@ async function getTenantByStoreCode(storeCode: string): Promise<{ tenant: Tenant
          FROM stores s
          JOIN tenants t ON t.id = s.tenant_id
          WHERE s.store_code = $1
+           AND s.status = 'active'
          LIMIT 1`,
         [storeCode]
     );

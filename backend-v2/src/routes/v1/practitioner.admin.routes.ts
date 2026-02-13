@@ -5,9 +5,33 @@ import { requireFirebaseAuth, requirePermission } from '../../middleware/auth.js
 import { getTenantId } from '../../middleware/tenant.js';
 import { createPractitionerRepository } from '../../repositories/index.js';
 import { getRequestMeta, writeAuditLog } from '../../services/audit-log.service.js';
+import { sanitizePractitionerForResponse, sanitizePractitionersForResponse } from '../../services/practitioner-response.service.js';
 import type { ApiResponse, Practitioner } from '../../types/index.js';
 
 const router = Router();
+
+const optionalTrimmedString = (max: number) =>
+    z.string().trim().min(1).max(max).optional();
+
+const practitionerLineConfigSchema = z.object({
+    liffId: optionalTrimmedString(80),
+    channelId: z.string().trim().regex(/^[0-9]{8,20}$/, 'Channel IDは数字8〜20桁で入力してください').optional(),
+    channelAccessToken: optionalTrimmedString(4000),
+    channelSecret: optionalTrimmedString(4000),
+}).superRefine((value, ctx) => {
+    const hasAnyValue = Boolean(
+        value.liffId
+        || value.channelId
+        || value.channelAccessToken
+        || value.channelSecret
+    );
+    if (!hasAnyValue) {
+        ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: 'lineConfig を指定する場合は少なくとも1項目を入力してください',
+        });
+    }
+});
 
 const scheduleSchema = z.object({
     workDays: z.array(z.number().int().min(0).max(6)),
@@ -42,6 +66,7 @@ const createPractitionerSchema = z.object({
     storeIds: z.array(z.string()).optional(),
     calendarId: z.string().optional(),
     salonboardStaffId: z.string().optional(),
+    lineConfig: practitionerLineConfigSchema.optional(),
     isActive: z.boolean().default(true),
     displayOrder: z.number().int().min(0).optional(),
 });
@@ -63,8 +88,9 @@ router.get(
         const tenantId = getTenantId(req);
         const repo = createPractitionerRepository(tenantId);
         const practitioners = await repo.findAll();
+        const safePractitioners = sanitizePractitionersForResponse(practitioners);
 
-        const response: ApiResponse<Practitioner[]> = { success: true, data: practitioners };
+        const response: ApiResponse<Practitioner[]> = { success: true, data: safePractitioners };
         res.json(response);
     })
 );
@@ -78,6 +104,7 @@ router.post(
         const tenantId = getTenantId(req);
         const repo = createPractitionerRepository(tenantId);
         const practitioner = await repo.createPractitioner(req.body);
+        const safePractitioner = sanitizePractitionerForResponse(practitioner);
 
         const meta = getRequestMeta(req);
         await writeAuditLog({
@@ -88,11 +115,11 @@ router.post(
             actorType: 'admin',
             actorId: (req as any).user?.uid,
             actorName: (req as any).user?.name,
-            newValues: practitioner as unknown as Record<string, unknown>,
+            newValues: safePractitioner as unknown as Record<string, unknown>,
             ...meta,
         });
 
-        const response: ApiResponse<Practitioner> = { success: true, data: practitioner };
+        const response: ApiResponse<Practitioner> = { success: true, data: safePractitioner };
         res.status(201).json(response);
     })
 );
@@ -110,6 +137,8 @@ router.put(
 
         const before = await repo.findByIdOrFail(id);
         const practitioner = await repo.updatePractitioner(id, req.body);
+        const safeBefore = sanitizePractitionerForResponse(before);
+        const safePractitioner = sanitizePractitionerForResponse(practitioner);
 
         const meta = getRequestMeta(req);
         await writeAuditLog({
@@ -120,12 +149,12 @@ router.put(
             actorType: 'admin',
             actorId: (req as any).user?.uid,
             actorName: (req as any).user?.name,
-            oldValues: before as unknown as Record<string, unknown>,
-            newValues: practitioner as unknown as Record<string, unknown>,
+            oldValues: safeBefore as unknown as Record<string, unknown>,
+            newValues: safePractitioner as unknown as Record<string, unknown>,
             ...meta,
         });
 
-        const response: ApiResponse<Practitioner> = { success: true, data: practitioner };
+        const response: ApiResponse<Practitioner> = { success: true, data: safePractitioner };
         res.json(response);
     })
 );
@@ -141,6 +170,7 @@ router.delete(
         const id = req.params.id as string;
 
         const before = await repo.findByIdOrFail(id);
+        const safeBefore = sanitizePractitionerForResponse(before);
         await repo.softDelete(id);
 
         const meta = getRequestMeta(req);
@@ -152,7 +182,7 @@ router.delete(
             actorType: 'admin',
             actorId: (req as any).user?.uid,
             actorName: (req as any).user?.name,
-            oldValues: before as unknown as Record<string, unknown>,
+            oldValues: safeBefore as unknown as Record<string, unknown>,
             ...meta,
         });
 

@@ -6,9 +6,11 @@
 
 import { DatabaseService } from '../config/database.js';
 import { TenantRepository } from '../repositories/tenant.repository.js';
+import { createPractitionerRepository, createStoreRepository } from '../repositories/index.js';
 import { decrypt } from '../utils/crypto.js';
 import { logger } from '../utils/logger.js';
-import type { Reservation, Tenant } from '../types/index.js';
+import { resolveLineConfigForTenant } from './line-config.service.js';
+import type { Practitioner, Reservation, Store, Tenant } from '../types/index.js';
 
 // メッセージタイプ
 export type ServiceMessageType =
@@ -67,13 +69,22 @@ export class ServiceMessageService {
         additionalData?: Record<string, string>
     ): Promise<SendResult> {
         try {
-            const tenant = await this.getTenant();
-            let channelAccessToken = tenant.lineConfig?.channelAccessToken;
-            const liffId = tenant.lineConfig?.liffId;
+            const {
+                tenant,
+                store,
+                line,
+            } = await this.resolveLineConfigContext(reservation);
+            let channelAccessToken = line.lineConfig.channelAccessToken;
+            const liffId = line.lineConfig.liffId;
 
             if (!channelAccessToken) {
                 logger.warn('No LINE channel access token configured', {
                     tenantId: this.tenantId,
+                    reservationId: reservation.id,
+                    mode: line.mode,
+                    source: line.source,
+                    storeId: line.storeId ?? reservation.storeId,
+                    practitionerId: line.practitionerId ?? reservation.practitionerId,
                 });
                 return { success: false, error: 'No channel access token' };
             }
@@ -84,7 +95,7 @@ export class ServiceMessageService {
             }
 
             // Flex Message を構築
-            const templateArgs = this.buildTemplateArgs(type, reservation, tenant, additionalData, liffId);
+            const templateArgs = this.buildTemplateArgs(type, reservation, tenant, store, additionalData, liffId);
             const flexMessage = this.buildFlexMessage(type, templateArgs);
 
             // Messaging API Push Message
@@ -112,6 +123,10 @@ export class ServiceMessageService {
                     reservationId: reservation.id,
                     type,
                     error: errorMessage,
+                    lineMode: line.mode,
+                    lineSource: line.source,
+                    lineStoreId: line.storeId,
+                    linePractitionerId: line.practitionerId,
                 });
 
                 return { success: false, error: errorMessage };
@@ -124,6 +139,10 @@ export class ServiceMessageService {
                 tenantId: this.tenantId,
                 reservationId: reservation.id,
                 type,
+                lineMode: line.mode,
+                lineSource: line.source,
+                lineStoreId: line.storeId,
+                linePractitionerId: line.practitionerId,
             });
 
             return { success: true };
@@ -238,46 +257,54 @@ export class ServiceMessageService {
 
         // アクションボタン
         let footerContents = [];
-        const reservationUrl = args.liffId && args.reservationId
-            ? `https://miniapp.line.me/${args.liffId}/reservations/${args.reservationId}`
-            : `https://miniapp.line.me/${args.liffId}`;
+        const liffBaseUrl = args.liffId ? `https://miniapp.line.me/${args.liffId}` : undefined;
+        const reservationUrl = liffBaseUrl && args.reservationId
+            ? `${liffBaseUrl}/reservations/${args.reservationId}`
+            : liffBaseUrl;
 
-        if (type === 'visit_completed') {
-            footerContents.push(footerButton('次回の予約をする', `https://miniapp.line.me/${args.liffId}`));
-        } else if (type !== 'reservation_cancelled') {
-            footerContents.push(footerButton('予約詳細を確認', reservationUrl));
-        } else {
-            footerContents.push(footerButton('新しく予約する', `https://miniapp.line.me/${args.liffId}`));
+        if (liffBaseUrl) {
+            if (type === 'visit_completed') {
+                footerContents.push(footerButton('次回の予約をする', liffBaseUrl));
+            } else if (type !== 'reservation_cancelled' && reservationUrl) {
+                footerContents.push(footerButton('予約詳細を確認', reservationUrl));
+            } else if (type === 'reservation_cancelled') {
+                footerContents.push(footerButton('新しく予約する', liffBaseUrl));
+            }
+        }
+
+        const bubble: Record<string, any> = {
+            type: 'bubble',
+            header: {
+                type: 'box',
+                layout: 'vertical',
+                contents: [
+                    { type: 'text', text: title, weight: 'bold', color: '#ffffff', wrap: true }
+                ],
+                backgroundColor: headerColor
+            },
+            body: {
+                type: 'box',
+                layout: 'vertical',
+                contents: [
+                    { type: 'text', text: args.store_name, weight: 'bold', size: 'lg', margin: 'md' },
+                    { type: 'separator', margin: 'md' },
+                    ...contents
+                ]
+            },
+        };
+
+        if (footerContents.length > 0) {
+            bubble.footer = {
+                type: 'box',
+                layout: 'vertical',
+                contents: footerContents,
+            };
         }
 
         return {
             type: 'flex',
             altText: altText,
-            contents: {
-                type: 'bubble',
-                header: {
-                    type: 'box',
-                    layout: 'vertical',
-                    contents: [
-                        { type: 'text', text: title, weight: 'bold', color: '#ffffff', wrap: true }
-                    ],
-                    backgroundColor: headerColor
-                },
-                body: {
-                    type: 'box',
-                    layout: 'vertical',
-                    contents: [
-                        { type: 'text', text: args.store_name, weight: 'bold', size: 'lg', margin: 'md' },
-                        { type: 'separator', margin: 'md' },
-                        ...contents
-                    ]
-                },
-                footer: {
-                    type: 'box',
-                    layout: 'vertical',
-                    contents: footerContents
-                }
-            }
+            contents: bubble,
         };
     }
 
@@ -288,19 +315,20 @@ export class ServiceMessageService {
         type: ServiceMessageType,
         reservation: Reservation,
         tenant: Tenant,
+        store: Store | null,
         additionalData?: Record<string, string>,
         liffId?: string
     ): ServiceMessageTemplateArgs {
         const baseArgs: ServiceMessageTemplateArgs = {
             title: '',
-            store_name: tenant.name,
+            store_name: store?.name || tenant.name,
             date: this.formatDate(reservation.date),
             time: reservation.startTime,
             menu: reservation.menuNames?.join('、') ?? '',
             practitioner: reservation.practitionerName ?? '',
             duration: String(reservation.duration ?? 0),
             price: this.formatPrice(reservation.totalPrice ?? 0),
-            address: (tenant as any).address ?? '',
+            address: store?.address ?? '',
             liffId: liffId,
             reservationId: reservation.id
         };
@@ -351,6 +379,32 @@ export class ServiceMessageService {
         }
         this.tenantCache = tenant;
         return this.tenantCache;
+    }
+
+    private async resolveLineConfigContext(
+        reservation: Reservation
+    ): Promise<{
+        tenant: Tenant;
+        store: Store | null;
+        practitioner: Practitioner | null;
+        line: ReturnType<typeof resolveLineConfigForTenant>;
+    }> {
+        const tenant = await this.getTenant();
+        const storeRepo = createStoreRepository(this.tenantId);
+        const practitionerRepo = createPractitionerRepository(this.tenantId);
+
+        const store = reservation.storeId ? await storeRepo.findById(reservation.storeId) : null;
+        const practitioner = reservation.practitionerId
+            ? await practitionerRepo.findById(reservation.practitionerId)
+            : null;
+        const line = resolveLineConfigForTenant(tenant, store, practitioner);
+
+        return {
+            tenant,
+            store,
+            practitioner,
+            line,
+        };
     }
 
     /**

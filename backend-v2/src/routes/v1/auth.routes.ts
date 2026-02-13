@@ -7,9 +7,10 @@
 import { Router, Request, Response } from 'express';
 import { z } from 'zod';
 import { asyncHandler, validateBody } from '../../middleware/index.js';
-import { getTenantId, getTenant } from '../../middleware/tenant.js';
-import { createCustomerRepository, createStoreRepository } from '../../repositories/index.js';
+import { getStoreId, getTenantId, getTenant } from '../../middleware/tenant.js';
+import { createCustomerRepository, createPractitionerRepository, createStoreRepository } from '../../repositories/index.js';
 import { createLineService } from '../../services/line.service.js';
+import { resolveLineConfigForTenant } from '../../services/line-config.service.js';
 import { DatabaseService } from '../../config/database.js';
 import type { ApiResponse, Customer } from '../../types/index.js';
 
@@ -21,6 +22,8 @@ const router = Router();
 
 const lineAuthSchema = z.object({
     idToken: z.string().min(1, 'ID Token is required'),
+    practitionerId: z.string().uuid().optional(),
+    storeId: z.string().uuid().optional(),
     profile: z.object({
         userId: z.string().min(1),
         displayName: z.string().min(1),
@@ -32,6 +35,8 @@ const lineAuthSchema = z.object({
 
 const lineSessionSchema = z.object({
     idToken: z.string().min(1, 'ID Token is required'),
+    practitionerId: z.string().uuid().optional(),
+    storeId: z.string().uuid().optional(),
     profile: z.object({
         userId: z.string().min(1),
         displayName: z.string().min(1),
@@ -39,6 +44,22 @@ const lineSessionSchema = z.object({
     }).optional(),
     notificationToken: z.string().optional(),
 });
+
+const practitionerQuerySchema = z.object({
+    practitionerId: z.string().uuid().optional(),
+    storeId: z.string().uuid().optional(),
+});
+
+function practitionerMatchesStore(practitionerStoreIds: string[] | undefined, storeId?: string | null): boolean {
+    if (!storeId) {
+        return true;
+    }
+    const ids = practitionerStoreIds ?? [];
+    if (ids.length === 0) {
+        return true;
+    }
+    return ids.includes(storeId);
+}
 
 // ============================================
 // LINE Authentication (for Customer App)
@@ -53,10 +74,45 @@ router.post('/line',
     asyncHandler(async (req: Request, res: Response): Promise<void> => {
         const tenant = getTenant(req);
         const tenantId = getTenantId(req);
-        const { idToken, profile, notificationToken } = req.body;
+        const { idToken, profile, notificationToken, practitionerId, storeId } = req.body;
+
+        const storeRepo = createStoreRepository(tenantId);
+        const selectedStoreId = storeId ?? getStoreId(req);
+        const selectedStore = selectedStoreId ? await storeRepo.findById(selectedStoreId) : null;
+        if (selectedStoreId && (!selectedStore || selectedStore.status !== 'active')) {
+            res.status(404).json({
+                success: false,
+                error: {
+                    code: 'NOT_FOUND',
+                    message: '利用可能な店舗が見つかりません',
+                },
+            });
+            return;
+        }
+
+        let practitioner = null;
+        if (practitionerId) {
+            const practitionerRepo = createPractitionerRepository(tenantId);
+            practitioner = await practitionerRepo.findById(practitionerId);
+            if (!practitioner || !practitioner.isActive || !practitionerMatchesStore(practitioner.storeIds, selectedStoreId)) {
+                res.status(404).json({
+                    success: false,
+                    error: {
+                        code: 'NOT_FOUND',
+                        message: '利用可能なスタッフが見つかりません',
+                    },
+                });
+                return;
+            }
+        }
+
+        const resolvedLine = resolveLineConfigForTenant(tenant, selectedStore, practitioner);
 
         // Initialize LINE service
-        const lineService = createLineService(tenant);
+        const lineService = createLineService({
+            ...tenant,
+            lineConfig: resolvedLine.lineConfig,
+        });
 
         // 1. Verify LINE ID Token
         const verifiedToken = await lineService.verifyIdToken(idToken);
@@ -149,12 +205,54 @@ router.get('/config',
         const tenant = getTenant(req);
         const tenantId = getTenantId(req);
         const storeRepo = createStoreRepository(tenantId);
-        const stores = await storeRepo.findAll();
-        const store = stores[0];
+        const query = practitionerQuerySchema.safeParse(req.query);
+        const practitionerId = query.success ? query.data.practitionerId : undefined;
+        const queryStoreId = query.success ? query.data.storeId : undefined;
+        const selectedStoreId = queryStoreId ?? getStoreId(req);
+
+        let store = null;
+        if (selectedStoreId) {
+            store = await storeRepo.findById(selectedStoreId);
+            if (!store || store.status !== 'active') {
+                res.status(404).json({
+                    success: false,
+                    error: {
+                        code: 'NOT_FOUND',
+                        message: '利用可能な店舗が見つかりません',
+                    },
+                });
+                return;
+            }
+        }
+        if (!store) {
+            const stores = await storeRepo.findAll();
+            store = stores[0] ?? null;
+        }
+
+        let practitioner = null;
+        if (practitionerId) {
+            const practitionerRepo = createPractitionerRepository(tenantId);
+            practitioner = await practitionerRepo.findById(practitionerId);
+            if (!practitioner || !practitioner.isActive || !practitionerMatchesStore(practitioner.storeIds, selectedStoreId)) {
+                res.status(404).json({
+                    success: false,
+                    error: {
+                        code: 'NOT_FOUND',
+                        message: '利用可能なスタッフが見つかりません',
+                    },
+                });
+                return;
+            }
+        }
+        const resolvedLine = resolveLineConfigForTenant(tenant, store, practitioner);
 
         // Return LIFF configuration (public data only)
         const response: ApiResponse<{
             liffId: string;
+            lineMode: 'tenant' | 'store' | 'practitioner';
+            lineConfigSource: 'tenant' | 'store' | 'practitioner';
+            storeId?: string;
+            practitionerId?: string;
             tenantName: string;
             branding: {
                 primaryColor: string;
@@ -180,7 +278,11 @@ router.get('/config',
         }> = {
             success: true,
             data: {
-                liffId: tenant.lineConfig?.liffId || '',
+                liffId: resolvedLine.lineConfig.liffId || '',
+                lineMode: resolvedLine.mode,
+                lineConfigSource: resolvedLine.source,
+                storeId: resolvedLine.storeId ?? store?.id,
+                practitionerId: resolvedLine.practitionerId,
                 tenantName: tenant.name,
                 branding: {
                     primaryColor: tenant.branding?.primaryColor || '#3b82f6',
@@ -249,9 +351,44 @@ router.post('/session',
     asyncHandler(async (req: Request, res: Response): Promise<void> => {
         const tenant = getTenant(req);
         const tenantId = getTenantId(req);
-        const { idToken, profile, notificationToken } = req.body;
+        const { idToken, profile, notificationToken, practitionerId, storeId } = req.body;
 
-        const lineService = createLineService(tenant);
+        const storeRepo = createStoreRepository(tenantId);
+        const selectedStoreId = storeId ?? getStoreId(req);
+        const selectedStore = selectedStoreId ? await storeRepo.findById(selectedStoreId) : null;
+        if (selectedStoreId && (!selectedStore || selectedStore.status !== 'active')) {
+            res.status(404).json({
+                success: false,
+                error: {
+                    code: 'NOT_FOUND',
+                    message: '利用可能な店舗が見つかりません',
+                },
+            });
+            return;
+        }
+
+        let practitioner = null;
+        if (practitionerId) {
+            const practitionerRepo = createPractitionerRepository(tenantId);
+            practitioner = await practitionerRepo.findById(practitionerId);
+            if (!practitioner || !practitioner.isActive || !practitionerMatchesStore(practitioner.storeIds, selectedStoreId)) {
+                res.status(404).json({
+                    success: false,
+                    error: {
+                        code: 'NOT_FOUND',
+                        message: '利用可能なスタッフが見つかりません',
+                    },
+                });
+                return;
+            }
+        }
+
+        const resolvedLine = resolveLineConfigForTenant(tenant, selectedStore, practitioner);
+
+        const lineService = createLineService({
+            ...tenant,
+            lineConfig: resolvedLine.lineConfig,
+        });
         const verifiedToken = await lineService.verifyIdToken(idToken);
         const lineUserId = verifiedToken.sub;
 

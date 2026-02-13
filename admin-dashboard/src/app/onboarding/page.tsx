@@ -1,11 +1,10 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
-    getTenantKey,
     googleCalendarApi,
     onboardingApi,
     settingsApi,
@@ -61,9 +60,31 @@ export default function OnboardingPage() {
     const [loading, setLoading] = useState(true);
     const [submitting, setSubmitting] = useState(false);
     const [error, setError] = useState("");
+    const [notice, setNotice] = useState("");
     const [googleStatusText, setGoogleStatusText] = useState("未連携");
+    const [googleConnected, setGoogleConnected] = useState(false);
 
-    const tenantKey = useMemo(() => getTenantKey(), []);
+    const refreshGoogleStatus = useCallback(async () => {
+        const googleStatus = await googleCalendarApi.getStatus();
+        if (!googleStatus.success) {
+            return false;
+        }
+        const connected = Boolean((googleStatus.data as { connected?: boolean } | undefined)?.connected);
+        setGoogleConnected(connected);
+        setGoogleStatusText(connected ? "連携済み" : "未連携");
+        return connected;
+    }, []);
+
+    const handleGoogleCallbackResult = useCallback(async (connected: boolean) => {
+        const latestConnected = await refreshGoogleStatus();
+        if (connected || latestConnected) {
+            setNotice("Google連携が完了しました。");
+            setError("");
+            return;
+        }
+        setNotice("");
+        setError("Google連携に失敗しました。もう一度お試しください。");
+    }, [refreshGoogleStatus]);
 
     useEffect(() => {
         let mounted = true;
@@ -109,10 +130,8 @@ export default function OnboardingPage() {
                     }));
                 }
 
-                const googleStatus = await googleCalendarApi.getStatus();
-                if (mounted && googleStatus.success) {
-                    const connected = Boolean((googleStatus.data as { connected?: boolean } | undefined)?.connected);
-                    setGoogleStatusText(connected ? "連携済み" : "未連携");
+                if (mounted) {
+                    await refreshGoogleStatus();
                 }
             } catch (err: any) {
                 if (mounted) {
@@ -129,7 +148,66 @@ export default function OnboardingPage() {
         return () => {
             mounted = false;
         };
-    }, [router]);
+    }, [refreshGoogleStatus, router]);
+
+    useEffect(() => {
+        if (typeof window === "undefined") {
+            return;
+        }
+
+        const params = new URLSearchParams(window.location.search);
+        const queryStatus = params.get("googleCalendar");
+        if (queryStatus === "connected" || queryStatus === "failed") {
+            const connected = queryStatus === "connected";
+            handleGoogleCallbackResult(queryStatus === "connected").catch(() => {
+                // noop
+            });
+
+            if (window.opener && !window.opener.closed) {
+                try {
+                    window.opener.postMessage({
+                        type: "reserve:google-oauth-result",
+                        connected,
+                    }, "*");
+                    window.setTimeout(() => window.close(), 200);
+                } catch {
+                    // noop
+                }
+            }
+
+            params.delete("googleCalendar");
+            params.delete("tenantId");
+            const next = params.toString();
+            const nextUrl = `${window.location.pathname}${next ? `?${next}` : ""}${window.location.hash}`;
+            window.history.replaceState({}, "", nextUrl);
+        }
+
+        const handleFocus = () => {
+            refreshGoogleStatus().catch(() => {
+                // noop: keep previous status if refresh fails.
+            });
+        };
+
+        const handleMessage = (event: MessageEvent) => {
+            const payload = event.data as {
+                type?: string;
+                connected?: boolean;
+            };
+            if (payload?.type !== "reserve:google-oauth-result") {
+                return;
+            }
+            handleGoogleCallbackResult(Boolean(payload.connected)).catch(() => {
+                // noop
+            });
+        };
+
+        window.addEventListener("focus", handleFocus);
+        window.addEventListener("message", handleMessage);
+        return () => {
+            window.removeEventListener("focus", handleFocus);
+            window.removeEventListener("message", handleMessage);
+        };
+    }, [handleGoogleCallbackResult, refreshGoogleStatus]);
 
     const saveProgress = async (
         nextStep: WizardStep,
@@ -181,6 +259,11 @@ export default function OnboardingPage() {
 
     const handleNext = async () => {
         if (step === 6) return;
+        if (step === 5 && !googleConnected) {
+            setError("Google Calendar 連携が完了してから次へ進んでください。");
+            return;
+        }
+
         setSubmitting(true);
         setError("");
         try {
@@ -209,7 +292,14 @@ export default function OnboardingPage() {
             if (!response.success || !response.data?.authUrl) {
                 throw new Error(response.error?.message || "Google OAuth開始に失敗しました");
             }
-            window.open(response.data.authUrl, "_blank", "noopener,noreferrer");
+            const popup = window.open(
+                response.data.authUrl,
+                "reserve-google-oauth",
+                "popup,width=620,height=780"
+            );
+            if (!popup) {
+                window.location.href = response.data.authUrl;
+            }
         } catch (err: any) {
             setError(err?.message || "Google OAuth開始に失敗しました");
         } finally {
@@ -218,6 +308,11 @@ export default function OnboardingPage() {
     };
 
     const completeOnboarding = async () => {
+        if (!googleConnected) {
+            setError("Google Calendar 連携が完了していないため、オンボーディングを完了できません。");
+            return;
+        }
+
         setSubmitting(true);
         setError("");
         try {
@@ -248,9 +343,6 @@ export default function OnboardingPage() {
         <div className="max-w-4xl mx-auto p-4 md:p-8 space-y-6">
             <div className="bg-white rounded-2xl border border-gray-200 p-4 md:p-6">
                 <h1 className="text-2xl font-bold text-gray-900">初期設定ウィザード</h1>
-                <p className="text-sm text-gray-500 mt-1">
-                    tenant: <span className="font-mono">{tenantKey}</span>
-                </p>
             </div>
 
             <div className="grid grid-cols-2 md:grid-cols-6 gap-2">
@@ -329,6 +421,11 @@ export default function OnboardingPage() {
                         <div className="rounded-lg border border-gray-200 p-3 text-sm text-gray-600">
                             LINE連携は後から設定可能です。今回はスキップできます。
                         </div>
+                        {!googleConnected && (
+                            <div className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-700">
+                                Google連携が必須です。連携完了後に「次へ」が有効になります。
+                            </div>
+                        )}
                     </>
                 )}
 
@@ -337,9 +434,10 @@ export default function OnboardingPage() {
                         <h2 className="text-lg font-semibold">完了確認</h2>
                         <p className="text-sm text-gray-600">初期設定を完了すると管理画面トップへ遷移します。</p>
                         <div className="rounded-lg border border-gray-200 p-3 text-sm">
-                            <p>テナント: {state.tenantName || tenantKey}</p>
+                            <p>テナント: {state.tenantName}</p>
                             <p>店舗: {state.storeName}</p>
                             <p>予約ポリシー: {state.advanceBookingDays}日先 / {state.cancelDeadlineHours}時間前締切</p>
+                            <p>Google連携: {googleConnected ? "連携済み" : "未連携"}</p>
                         </div>
                         <Button onClick={completeOnboarding} disabled={submitting}>
                             {submitting ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />完了中...</> : "オンボーディングを完了"}
@@ -352,6 +450,11 @@ export default function OnboardingPage() {
                         {error}
                     </div>
                 )}
+                {notice && (
+                    <div className="rounded-lg border border-green-300 bg-green-50 px-3 py-2 text-sm text-green-700">
+                        {notice}
+                    </div>
+                )}
             </div>
 
             <div className="flex items-center justify-between">
@@ -359,7 +462,7 @@ export default function OnboardingPage() {
                     戻る
                 </Button>
                 {step < 6 && (
-                    <Button type="button" onClick={handleNext} disabled={submitting}>
+                    <Button type="button" onClick={handleNext} disabled={submitting || (step === 5 && !googleConnected)}>
                         {submitting ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />保存中...</> : "次へ"}
                     </Button>
                 )}

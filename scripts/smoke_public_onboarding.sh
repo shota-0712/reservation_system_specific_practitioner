@@ -175,6 +175,7 @@ if [ "$(echo "${status_completed}" | jq -r '.data.completed')" != "true" ]; then
 fi
 
 reservation_id=""
+booking_link_token=""
 if [ "${RUN_RESERVATION_TEST}" = "true" ]; then
   echo "== 6) admin reservation flow smoke =="
   menu_payload='{"name":"スモークカット","category":"カット","duration":60,"price":5500,"description":"smoke test menu"}'
@@ -198,6 +199,27 @@ if [ "${RUN_RESERVATION_TEST}" = "true" ]; then
   practitioner_response="$(api_request POST "${API_URL}/api/v1/${tenant_key}/admin/practitioners" "${practitioner_payload}" "${id_token}")"
   expect_success "${practitioner_response}" "admin/practitioners(create)"
   practitioner_id="$(echo "${practitioner_response}" | jq -r '.data.id')"
+
+  echo "== 7) booking link token create/resolve =="
+  booking_link_payload="$(jq -cn --arg practitionerId "${practitioner_id}" '{practitionerId:$practitionerId,reissue:true}')"
+  booking_link_response="$(api_request POST "${API_URL}/api/v1/${tenant_key}/admin/booking-links" "${booking_link_payload}" "${id_token}")"
+  expect_success "${booking_link_response}" "admin/booking-links(create)"
+  booking_link_token="$(echo "${booking_link_response}" | jq -r '.data.token')"
+  if [ -z "${booking_link_token}" ] || [ "${booking_link_token}" = "null" ]; then
+    echo "ERROR: booking link token was not returned"
+    echo "${booking_link_response}"
+    exit 1
+  fi
+
+  booking_link_resolve="$(api_request GET "${API_URL}/api/platform/v1/booking-links/resolve?token=${booking_link_token}")"
+  expect_success "${booking_link_resolve}" "platform/booking-links/resolve"
+  resolved_tenant_key="$(echo "${booking_link_resolve}" | jq -r '.data.tenantKey')"
+  resolved_practitioner_id="$(echo "${booking_link_resolve}" | jq -r '.data.practitionerId')"
+  if [ "${resolved_tenant_key}" != "${tenant_key}" ] || [ "${resolved_practitioner_id}" != "${practitioner_id}" ]; then
+    echo "ERROR: booking link resolve mismatch"
+    echo "${booking_link_resolve}"
+    exit 1
+  fi
 
   reservation_date="$(python3 - <<'PY'
 import datetime
@@ -228,14 +250,10 @@ PY
   reservation_response="$(api_request POST "${API_URL}/api/v1/${tenant_key}/admin/reservations" "${reservation_payload}" "${id_token}")"
   expect_success "${reservation_response}" "admin/reservations(create)"
   reservation_id="$(echo "${reservation_response}" | jq -r '.data.id')"
-fi
 
-echo "== 7) slug availability after registration =="
-slug_post="$(api_request GET "${API_URL}/api/platform/v1/onboarding/slug-availability?slug=${tenant_key}")"
-expect_success "${slug_post}" "slug-availability(after)"
-if [ "$(echo "${slug_post}" | jq -r '.data.available')" != "false" ]; then
-  echo "ERROR: slug '${tenant_key}' should be unavailable after registration"
-  exit 1
+  # customer-app flow compatibility: token resolve result can drive auth/config
+  auth_config_by_token="$(api_request GET "${API_URL}/api/v1/${tenant_key}/auth/config?practitionerId=${practitioner_id}")"
+  expect_success "${auth_config_by_token}" "auth/config(by-token-context)"
 fi
 
 echo
@@ -246,7 +264,13 @@ echo "ownerEmail: ${OWNER_EMAIL}"
 if [ -n "${reservation_id}" ]; then
   echo "reservationId: ${reservation_id}"
 fi
+if [ -n "${booking_link_token}" ]; then
+  echo "bookingLinkToken: ${booking_link_token}"
+fi
 echo "customerUrl: ${CUSTOMER_URL:-<set CUSTOMER_URL to print tenant URL>}"
 if [ -n "${CUSTOMER_URL:-}" ]; then
   echo "customerTenantUrl: ${CUSTOMER_URL}/?tenant=${tenant_key}"
+  if [ -n "${booking_link_token}" ]; then
+    echo "customerTokenUrl: ${CUSTOMER_URL}/?t=${booking_link_token}"
+  fi
 fi

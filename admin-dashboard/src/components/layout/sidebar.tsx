@@ -13,14 +13,13 @@ import {
     Scissors,
     ClipboardList,
     ChevronDown,
-    Check,
     Building2,
     Package,
     FileText,
     Link2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { getActiveStoreId, setActiveStoreId, storesApi } from "@/lib/api";
+import { getActiveStoreId, setActiveStoreId, STORE_CHANGED_EVENT, storesApi } from "@/lib/api";
 
 const navigation = [
     { name: "ダッシュボード", href: "/", icon: LayoutDashboard },
@@ -63,12 +62,15 @@ export function Sidebar({ className, onNavigate }: SidebarProps) {
             .then((response) => {
                 if (!mounted || !response.success) return;
                 const storeList = (response.data as StoreItem[] | undefined) ?? [];
-                setStores(storeList);
-                if (storeList.length > 0) {
+                const activeStoreList = storeList.filter((store) => store.status !== "inactive");
+                const visibleStores = activeStoreList.length > 0 ? activeStoreList : storeList;
+
+                setStores(visibleStores);
+                if (visibleStores.length > 0) {
                     const storedStoreId = getActiveStoreId();
-                    const initialStoreId = storeList.some((store) => store.id === storedStoreId)
+                    const initialStoreId = visibleStores.some((store) => store.id === storedStoreId)
                         ? storedStoreId
-                        : storeList[0].id;
+                        : visibleStores[0].id;
 
                     if (initialStoreId) {
                         setCurrentStoreId((prev) => prev ?? initialStoreId);
@@ -91,7 +93,20 @@ export function Sidebar({ className, onNavigate }: SidebarProps) {
         };
     }, []);
 
+    useEffect(() => {
+        const handleStoreChanged = (event: Event) => {
+            const customEvent = event as CustomEvent<{ storeId?: string | null }>;
+            const nextStoreId = customEvent.detail?.storeId ?? null;
+            setCurrentStoreId(nextStoreId);
+        };
+        window.addEventListener(STORE_CHANGED_EVENT, handleStoreChanged);
+        return () => {
+            window.removeEventListener(STORE_CHANGED_EVENT, handleStoreChanged);
+        };
+    }, []);
+
     const currentStore = stores.find((store) => store.id === currentStoreId) ?? stores[0] ?? null;
+    const switchableStores = stores.filter((store) => store.id !== currentStoreId);
 
     const handleStoreChange = (store: StoreItem) => {
         if (currentStoreId === store.id) {
@@ -101,7 +116,8 @@ export function Sidebar({ className, onNavigate }: SidebarProps) {
         setCurrentStoreId(store.id);
         setActiveStoreId(store.id);
         setShowStoreSelector(false);
-        window.location.reload();
+        router.refresh();
+        onNavigate?.();
     };
 
     return (
@@ -171,13 +187,15 @@ export function Sidebar({ className, onNavigate }: SidebarProps) {
                                 {stores.length === 0 && (
                                     <div className="px-3 py-2 text-xs text-gray-400">店舗データを取得できませんでした</div>
                                 )}
-                                {stores.map((store) => (
+                                {stores.length > 0 && switchableStores.length === 0 && (
+                                    <div className="px-3 py-2 text-xs text-gray-400">切り替え可能な店舗はありません</div>
+                                )}
+                                {switchableStores.map((store) => (
                                     <button
                                         key={store.id}
                                         onClick={() => handleStoreChange(store)}
                                         className={cn(
-                                            "w-full flex items-center gap-3 px-3 py-2 text-sm hover:bg-gray-700 transition-colors",
-                                            currentStoreId === store.id && "bg-gray-700"
+                                            "w-full flex items-center gap-3 px-3 py-2 text-sm hover:bg-gray-700 transition-colors"
                                         )}
                                     >
                                         <div className="flex-shrink-0 w-6 h-6 rounded bg-primary/20 flex items-center justify-center">
@@ -189,9 +207,6 @@ export function Sidebar({ className, onNavigate }: SidebarProps) {
                                                 {store.storeCode ? `code: ${store.storeCode}` : ""}
                                             </div>
                                         </div>
-                                        {currentStoreId === store.id && (
-                                            <Check className="h-4 w-4 text-primary" />
-                                        )}
                                     </button>
                                 ))}
                             </div>

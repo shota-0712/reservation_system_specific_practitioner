@@ -5,6 +5,7 @@ import { requireFirebaseAuth, requirePermission } from '../../middleware/auth.js
 import { getTenantId } from '../../middleware/tenant.js';
 import { createStoreRepository } from '../../repositories/index.js';
 import { getRequestMeta, writeAuditLog } from '../../services/audit-log.service.js';
+import { sanitizeStoreForResponse, sanitizeStoresForResponse } from '../../services/store-response.service.js';
 import type { ApiResponse, Store } from '../../types/index.js';
 
 const router = Router();
@@ -31,6 +32,12 @@ const createStoreSchema = z.object({
     cancelDeadlineHours: z.number().int().min(0).max(168).optional(),
     requirePhone: z.boolean().optional(),
     requireEmail: z.boolean().optional(),
+    lineConfig: z.object({
+        liffId: z.string().max(80).optional(),
+        channelId: z.string().max(80).optional(),
+        channelAccessToken: z.string().max(4000).optional(),
+        channelSecret: z.string().max(4000).optional(),
+    }).optional(),
     status: z.enum(['active', 'inactive']).optional(),
     displayOrder: z.number().int().min(0).optional(),
 });
@@ -44,11 +51,12 @@ router.get(
     asyncHandler(async (req: Request, res: Response): Promise<void> => {
         const tenantId = getTenantId(req);
         const storeRepo = createStoreRepository(tenantId);
-        const stores = await storeRepo.findAll();
+        const stores = await storeRepo.findAll({ includeInactive: true });
+        const safeStores = sanitizeStoresForResponse(stores);
 
         const response: ApiResponse<Store[]> = {
             success: true,
-            data: stores,
+            data: safeStores,
         };
 
         res.json(response);
@@ -64,10 +72,11 @@ router.get(
         const tenantId = getTenantId(req);
         const storeRepo = createStoreRepository(tenantId);
         const store = await storeRepo.findById(req.params.id as string);
+        const safeStore = store ? sanitizeStoreForResponse(store) : null;
 
         const response: ApiResponse<Store | null> = {
             success: true,
-            data: store,
+            data: safeStore,
         };
 
         res.json(response);
@@ -83,6 +92,7 @@ router.post(
         const tenantId = getTenantId(req);
         const storeRepo = createStoreRepository(tenantId);
         const store = await storeRepo.create(req.body);
+        const safeStore = sanitizeStoreForResponse(store);
 
         const meta = getRequestMeta(req);
         await writeAuditLog({
@@ -93,13 +103,13 @@ router.post(
             actorType: 'admin',
             actorId: (req as any).user?.uid,
             actorName: (req as any).user?.name,
-            newValues: store as unknown as Record<string, unknown>,
+            newValues: safeStore as unknown as Record<string, unknown>,
             ...meta,
         });
 
         const response: ApiResponse<Store> = {
             success: true,
-            data: store,
+            data: safeStore,
         };
 
         res.status(201).json(response);
@@ -119,6 +129,8 @@ router.put(
 
         const before = await storeRepo.findById(id);
         const store = await storeRepo.update(id, req.body);
+        const safeBefore = before ? sanitizeStoreForResponse(before) : null;
+        const safeStore = sanitizeStoreForResponse(store);
 
         const meta = getRequestMeta(req);
         await writeAuditLog({
@@ -129,14 +141,14 @@ router.put(
             actorType: 'admin',
             actorId: (req as any).user?.uid,
             actorName: (req as any).user?.name,
-            oldValues: (before as unknown as Record<string, unknown>) || undefined,
-            newValues: store as unknown as Record<string, unknown>,
+            oldValues: (safeBefore as unknown as Record<string, unknown>) || undefined,
+            newValues: safeStore as unknown as Record<string, unknown>,
             ...meta,
         });
 
         const response: ApiResponse<Store> = {
             success: true,
-            data: store,
+            data: safeStore,
         };
 
         res.json(response);
@@ -154,6 +166,7 @@ router.delete(
         const id = req.params.id as string;
 
         const before = await storeRepo.findById(id);
+        const safeBefore = before ? sanitizeStoreForResponse(before) : null;
         await storeRepo.softDelete(id);
 
         const meta = getRequestMeta(req);
@@ -165,7 +178,7 @@ router.delete(
             actorType: 'admin',
             actorId: (req as any).user?.uid,
             actorName: (req as any).user?.name,
-            oldValues: (before as unknown as Record<string, unknown>) || undefined,
+            oldValues: (safeBefore as unknown as Record<string, unknown>) || undefined,
             ...meta,
         });
 

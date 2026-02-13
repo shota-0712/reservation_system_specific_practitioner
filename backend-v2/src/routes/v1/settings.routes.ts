@@ -5,10 +5,13 @@
 
 import { Router, Request, Response } from 'express';
 import { requireFirebaseAuth, requireRole } from '../../middleware/auth.js';
-import { getTenant, getTenantId } from '../../middleware/tenant.js';
+import { getStoreId, getTenant, getTenantId } from '../../middleware/tenant.js';
 import { asyncHandler } from '../../middleware/error-handler.js';
-import { validateBody } from '../../middleware/validation.js';
+import { validateBody, validateQuery } from '../../middleware/validation.js';
 import { TenantRepository, createStoreRepository } from '../../repositories/tenant.repository.js';
+import { createPractitionerRepository } from '../../repositories/index.js';
+import { resolveLineConfigForTenant } from '../../services/line-config.service.js';
+import { sanitizeStoreForResponse } from '../../services/store-response.service.js';
 import { z } from 'zod';
 
 const router = Router();
@@ -34,16 +37,42 @@ const updateBusinessSchema = z.object({
 });
 
 const updateLineConfigSchema = z.object({
+    mode: z.enum(['tenant', 'store', 'practitioner']).optional(),
     channelId: z.string().optional(),
     liffId: z.string().optional(),
     channelAccessToken: z.string().optional(),
     channelSecret: z.string().optional(),
+});
+const lineResolvePreviewQuerySchema = z.object({
+    storeId: z.string().uuid().optional(),
+    practitionerId: z.string().uuid().optional(),
 });
 
 const updateBrandingSchema = z.object({
     primaryColor: z.string().regex(/^#[0-9A-Fa-f]{6}$/).optional(),
     logoUrl: z.string().url().optional().nullable(),
 });
+
+async function resolveScopedStore(req: Request, tenantId: string) {
+    const storeRepo = createStoreRepository(tenantId);
+    const requestedStoreId = getStoreId(req);
+
+    if (requestedStoreId) {
+        const requestedStore = await storeRepo.findById(requestedStoreId);
+        if (requestedStore?.status === 'active') {
+            return {
+                storeRepo,
+                store: requestedStore,
+            };
+        }
+    }
+
+    const stores = await storeRepo.findAll();
+    return {
+        storeRepo,
+        store: stores[0] ?? null,
+    };
+}
 
 /**
  * 現在の設定を取得
@@ -57,11 +86,7 @@ router.get(
     asyncHandler(async (req: Request, res: Response): Promise<void> => {
         const tenant = getTenant(req);
         const tenantId = getTenantId(req);
-        const storeRepo = createStoreRepository(tenantId);
-
-        // 最初のストアを取得（マルチストア対応前）
-        const stores = await storeRepo.findAll();
-        const store = stores[0];
+        const { store } = await resolveScopedStore(req, tenantId);
 
         // Sensitive情報をマスク
         const safeTenant = {
@@ -72,6 +97,7 @@ router.get(
             status: tenant.status,
             branding: tenant.branding,
             lineConfig: tenant.lineConfig ? {
+                mode: tenant.lineConfig.mode || 'tenant',
                 channelId: tenant.lineConfig.channelId,
                 liffId: tenant.lineConfig.liffId,
             } : undefined,
@@ -81,7 +107,7 @@ router.get(
             success: true,
             data: {
                 tenant: safeTenant,
-                store: store || null,
+                store: store ? sanitizeStoreForResponse(store) : null,
             },
         });
     })
@@ -99,10 +125,7 @@ router.put(
     validateBody(updateProfileSchema),
     asyncHandler(async (req: Request, res: Response): Promise<void> => {
         const tenantId = getTenantId(req);
-        const storeRepo = createStoreRepository(tenantId);
-
-        const stores = await storeRepo.findAll();
-        const store = stores[0];
+        const { storeRepo, store } = await resolveScopedStore(req, tenantId);
 
         if (!store) {
             res.status(404).json({
@@ -112,11 +135,73 @@ router.put(
             return;
         }
 
-        const updated = await storeRepo.update(store.id, req.body);
+        const updated = sanitizeStoreForResponse(await storeRepo.update(store.id, req.body));
 
         res.json({
             success: true,
             data: updated,
+        });
+    })
+);
+
+/**
+ * LINE設定の解決プレビューを返す
+ * @route GET /v1/:storeCode/admin/settings/line/resolve-preview
+ * @access Manager+
+ */
+router.get(
+    '/line/resolve-preview',
+    requireFirebaseAuth(),
+    requireRole('manager', 'owner'),
+    validateQuery(lineResolvePreviewQuerySchema),
+    asyncHandler(async (req: Request, res: Response): Promise<void> => {
+        const tenant = getTenant(req);
+        const tenantId = getTenantId(req);
+        const query = req.query as z.infer<typeof lineResolvePreviewQuerySchema>;
+
+        const storeRepo = createStoreRepository(tenantId);
+        const practitionerRepo = createPractitionerRepository(tenantId);
+
+        const candidateStoreId = query.storeId || getStoreId(req) || undefined;
+        const store = candidateStoreId ? await storeRepo.findById(candidateStoreId) : null;
+        if (candidateStoreId && (!store || store.status !== 'active')) {
+            res.status(404).json({
+                success: false,
+                error: { code: 'NOT_FOUND', message: '店舗が見つかりません' },
+            });
+            return;
+        }
+
+        const practitioner = query.practitionerId
+            ? await practitionerRepo.findById(query.practitionerId)
+            : null;
+        if (query.practitionerId && (!practitioner || !practitioner.isActive)) {
+            res.status(404).json({
+                success: false,
+                error: { code: 'NOT_FOUND', message: '施術者が見つかりません' },
+            });
+            return;
+        }
+
+        if (store && practitioner && (practitioner.storeIds ?? []).length > 0 && !(practitioner.storeIds ?? []).includes(store.id)) {
+            res.status(409).json({
+                success: false,
+                error: { code: 'CONFLICT', message: '選択した店舗に所属していない施術者です' },
+            });
+            return;
+        }
+
+        const resolved = resolveLineConfigForTenant(tenant, store, practitioner);
+        res.json({
+            success: true,
+            data: {
+                mode: resolved.mode,
+                source: resolved.source,
+                liffId: resolved.lineConfig.liffId || '',
+                channelId: resolved.lineConfig.channelId || '',
+                storeId: resolved.storeId ?? store?.id,
+                practitionerId: resolved.practitionerId ?? practitioner?.id,
+            },
         });
     })
 );
@@ -133,10 +218,7 @@ router.put(
     validateBody(updateBusinessSchema),
     asyncHandler(async (req: Request, res: Response): Promise<void> => {
         const tenantId = getTenantId(req);
-        const storeRepo = createStoreRepository(tenantId);
-
-        const stores = await storeRepo.findAll();
-        const store = stores[0];
+        const { storeRepo, store } = await resolveScopedStore(req, tenantId);
 
         if (!store) {
             res.status(404).json({
@@ -173,9 +255,41 @@ router.put(
     validateBody(updateLineConfigSchema),
     asyncHandler(async (req: Request, res: Response): Promise<void> => {
         const tenant = getTenant(req);
+        const tenantId = getTenantId(req);
         const tenantRepo = new TenantRepository();
+        const payload = req.body as z.infer<typeof updateLineConfigSchema>;
+        const mode = payload.mode ?? tenant.lineConfig?.mode ?? 'tenant';
 
-        await tenantRepo.updateLineConfig(tenant.id, req.body);
+        if (mode === 'store') {
+            const { storeRepo, store } = await resolveScopedStore(req, tenantId);
+            if (!store) {
+                res.status(404).json({
+                    success: false,
+                    error: { code: 'NOT_FOUND', message: '店舗が見つかりません' },
+                });
+                return;
+            }
+
+            await tenantRepo.updateLineConfig(tenant.id, {
+                mode: 'store',
+            });
+            await storeRepo.update(store.id, {
+                lineConfig: {
+                    liffId: payload.liffId,
+                    channelId: payload.channelId,
+                    channelAccessToken: payload.channelAccessToken,
+                    channelSecret: payload.channelSecret,
+                },
+            });
+        } else {
+            await tenantRepo.updateLineConfig(tenant.id, {
+                mode,
+                channelId: payload.channelId,
+                liffId: payload.liffId,
+                channelAccessToken: payload.channelAccessToken,
+                channelSecret: payload.channelSecret,
+            });
+        }
 
         res.json({
             success: true,

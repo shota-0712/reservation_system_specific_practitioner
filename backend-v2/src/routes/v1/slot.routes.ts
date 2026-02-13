@@ -6,7 +6,7 @@
 import { Router, Request, Response } from 'express';
 import { z } from 'zod';
 import { asyncHandler, validateQuery, dateSchema } from '../../middleware/index.js';
-import { getTenantId } from '../../middleware/tenant.js';
+import { getStoreId, getTenantId } from '../../middleware/tenant.js';
 import { toZonedTime, fromZonedTime, format } from 'date-fns-tz';
 import {
     createReservationRepository,
@@ -170,6 +170,17 @@ function practitionerWorksOnDay(practitioner: Practitioner, dayOfWeek: number): 
     return practitioner.schedule.workDays.includes(dayOfWeek);
 }
 
+function practitionerMatchesStore(practitioner: Practitioner, storeId?: string): boolean {
+    if (!storeId) {
+        return true;
+    }
+    const assignedStoreIds = practitioner.storeIds ?? [];
+    if (assignedStoreIds.length === 0) {
+        return true;
+    }
+    return assignedStoreIds.includes(storeId);
+}
+
 /**
  * Check if time is within practitioner's work hours
  */
@@ -253,7 +264,7 @@ router.get('/',
     validateQuery(slotsQuerySchema),
     asyncHandler(async (req: Request, res: Response): Promise<void> => {
         const tenantId = getTenantId(req);
-        const storeId = (req as { storeId?: string }).storeId;
+        const storeId = getStoreId(req) ?? undefined;
         const { date, practitionerId, menuIds, duration } = req.query as unknown as {
             date: string;
             practitionerId?: string;
@@ -284,9 +295,9 @@ router.get('/',
         let practitioners: Practitioner[];
         if (practitionerId) {
             const p = await practitionerRepo.findById(practitionerId);
-            practitioners = p ? [p] : [];
+            practitioners = p && p.isActive && practitionerMatchesStore(p, storeId) ? [p] : [];
         } else {
-            practitioners = await practitionerRepo.findAllActive();
+            practitioners = await practitionerRepo.findAllActiveScoped(storeId);
         }
 
         // Filter practitioners who work on this day
@@ -392,13 +403,14 @@ router.get('/',
 async function calculateDaySlots(
     tenantId: string,
     date: string,
+    storeId: string | undefined,
     practitionerId: string | undefined,
     totalDuration: number
 ): Promise<DaySlots> {
     const practitionerRepo = createPractitionerRepository(tenantId);
     const reservationRepo = createReservationRepository(tenantId);
 
-    const store = await resolveStoreConfig(tenantId, undefined);
+    const store = await resolveStoreConfig(tenantId, storeId);
     const timezone = store?.timezone || DEFAULT_TIMEZONE;
     const dayOfWeek = getDayOfWeekInTimezone(date, timezone);
 
@@ -406,9 +418,9 @@ async function calculateDaySlots(
     let practitioners: Practitioner[];
     if (practitionerId) {
         const p = await practitionerRepo.findById(practitionerId);
-        practitioners = p ? [p] : [];
+        practitioners = p && practitionerMatchesStore(p, storeId) ? [p] : [];
     } else {
-        practitioners = await practitionerRepo.findAllActive();
+        practitioners = await practitionerRepo.findAllActiveScoped(storeId);
     }
 
     // Filter practitioners who work on this day
@@ -500,6 +512,7 @@ router.get('/week',
     validateQuery(weekSlotsQuerySchema),
     asyncHandler(async (req: Request, res: Response): Promise<void> => {
         const tenantId = getTenantId(req);
+        const storeId = getStoreId(req) ?? undefined;
         const { startDate, practitionerId, menuIds } = req.query as unknown as {
             startDate: string;
             practitionerId?: string;
@@ -532,7 +545,7 @@ router.get('/week',
 
         // Calculate slots for each day in parallel
         const days = await Promise.all(
-            dates.map(date => calculateDaySlots(tenantId, date, practitionerId, totalDuration))
+            dates.map(date => calculateDaySlots(tenantId, date, storeId, practitionerId, totalDuration))
         );
 
         const response: ApiResponse<WeekSlots> = {
