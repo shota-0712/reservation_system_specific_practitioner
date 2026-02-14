@@ -19,6 +19,8 @@ const createBookingLinkSchema = z.object({
 
 const listBookingLinkQuerySchema = z.object({
     status: z.enum(['active', 'revoked']).optional(),
+    practitionerId: z.string().uuid().optional(),
+    limit: z.coerce.number().int().min(1).max(100).optional(),
 });
 
 router.get(
@@ -29,14 +31,16 @@ router.get(
     asyncHandler(async (req: Request, res: Response): Promise<void> => {
         const tenantId = getTenantId(req);
         const service = createBookingLinkTokenService(tenantId);
-        const links = await service.list();
-
-        const status = req.query.status as 'active' | 'revoked' | undefined;
-        const filtered = status ? links.filter((link) => link.status === status) : links;
+        const query = req.query as z.infer<typeof listBookingLinkQuerySchema>;
+        const links = await service.list({
+            status: query.status,
+            practitionerId: query.practitionerId,
+            limit: query.limit,
+        });
 
         const response: ApiResponse = {
             success: true,
-            data: filtered,
+            data: links,
         };
         res.json(response);
     })

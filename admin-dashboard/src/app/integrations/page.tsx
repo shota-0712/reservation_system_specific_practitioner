@@ -4,6 +4,8 @@ import { useEffect, useState } from "react";
 import { AlertCircle, Calendar, CheckCircle2, Link2, Loader2, RefreshCw, Unplug } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { ConfirmDialog } from "@/components/ui/dialog";
+import { useToast } from "@/components/ui/toast";
 import { adminJobsApi, googleCalendarApi } from "@/lib/api";
 
 interface GoogleStatus {
@@ -25,6 +27,7 @@ interface GoogleStatus {
 }
 
 export default function IntegrationsPage() {
+    const { pushToast } = useToast();
     const [status, setStatus] = useState<GoogleStatus | null>(null);
     const [loading, setLoading] = useState(true);
     const [running, setRunning] = useState(false);
@@ -33,6 +36,7 @@ export default function IntegrationsPage() {
     const [analyticsDate, setAnalyticsDate] = useState("");
     const [error, setError] = useState<string | null>(null);
     const [notice, setNotice] = useState<string | null>(null);
+    const [isRevokeDialogOpen, setIsRevokeDialogOpen] = useState(false);
 
     const fetchStatus = async () => {
         setLoading(true);
@@ -141,14 +145,17 @@ export default function IntegrationsPage() {
         } catch (err: any) {
             console.error(err);
             setError(err.message || "OAuth開始に失敗しました");
+            pushToast({
+                variant: "error",
+                title: "OAuth開始に失敗しました",
+                description: err.message || "Google OAuth開始に失敗しました",
+            });
         } finally {
             setRunning(false);
         }
     };
 
     const revoke = async () => {
-        if (!confirm("Google Calendar連携を解除しますか？")) return;
-
         setRunning(true);
         setError(null);
         try {
@@ -157,9 +164,19 @@ export default function IntegrationsPage() {
                 throw new Error(res.error?.message || "連携解除に失敗しました");
             }
             await fetchStatus();
+            setIsRevokeDialogOpen(false);
+            pushToast({
+                variant: "success",
+                title: "Google連携を解除しました",
+            });
         } catch (err: any) {
             console.error(err);
             setError(err.message || "連携解除に失敗しました");
+            pushToast({
+                variant: "error",
+                title: "連携解除に失敗しました",
+                description: err.message || "Google連携解除に失敗しました",
+            });
         } finally {
             setRunning(false);
         }
@@ -309,7 +326,11 @@ export default function IntegrationsPage() {
                                     <Link2 className="mr-2 h-4 w-4" />
                                     OAuth開始
                                 </Button>
-                                <Button variant="outline" onClick={revoke} disabled={running || !status?.connected}>
+                                <Button
+                                    variant="outline"
+                                    onClick={() => setIsRevokeDialogOpen(true)}
+                                    disabled={running || !status?.connected}
+                                >
                                     連携解除
                                 </Button>
                             </div>
@@ -393,6 +414,18 @@ export default function IntegrationsPage() {
                     )}
                 </CardContent>
             </Card>
+
+            <ConfirmDialog
+                open={isRevokeDialogOpen}
+                onClose={() => setIsRevokeDialogOpen(false)}
+                onConfirm={revoke}
+                title="Google連携を解除"
+                description="Google Calendar連携を解除しますか？"
+                confirmText="解除する"
+                cancelText="キャンセル"
+                variant="danger"
+                loading={running}
+            />
         </div>
     );
 }

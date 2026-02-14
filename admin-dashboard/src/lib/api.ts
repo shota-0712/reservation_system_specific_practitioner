@@ -60,6 +60,52 @@ function readTenantKeyFromStorage(): string | null {
     return value;
 }
 
+function normalizeTenantUrl(path: string, tenantKey: string): string {
+    if (!tenantKey || !isTenantKeyValid(tenantKey)) {
+        return path;
+    }
+
+    const [pathAndQuery, hash = ""] = path.split("#", 2);
+    const [pathname, query = ""] = pathAndQuery.split("?", 2);
+    const params = new URLSearchParams(query);
+    params.set("tenant", tenantKey);
+    params.delete("tenantKey");
+    const nextQuery = params.toString();
+    return `${pathname}${nextQuery ? `?${nextQuery}` : ""}${hash ? `#${hash}` : ""}`;
+}
+
+export function withTenantQuery(path: string, tenantKey?: string): string {
+    const resolvedTenant = tenantKey && isTenantKeyValid(tenantKey)
+        ? tenantKey
+        : (
+            readTenantKeyFromUrl()
+            || readTenantKeyFromPath()
+            || readTenantKeyFromStorage()
+            || null
+        );
+    if (!resolvedTenant) {
+        return path;
+    }
+    return normalizeTenantUrl(path, resolvedTenant);
+}
+
+export function syncTenantQueryInCurrentUrl(tenantKey: string): void {
+    if (typeof window === "undefined") {
+        return;
+    }
+    if (!isTenantKeyValid(tenantKey)) {
+        return;
+    }
+    const nextUrl = normalizeTenantUrl(
+        `${window.location.pathname}${window.location.search}${window.location.hash}`,
+        tenantKey
+    );
+    const currentUrl = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+    if (nextUrl !== currentUrl) {
+        window.history.replaceState({}, "", nextUrl);
+    }
+}
+
 export function setTenantKey(tenantKey: string): void {
     if (typeof window === 'undefined') {
         return;
@@ -257,12 +303,21 @@ export async function platformApiClient<T = unknown>(
     };
 }
 
-type AdminContextRole = 'owner' | 'admin' | 'manager' | 'staff';
-type AdminContextData = {
+export type AdminContextRole = 'owner' | 'admin' | 'manager' | 'staff';
+export type AdminContextTenant = {
+    tenantKey: string;
+    tenantId: string;
+    tenantName: string;
+    adminRole: AdminContextRole;
+    storeIds: string[];
+};
+
+export type AdminContextData = {
     tenantKey: string;
     tenantId: string;
     adminRole: AdminContextRole;
     storeIds: string[];
+    availableTenants: AdminContextTenant[];
 };
 
 let adminContextSyncPromise: Promise<AdminContextData | null> | null = null;
@@ -495,7 +550,11 @@ export const settingsApi = {
 // ============================================
 
 export const bookingLinksApi = {
-    list: (params?: { status?: 'active' | 'revoked' }) =>
+    list: (params?: {
+        status?: 'active' | 'revoked';
+        practitionerId?: string;
+        limit?: number;
+    }) =>
         apiClient('/admin/booking-links' + buildQuery(params || {})),
     create: (data: {
         practitionerId: string;
@@ -653,6 +712,7 @@ export const adminContextApi = {
                 const context = response.data;
                 if (isTenantKeyValid(context.tenantKey)) {
                     setTenantKey(context.tenantKey);
+                    syncTenantQueryInCurrentUrl(context.tenantKey);
                 }
 
                 const validStoreIds = (context.storeIds || []).filter((id) => isStoreIdValid(id));
@@ -660,6 +720,16 @@ export const adminContextApi = {
 
                 if (!currentStoreId || (validStoreIds.length > 0 && !validStoreIds.includes(currentStoreId))) {
                     setActiveStoreId(validStoreIds[0] || null);
+                }
+
+                if (!Array.isArray(context.availableTenants)) {
+                    context.availableTenants = [{
+                        tenantKey: context.tenantKey,
+                        tenantId: context.tenantId,
+                        tenantName: context.tenantKey,
+                        adminRole: context.adminRole,
+                        storeIds: validStoreIds,
+                    }];
                 }
 
                 return context;

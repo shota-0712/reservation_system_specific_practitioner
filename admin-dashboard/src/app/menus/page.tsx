@@ -5,6 +5,7 @@ import { Plus, Edit2, Trash2, Clock, CircleDollarSign, RefreshCw, AlertCircle, L
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogBody, DialogFooter, ConfirmDialog } from "@/components/ui/dialog";
+import { useToast } from "@/components/ui/toast";
 import { cn } from "@/lib/utils";
 import { menusApi } from "@/lib/api";
 
@@ -20,6 +21,7 @@ interface Menu {
 }
 
 export default function MenusPage() {
+    const { pushToast } = useToast();
     const [menus, setMenus] = useState<Menu[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -31,6 +33,7 @@ export default function MenusPage() {
     const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
     const [selectedMenu, setSelectedMenu] = useState<Menu | null>(null);
     const [isSaving, setIsSaving] = useState(false);
+    const [formError, setFormError] = useState<string | null>(null);
 
     // Form state
     const [formData, setFormData] = useState({
@@ -68,6 +71,7 @@ export default function MenusPage() {
     // Open create modal
     const handleCreate = () => {
         setSelectedMenu(null);
+        setFormError(null);
         setFormData({
             name: "",
             description: "",
@@ -82,6 +86,7 @@ export default function MenusPage() {
     // Open edit modal
     const handleEdit = (menu: Menu) => {
         setSelectedMenu(menu);
+        setFormError(null);
         setFormData({
             name: menu.name,
             description: menu.description || "",
@@ -101,12 +106,15 @@ export default function MenusPage() {
 
     // Save (create or update)
     const handleSave = async () => {
+        setFormError(null);
         if (!formData.name.trim()) {
-            alert("メニュー名を入力してください");
+            setFormError("メニュー名を入力してください");
+            pushToast({ variant: "warning", title: "入力内容を確認してください", description: "メニュー名は必須です。" });
             return;
         }
         if (!formData.category.trim()) {
-            alert("カテゴリを入力してください");
+            setFormError("カテゴリを入力してください");
+            pushToast({ variant: "warning", title: "入力内容を確認してください", description: "カテゴリは必須です。" });
             return;
         }
 
@@ -130,9 +138,17 @@ export default function MenusPage() {
             }
 
             setIsEditModalOpen(false);
+            pushToast({
+                variant: "success",
+                title: selectedMenu ? "メニューを更新しました" : "メニューを作成しました",
+            });
             fetchData();
         } catch (err: any) {
-            alert(err.message || "保存に失敗しました");
+            pushToast({
+                variant: "error",
+                title: "保存に失敗しました",
+                description: err.message || "メニュー保存に失敗しました",
+            });
         } finally {
             setIsSaving(false);
         }
@@ -149,9 +165,17 @@ export default function MenusPage() {
 
             setIsDeleteDialogOpen(false);
             setSelectedMenu(null);
+            pushToast({
+                variant: "success",
+                title: "メニューを削除しました",
+            });
             fetchData();
         } catch (err: any) {
-            alert(err.message || "削除に失敗しました");
+            pushToast({
+                variant: "error",
+                title: "削除に失敗しました",
+                description: err.message || "メニュー削除に失敗しました",
+            });
         } finally {
             setIsSaving(false);
         }
@@ -318,12 +342,20 @@ export default function MenusPage() {
                         {selectedMenu ? "メニュー編集" : "新規メニュー"}
                     </DialogHeader>
                     <DialogBody className="space-y-4">
+                        {formError && (
+                            <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                                {formError}
+                            </div>
+                        )}
                         <div>
                             <label className="block text-sm font-medium mb-1">メニュー名 *</label>
                             <input
                                 type="text"
                                 value={formData.name}
-                                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                                onChange={(e) => {
+                                    setFormData({ ...formData, name: e.target.value });
+                                    if (formError) setFormError(null);
+                                }}
                                 className="w-full h-10 px-3 rounded-lg border border-gray-200 focus:border-primary focus:outline-none"
                                 placeholder="カット"
                             />
@@ -333,7 +365,10 @@ export default function MenusPage() {
                             <input
                                 type="text"
                                 value={formData.category}
-                                onChange={(e) => setFormData({ ...formData, category: e.target.value })}
+                                onChange={(e) => {
+                                    setFormData({ ...formData, category: e.target.value });
+                                    if (formError) setFormError(null);
+                                }}
                                 className="w-full h-10 px-3 rounded-lg border border-gray-200 focus:border-primary focus:outline-none"
                                 placeholder="カット / カラー / パーマ / etc."
                                 list="category-suggestions"

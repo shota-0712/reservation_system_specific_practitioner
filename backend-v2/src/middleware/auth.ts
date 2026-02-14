@@ -72,11 +72,26 @@ export function requireFirebaseAuth() {
                         tenantId
                     );
 
+                    const activeStoreRows = await DatabaseService.query<{ id: string }>(
+                        `SELECT id
+                         FROM stores
+                         WHERE tenant_id = $1
+                           AND status = 'active'
+                         ORDER BY display_order ASC, created_at ASC`,
+                        [tenantId],
+                        tenantId
+                    );
+                    const allowedStoreIds = activeStoreRows.map((row) => row.id);
+                    if (!authenticatedReq.storeId && allowedStoreIds.length > 0) {
+                        authenticatedReq.storeId = allowedStoreIds[0];
+                    }
+
                     authenticatedReq.user = {
                         uid: decodedToken.uid,
                         tenantId,
                         role: 'owner',
                         permissions,
+                        storeIds: allowedStoreIds,
                     };
                     logger.debug(`Created and authenticated initial admin: ${decodedToken.email}`);
                     return next();
@@ -86,6 +101,41 @@ export function requireFirebaseAuth() {
             }
 
             const admin = adminRow as unknown as Admin;
+
+            const rowStoreIds = Array.isArray((adminRow as { store_ids?: unknown }).store_ids)
+                ? ((adminRow as { store_ids: unknown[] }).store_ids
+                    .filter((value): value is string => typeof value === 'string' && value.length > 0))
+                : [];
+
+            const activeStoreRows = await DatabaseService.query<{ id: string }>(
+                `SELECT id
+                 FROM stores
+                 WHERE tenant_id = $1
+                   AND status = 'active'
+                 ORDER BY display_order ASC, created_at ASC`,
+                [tenantId],
+                tenantId
+            );
+            const activeStoreIds = activeStoreRows.map((row) => row.id);
+
+            const scopedStoreIds = rowStoreIds.length > 0
+                ? rowStoreIds.filter((storeId) => activeStoreIds.includes(storeId))
+                : activeStoreIds;
+            const allowedStoreIds = scopedStoreIds.length > 0 ? scopedStoreIds : activeStoreIds;
+
+            const requestedStoreId =
+                authenticatedReq.storeId ||
+                (typeof req.headers['x-store-id'] === 'string' ? req.headers['x-store-id'] : undefined);
+
+            if (requestedStoreId && allowedStoreIds.length > 0 && !allowedStoreIds.includes(requestedStoreId)) {
+                throw new AuthorizationError('指定された店舗へのアクセス権限がありません');
+            }
+
+            if (requestedStoreId) {
+                authenticatedReq.storeId = requestedStoreId;
+            } else if (allowedStoreIds.length > 0) {
+                authenticatedReq.storeId = allowedStoreIds[0];
+            }
 
             const rawPermissions = (adminRow as any).permissions || {};
             const permissions = {
@@ -104,6 +154,7 @@ export function requireFirebaseAuth() {
                 tenantId,
                 role: admin.role,
                 permissions,
+                storeIds: allowedStoreIds,
             };
 
             logger.debug(`Authenticated admin: ${admin.name} (${admin.role})`);

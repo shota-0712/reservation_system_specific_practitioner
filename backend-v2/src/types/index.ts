@@ -423,6 +423,7 @@ export interface AuthenticatedRequest extends Express.Request {
         tenantId: string;
         role?: AdminRole;
         permissions?: Admin['permissions'];
+        storeIds?: string[];
         name?: string;
         picture?: string;
     };

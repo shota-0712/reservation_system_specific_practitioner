@@ -5,6 +5,7 @@ import { AlertCircle, Loader2, Plus, RefreshCw, Trash2, Edit2 } from "lucide-rea
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogBody, DialogContent, DialogFooter, DialogHeader, ConfirmDialog } from "@/components/ui/dialog";
+import { useToast } from "@/components/ui/toast";
 import { menusApi, optionsApi } from "@/lib/api";
 
 interface OptionItem {
@@ -24,6 +25,7 @@ interface MenuItem {
 }
 
 export default function OptionsPage() {
+    const { pushToast } = useToast();
     const [items, setItems] = useState<OptionItem[]>([]);
     const [menus, setMenus] = useState<MenuItem[]>([]);
     const [loading, setLoading] = useState(true);
@@ -33,6 +35,7 @@ export default function OptionsPage() {
     const [isEditOpen, setIsEditOpen] = useState(false);
     const [isDeleteOpen, setIsDeleteOpen] = useState(false);
     const [selected, setSelected] = useState<OptionItem | null>(null);
+    const [formError, setFormError] = useState<string | null>(null);
 
     const [form, setForm] = useState({
         name: "",
@@ -74,6 +77,7 @@ export default function OptionsPage() {
 
     const openCreate = () => {
         setSelected(null);
+        setFormError(null);
         setForm({
             name: "",
             description: "",
@@ -87,6 +91,7 @@ export default function OptionsPage() {
 
     const openEdit = (item: OptionItem) => {
         setSelected(item);
+        setFormError(null);
         setForm({
             name: item.name,
             description: item.description || "",
@@ -109,8 +114,10 @@ export default function OptionsPage() {
     };
 
     const save = async () => {
+        setFormError(null);
         if (!form.name.trim()) {
-            alert("オプション名を入力してください");
+            setFormError("オプション名を入力してください");
+            pushToast({ variant: "warning", title: "入力内容を確認してください", description: "オプション名は必須です。" });
             return;
         }
 
@@ -135,10 +142,19 @@ export default function OptionsPage() {
             }
 
             setIsEditOpen(false);
+            pushToast({
+                variant: "success",
+                title: selected ? "オプションを更新しました" : "オプションを作成しました",
+            });
             await fetchData();
         } catch (err: any) {
             console.error(err);
             setError(err.message || "保存に失敗しました");
+            pushToast({
+                variant: "error",
+                title: "保存に失敗しました",
+                description: err.message || "オプション保存に失敗しました",
+            });
         } finally {
             setSaving(false);
         }
@@ -155,10 +171,19 @@ export default function OptionsPage() {
             }
             setIsDeleteOpen(false);
             setSelected(null);
+            pushToast({
+                variant: "success",
+                title: "オプションを削除しました",
+            });
             await fetchData();
         } catch (err: any) {
             console.error(err);
             setError(err.message || "削除に失敗しました");
+            pushToast({
+                variant: "error",
+                title: "削除に失敗しました",
+                description: err.message || "オプション削除に失敗しました",
+            });
         } finally {
             setSaving(false);
         }
@@ -272,12 +297,20 @@ export default function OptionsPage() {
                 <DialogContent className="max-w-lg">
                     <DialogHeader>{selected ? "オプション編集" : "オプション作成"}</DialogHeader>
                     <DialogBody className="space-y-3">
+                        {formError && (
+                            <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                                {formError}
+                            </div>
+                        )}
                         <div>
                             <label className="text-sm font-medium">名称</label>
                             <input
                                 className="mt-1 w-full border rounded-md px-3 py-2 text-sm"
                                 value={form.name}
-                                onChange={(e) => setForm((prev) => ({ ...prev, name: e.target.value }))}
+                                onChange={(e) => {
+                                    setForm((prev) => ({ ...prev, name: e.target.value }));
+                                    if (formError) setFormError(null);
+                                }}
                             />
                         </div>
                         <div>

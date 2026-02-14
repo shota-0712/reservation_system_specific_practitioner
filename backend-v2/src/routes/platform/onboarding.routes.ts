@@ -246,12 +246,14 @@ router.get(
             admin_id: string;
             tenant_id: string;
             tenant_key: string;
+            tenant_name: string;
             role: 'owner' | 'admin' | 'manager' | 'staff';
             store_ids: string[] | null;
         }>(
             `SELECT a.id AS admin_id,
                     a.tenant_id,
                     t.slug AS tenant_key,
+                    t.name AS tenant_name,
                     a.role,
                     a.store_ids
              FROM admins a
@@ -268,27 +270,53 @@ router.get(
             throw new AuthorizationError('管理者として登録されていません');
         }
 
+        const tenantIds = [...new Set(adminRows.map((row) => row.tenant_id))];
+        const storeRows = tenantIds.length > 0
+            ? await DatabaseService.query<{ tenant_id: string; id: string }>(
+                `SELECT tenant_id, id
+                 FROM stores
+                 WHERE tenant_id = ANY($1::uuid[])
+                   AND status = 'active'
+                 ORDER BY display_order ASC, created_at ASC`,
+                [tenantIds]
+            )
+            : [];
+
+        const activeStoreIdsByTenant = new Map<string, string[]>();
+        for (const row of storeRows) {
+            const list = activeStoreIdsByTenant.get(row.tenant_id) ?? [];
+            list.push(row.id);
+            activeStoreIdsByTenant.set(row.tenant_id, list);
+        }
+
+        const availableTenantMap = new Map<string, {
+            tenantKey: string;
+            tenantId: string;
+            tenantName: string;
+            adminRole: 'owner' | 'admin' | 'manager' | 'staff';
+            storeIds: string[];
+        }>();
+
+        for (const row of adminRows) {
+            const activeStoreIds = activeStoreIdsByTenant.get(row.tenant_id) ?? [];
+            const scopedStoreIds = (row.store_ids ?? []).filter((id) => activeStoreIds.includes(id));
+            availableTenantMap.set(row.tenant_id, {
+                tenantKey: row.tenant_key,
+                tenantId: row.tenant_id,
+                tenantName: row.tenant_name,
+                adminRole: row.role,
+                storeIds: scopedStoreIds.length > 0 ? scopedStoreIds : activeStoreIds,
+            });
+        }
+        const availableTenants = Array.from(availableTenantMap.values());
+
         const context =
             (requestedTenantKey
-                ? adminRows.find((row) => row.tenant_key === requestedTenantKey)
-                : undefined) ?? adminRows[0];
+                ? availableTenants.find((row) => row.tenantKey === requestedTenantKey)
+                : undefined) ?? availableTenants[0];
 
         if (!context) {
             throw new AuthorizationError('指定した tenantKey の管理権限がありません');
-        }
-
-        let storeIds = (context.store_ids ?? []).filter(Boolean);
-        if (storeIds.length === 0) {
-            const storeRows = await DatabaseService.query<{ id: string }>(
-                `SELECT id
-                 FROM stores
-                 WHERE tenant_id = $1
-                   AND status = 'active'
-                 ORDER BY display_order ASC, created_at ASC`,
-                [context.tenant_id],
-                context.tenant_id
-            );
-            storeIds = storeRows.map((row) => row.id);
         }
 
         const response: ApiResponse<{
@@ -296,13 +324,21 @@ router.get(
             tenantId: string;
             adminRole: 'owner' | 'admin' | 'manager' | 'staff';
             storeIds: string[];
+            availableTenants: Array<{
+                tenantKey: string;
+                tenantId: string;
+                tenantName: string;
+                adminRole: 'owner' | 'admin' | 'manager' | 'staff';
+                storeIds: string[];
+            }>;
         }> = {
             success: true,
             data: {
-                tenantKey: context.tenant_key,
-                tenantId: context.tenant_id,
-                adminRole: context.role,
-                storeIds,
+                tenantKey: context.tenantKey,
+                tenantId: context.tenantId,
+                adminRole: context.adminRole,
+                storeIds: context.storeIds,
+                availableTenants,
             },
         };
 

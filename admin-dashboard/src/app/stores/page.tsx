@@ -5,6 +5,7 @@ import { AlertCircle, Loader2, Plus, RefreshCw, Trash2, Edit2 } from "lucide-rea
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ConfirmDialog, Dialog, DialogBody, DialogContent, DialogFooter, DialogHeader } from "@/components/ui/dialog";
+import { useToast } from "@/components/ui/toast";
 import { storesApi } from "@/lib/api";
 
 interface StoreItem {
@@ -22,6 +23,7 @@ interface StoreItem {
 }
 
 export default function StoresPage() {
+    const { pushToast } = useToast();
     const [stores, setStores] = useState<StoreItem[]>([]);
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
@@ -30,6 +32,7 @@ export default function StoresPage() {
     const [isEditOpen, setIsEditOpen] = useState(false);
     const [isDeleteOpen, setIsDeleteOpen] = useState(false);
     const [selected, setSelected] = useState<StoreItem | null>(null);
+    const [formError, setFormError] = useState<string | null>(null);
 
     const [form, setForm] = useState({
         storeCode: "",
@@ -68,6 +71,7 @@ export default function StoresPage() {
 
     const openCreate = () => {
         setSelected(null);
+        setFormError(null);
         setForm({
             storeCode: "",
             name: "",
@@ -85,6 +89,7 @@ export default function StoresPage() {
 
     const openEdit = (store: StoreItem) => {
         setSelected(store);
+        setFormError(null);
         setForm({
             storeCode: store.storeCode,
             name: store.name,
@@ -103,12 +108,15 @@ export default function StoresPage() {
     const validateStoreCode = (value: string) => /^[a-z0-9]{8,10}$/.test(value);
 
     const save = async () => {
+        setFormError(null);
         if (!form.name.trim()) {
-            alert("店舗名を入力してください");
+            setFormError("店舗名を入力してください");
+            pushToast({ variant: "warning", title: "入力内容を確認してください", description: "店舗名は必須です。" });
             return;
         }
         if (!selected && !validateStoreCode(form.storeCode)) {
-            alert("店舗コードは8-10文字の小文字英数字で入力してください");
+            setFormError("店舗コードは8-10文字の小文字英数字で入力してください");
+            pushToast({ variant: "warning", title: "入力内容を確認してください", description: "店舗コード形式が不正です。" });
             return;
         }
 
@@ -147,10 +155,19 @@ export default function StoresPage() {
             }
 
             setIsEditOpen(false);
+            pushToast({
+                variant: "success",
+                title: selected ? "店舗を更新しました" : "店舗を作成しました",
+            });
             await fetchData();
         } catch (err: any) {
             console.error(err);
             setError(err.message || "店舗保存に失敗しました");
+            pushToast({
+                variant: "error",
+                title: "店舗保存に失敗しました",
+                description: err.message || "店舗保存に失敗しました",
+            });
         } finally {
             setSaving(false);
         }
@@ -167,10 +184,19 @@ export default function StoresPage() {
             }
             setIsDeleteOpen(false);
             setSelected(null);
+            pushToast({
+                variant: "success",
+                title: "店舗を削除しました",
+            });
             await fetchData();
         } catch (err: any) {
             console.error(err);
             setError(err.message || "店舗削除に失敗しました");
+            pushToast({
+                variant: "error",
+                title: "店舗削除に失敗しました",
+                description: err.message || "店舗削除に失敗しました",
+            });
         } finally {
             setSaving(false);
         }
@@ -275,13 +301,21 @@ export default function StoresPage() {
                 <DialogContent className="max-w-2xl">
                     <DialogHeader>{selected ? "店舗編集" : "店舗作成"}</DialogHeader>
                     <DialogBody className="space-y-3">
+                        {formError && (
+                            <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                                {formError}
+                            </div>
+                        )}
                         <div className="grid grid-cols-2 gap-3">
                             <div>
                                 <label className="text-sm font-medium">店舗名</label>
                                 <input
                                     className="mt-1 w-full border rounded-md px-3 py-2 text-sm"
-                                    value={form.name}
-                                    onChange={(e) => setForm((prev) => ({ ...prev, name: e.target.value }))}
+                                value={form.name}
+                                onChange={(e) => {
+                                    setForm((prev) => ({ ...prev, name: e.target.value }));
+                                    if (formError) setFormError(null);
+                                }}
                                 />
                             </div>
                             <div>
@@ -290,8 +324,11 @@ export default function StoresPage() {
                                     disabled={!!selected}
                                     className="mt-1 w-full border rounded-md px-3 py-2 text-sm disabled:bg-gray-100"
                                     placeholder="例: tokyo001"
-                                    value={form.storeCode}
-                                    onChange={(e) => setForm((prev) => ({ ...prev, storeCode: e.target.value }))}
+                                value={form.storeCode}
+                                onChange={(e) => {
+                                    setForm((prev) => ({ ...prev, storeCode: e.target.value }));
+                                    if (formError) setFormError(null);
+                                }}
                                 />
                             </div>
                         </div>

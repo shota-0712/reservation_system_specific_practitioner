@@ -18,7 +18,14 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { dashboardApi } from "@/lib/api";
+import {
+    adminContextApi,
+    dashboardApi,
+    getTenantKey,
+    setActiveStoreId,
+    TENANT_CHANGED_EVENT,
+    withTenantQuery,
+} from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
 
 interface Notification {
@@ -100,6 +107,12 @@ export function Header({ onMenuClick, isSidebarOpen }: HeaderProps) {
     const [showNotifications, setShowNotifications] = useState(false);
     const [notifications, setNotifications] = useState<Notification[]>([]);
     const [loadingNotifications, setLoadingNotifications] = useState(false);
+    const [tenantOptions, setTenantOptions] = useState<Array<{
+        tenantKey: string;
+        tenantName: string;
+    }>>([]);
+    const [selectedTenantKey, setSelectedTenantKey] = useState<string>("");
+    const [tenantSwitching, setTenantSwitching] = useState(false);
 
     const userMenuRef = useRef<HTMLDivElement>(null);
     const notificationRef = useRef<HTMLDivElement>(null);
@@ -107,6 +120,32 @@ export function Header({ onMenuClick, isSidebarOpen }: HeaderProps) {
     const unreadCount = notifications.filter((n) => !n.read).length;
     const displayName = user?.displayName || user?.email?.split("@")[0] || "管理者";
     const displayEmail = user?.email || "-";
+
+    useEffect(() => {
+        let mounted = true;
+        adminContextApi.sync(getTenantKey()).then((context) => {
+            if (!mounted || !context) return;
+            const options = (context.availableTenants || []).map((tenant) => ({
+                tenantKey: tenant.tenantKey,
+                tenantName: tenant.tenantName || tenant.tenantKey,
+            }));
+            setTenantOptions(options);
+            setSelectedTenantKey(context.tenantKey);
+        }).catch(() => {
+            if (!mounted) return;
+            setTenantOptions([]);
+            setSelectedTenantKey(getTenantKey());
+        });
+
+        const onTenantChanged = () => {
+            setSelectedTenantKey(getTenantKey());
+        };
+        window.addEventListener(TENANT_CHANGED_EVENT, onTenantChanged);
+        return () => {
+            mounted = false;
+            window.removeEventListener(TENANT_CHANGED_EVENT, onTenantChanged);
+        };
+    }, []);
 
     useEffect(() => {
         const fetchNotifications = async () => {
@@ -190,6 +229,25 @@ export function Header({ onMenuClick, isSidebarOpen }: HeaderProps) {
         );
     };
 
+    const handleTenantChange = async (nextTenantKey: string) => {
+        if (!nextTenantKey || nextTenantKey === selectedTenantKey) {
+            return;
+        }
+        setTenantSwitching(true);
+        try {
+            setActiveStoreId(null);
+            await adminContextApi.sync(nextTenantKey);
+            const nextPath = withTenantQuery(
+                `${window.location.pathname}${window.location.search}${window.location.hash}`,
+                nextTenantKey
+            );
+            router.push(nextPath);
+            router.refresh();
+        } finally {
+            setTenantSwitching(false);
+        }
+    };
+
     return (
         <header className="flex h-16 items-center justify-between border-b bg-white px-4 md:px-6">
             <div className="flex items-center gap-4">
@@ -213,6 +271,29 @@ export function Header({ onMenuClick, isSidebarOpen }: HeaderProps) {
             </div>
 
             <div className="flex items-center gap-2 md:gap-4">
+                <div className="hidden md:flex items-center gap-2">
+                    <span className="text-xs text-gray-500">テナント</span>
+                    <select
+                        value={selectedTenantKey}
+                        onChange={(event) => {
+                            void handleTenantChange(event.target.value);
+                        }}
+                        disabled={tenantSwitching || tenantOptions.length <= 1}
+                        className="h-9 rounded-md border border-gray-200 bg-white px-3 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-primary disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                        {tenantOptions.length === 0 && (
+                            <option value={selectedTenantKey || ""}>
+                                {selectedTenantKey || "-"}
+                            </option>
+                        )}
+                        {tenantOptions.map((tenant) => (
+                            <option key={tenant.tenantKey} value={tenant.tenantKey}>
+                                {tenant.tenantName}
+                            </option>
+                        ))}
+                    </select>
+                </div>
+
                 <div ref={notificationRef} className="relative">
                     <Button
                         variant="ghost"
@@ -324,7 +405,7 @@ export function Header({ onMenuClick, isSidebarOpen }: HeaderProps) {
                                 <button
                                     onClick={() => {
                                         setShowUserMenu(false);
-                                        router.push("/settings");
+                                        router.push(withTenantQuery("/settings"));
                                     }}
                                     className="flex items-center gap-3 w-full px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
                                 >

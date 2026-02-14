@@ -5,6 +5,7 @@ import { Plus, Edit2, Phone, Mail, Calendar, RefreshCw, AlertCircle, Trash2, Loa
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogBody, DialogFooter, ConfirmDialog } from "@/components/ui/dialog";
+import { useToast } from "@/components/ui/toast";
 import { cn } from "@/lib/utils";
 import { bookingLinksApi, getActiveStoreId, practitionersApi, STORE_CHANGED_EVENT } from "@/lib/api";
 
@@ -43,6 +44,9 @@ interface BookingLinkToken {
     createdAt: string;
     expiresAt?: string;
     lastUsedAt?: string;
+    createdBy: string;
+    createdByName?: string;
+    createdByEmail?: string;
 }
 
 const roleLabels: Record<string, { label: string; color: string }> = {
@@ -52,6 +56,7 @@ const roleLabels: Record<string, { label: string; color: string }> = {
 };
 
 export default function StaffPage() {
+    const { pushToast } = useToast();
     const [practitioners, setPractitioners] = useState<Practitioner[]>([]);
     const [bookingLinks, setBookingLinks] = useState<BookingLinkToken[]>([]);
     const [isLoading, setIsLoading] = useState(true);
@@ -63,8 +68,14 @@ export default function StaffPage() {
     // Modal states
     const [isEditModalOpen, setIsEditModalOpen] = useState(false);
     const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+    const [isReissueDialogOpen, setIsReissueDialogOpen] = useState(false);
+    const [isRevokeDialogOpen, setIsRevokeDialogOpen] = useState(false);
     const [selectedStaff, setSelectedStaff] = useState<Practitioner | null>(null);
+    const [selectedLinkForAction, setSelectedLinkForAction] = useState<BookingLinkToken | null>(null);
     const [isSaving, setIsSaving] = useState(false);
+    const [isReissuing, setIsReissuing] = useState(false);
+    const [isRevoking, setIsRevoking] = useState(false);
+    const [formError, setFormError] = useState<string | null>(null);
 
     // Form state
     const [formData, setFormData] = useState({
@@ -137,6 +148,28 @@ export default function StaffPage() {
         return tenantLevel || links[0] || null;
     };
 
+    const getLinkHistoryForPractitioner = (practitionerId: string): BookingLinkToken[] =>
+        bookingLinks
+            .filter((link) => link.practitionerId === practitionerId)
+            .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+
+    const formatDateTime = (value?: string): string => {
+        if (!value) return "-";
+        const date = new Date(value);
+        if (Number.isNaN(date.getTime())) return "-";
+        return date.toLocaleString("ja-JP");
+    };
+
+    const resolveCreatorLabel = (link: BookingLinkToken): string => {
+        if (link.createdByName?.trim()) {
+            return link.createdByName;
+        }
+        if (link.createdByEmail?.trim()) {
+            return link.createdByEmail;
+        }
+        return link.createdBy;
+    };
+
     const withLinkLoading = (practitionerId: string, loading: boolean) => {
         setLinkLoadingByPractitioner((prev) => ({ ...prev, [practitionerId]: loading }));
     };
@@ -183,7 +216,11 @@ export default function StaffPage() {
     const copyPractitionerBookingUrl = async (link: BookingLinkToken) => {
         const url = buildTokenBookingUrl(link.token);
         if (!url) {
-            alert("予約URLの生成に失敗しました。NEXT_PUBLIC_CUSTOMER_URL を設定してください。");
+            pushToast({
+                variant: "error",
+                title: "予約URLの生成に失敗しました",
+                description: "NEXT_PUBLIC_CUSTOMER_URL を設定してください。",
+            });
             return;
         }
 
@@ -191,9 +228,16 @@ export default function StaffPage() {
             await navigator.clipboard.writeText(url);
             setCopiedLinkId(link.id);
             window.setTimeout(() => setCopiedLinkId((current) => (current === link.id ? null : current)), 1800);
+            pushToast({
+                variant: "success",
+                title: "予約URLをコピーしました",
+            });
         } catch (error) {
             console.error(error);
-            alert("URLのコピーに失敗しました");
+            pushToast({
+                variant: "error",
+                title: "URLのコピーに失敗しました",
+            });
         }
     };
 
@@ -245,6 +289,7 @@ export default function StaffPage() {
     // Open create modal
     const handleCreate = () => {
         setSelectedStaff(null);
+        setFormError(null);
         setFormData({
             name: "",
             nameKana: "",
@@ -267,6 +312,7 @@ export default function StaffPage() {
     // Open edit modal
     const handleEdit = (staff: Practitioner) => {
         setSelectedStaff(staff);
+        setFormError(null);
         setFormData({
             name: staff.name,
             nameKana: staff.nameKana || "",
@@ -294,8 +340,14 @@ export default function StaffPage() {
 
     // Save (create or update)
     const handleSave = async () => {
+        setFormError(null);
         if (!formData.name.trim()) {
-            alert("名前を入力してください");
+            setFormError("名前を入力してください");
+            pushToast({
+                variant: "warning",
+                title: "入力内容を確認してください",
+                description: "名前は必須です。",
+            });
             return;
         }
 
@@ -332,9 +384,17 @@ export default function StaffPage() {
             }
 
             setIsEditModalOpen(false);
+            pushToast({
+                variant: "success",
+                title: selectedStaff ? "スタッフ情報を更新しました" : "スタッフを作成しました",
+            });
             fetchData();
         } catch (err: any) {
-            alert(err.message || "保存に失敗しました");
+            pushToast({
+                variant: "error",
+                title: "保存に失敗しました",
+                description: err.message || "スタッフ保存に失敗しました",
+            });
         } finally {
             setIsSaving(false);
         }
@@ -351,11 +411,96 @@ export default function StaffPage() {
 
             setIsDeleteDialogOpen(false);
             setSelectedStaff(null);
+            pushToast({
+                variant: "success",
+                title: "スタッフを削除しました",
+            });
             fetchData();
         } catch (err: any) {
-            alert(err.message || "削除に失敗しました");
+            pushToast({
+                variant: "error",
+                title: "削除に失敗しました",
+                description: err.message || "スタッフ削除に失敗しました",
+            });
         } finally {
             setIsSaving(false);
+        }
+    };
+
+    const handleIssueOrReissueClick = async (staff: Practitioner, activeLink: BookingLinkToken | null) => {
+        if (!activeLink) {
+            try {
+                await issueBookingLink(staff, false);
+                pushToast({
+                    variant: "success",
+                    title: "予約URLを発行しました",
+                    description: `${staff.name}の予約URLを作成しました。`,
+                });
+            } catch (error: any) {
+                pushToast({
+                    variant: "error",
+                    title: "予約URLの発行に失敗しました",
+                    description: error?.message || "施術者予約URLの発行に失敗しました",
+                });
+            }
+            return;
+        }
+
+        setSelectedStaff(staff);
+        setSelectedLinkForAction(activeLink);
+        setIsReissueDialogOpen(true);
+    };
+
+    const confirmReissue = async () => {
+        if (!selectedStaff) return;
+
+        setIsReissuing(true);
+        try {
+            await issueBookingLink(selectedStaff, true);
+            setIsReissueDialogOpen(false);
+            setSelectedLinkForAction(null);
+            pushToast({
+                variant: "success",
+                title: "予約URLを再発行しました",
+                description: "旧URLは無効化されました。",
+            });
+        } catch (error: any) {
+            pushToast({
+                variant: "error",
+                title: "予約URLの再発行に失敗しました",
+                description: error?.message || "予約URLの再発行に失敗しました",
+            });
+        } finally {
+            setIsReissuing(false);
+        }
+    };
+
+    const requestRevoke = (staff: Practitioner, link: BookingLinkToken) => {
+        setSelectedStaff(staff);
+        setSelectedLinkForAction(link);
+        setIsRevokeDialogOpen(true);
+    };
+
+    const confirmRevoke = async () => {
+        if (!selectedStaff || !selectedLinkForAction) return;
+
+        setIsRevoking(true);
+        try {
+            await revokeBookingLink(selectedStaff, selectedLinkForAction.id);
+            setIsRevokeDialogOpen(false);
+            setSelectedLinkForAction(null);
+            pushToast({
+                variant: "success",
+                title: "予約URLを無効化しました",
+            });
+        } catch (error: any) {
+            pushToast({
+                variant: "error",
+                title: "予約URLの無効化に失敗しました",
+                description: error?.message || "予約URLの無効化に失敗しました",
+            });
+        } finally {
+            setIsRevoking(false);
         }
     };
 
@@ -588,7 +733,9 @@ export default function StaffPage() {
                                                             variant="outline"
                                                             size="sm"
                                                             className="h-7 px-2 text-xs"
-                                                            onClick={() => issueBookingLink(staff, Boolean(activeLink)).catch((err: any) => alert(err?.message || "予約URLの発行に失敗しました"))}
+                                                            onClick={() => {
+                                                                void handleIssueOrReissueClick(staff, activeLink);
+                                                            }}
                                                             disabled={linkLoading}
                                                         >
                                                             {linkLoading ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : null}
@@ -600,7 +747,7 @@ export default function StaffPage() {
                                                                 variant="outline"
                                                                 size="sm"
                                                                 className="h-7 px-2 text-xs text-red-600"
-                                                                onClick={() => revokeBookingLink(staff, activeLink.id).catch((err: any) => alert(err?.message || "予約URLの無効化に失敗しました"))}
+                                                                onClick={() => requestRevoke(staff, activeLink)}
                                                                 disabled={linkLoading}
                                                             >
                                                                 無効化
@@ -621,6 +768,33 @@ export default function StaffPage() {
                                                         まだURLが発行されていません。「URL発行」を押してください。
                                                     </p>
                                                 )}
+                                                <div className="mt-2 border-t border-gray-200 pt-2">
+                                                    <p className="mb-1 text-[11px] font-semibold text-gray-600">発行履歴</p>
+                                                    <div className="space-y-1">
+                                                        {getLinkHistoryForPractitioner(staff.id).slice(0, 5).map((link) => (
+                                                            <div key={link.id} className="rounded border border-gray-200 bg-white px-2 py-1 text-[10px] text-gray-600">
+                                                                <div className="flex items-center justify-between gap-2">
+                                                                    <span className={cn(
+                                                                        "rounded px-1.5 py-0.5 text-[10px] font-medium",
+                                                                        link.status === "active" ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-500"
+                                                                    )}>
+                                                                        {link.status === "active" ? "有効" : "無効"}
+                                                                    </span>
+                                                                    <span>作成: {formatDateTime(link.createdAt)}</span>
+                                                                </div>
+                                                                <div className="mt-1 break-all text-[10px]">
+                                                                    作成者: {resolveCreatorLabel(link)}
+                                                                </div>
+                                                                <div className="mt-1">
+                                                                    最終利用: {formatDateTime(link.lastUsedAt)} / 期限: {formatDateTime(link.expiresAt)}
+                                                                </div>
+                                                            </div>
+                                                        ))}
+                                                        {getLinkHistoryForPractitioner(staff.id).length === 0 && (
+                                                            <p className="text-[10px] text-gray-500">履歴はありません</p>
+                                                        )}
+                                                    </div>
+                                                </div>
                                                 {!customerAppBaseUrl && (
                                                     <p className="mt-1 text-[11px] text-amber-600">
                                                         NEXT_PUBLIC_CUSTOMER_URL 未設定のためコピーできません。
@@ -643,12 +817,20 @@ export default function StaffPage() {
                         {selectedStaff ? "スタッフ編集" : "新規スタッフ"}
                     </DialogHeader>
                     <DialogBody className="space-y-4">
+                        {formError && (
+                            <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                                {formError}
+                            </div>
+                        )}
                         <div>
                             <label className="block text-sm font-medium mb-1">名前 *</label>
                             <input
                                 type="text"
                                 value={formData.name}
-                                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                                onChange={(e) => {
+                                    setFormData({ ...formData, name: e.target.value });
+                                    if (formError) setFormError(null);
+                                }}
                                 className="w-full h-10 px-3 rounded-lg border border-gray-200 focus:border-primary focus:outline-none"
                                 placeholder="山田 太郎"
                             />
@@ -830,6 +1012,36 @@ export default function StaffPage() {
                 cancelText="キャンセル"
                 variant="danger"
                 loading={isSaving}
+            />
+
+            <ConfirmDialog
+                open={isReissueDialogOpen}
+                onClose={() => {
+                    setIsReissueDialogOpen(false);
+                    setSelectedLinkForAction(null);
+                }}
+                onConfirm={confirmReissue}
+                title="予約URLを再発行"
+                description={`「${selectedStaff?.name ?? "このスタッフ"}」の予約URLを再発行します。旧URLは無効化されます。`}
+                confirmText="再発行する"
+                cancelText="キャンセル"
+                variant="warning"
+                loading={isReissuing}
+            />
+
+            <ConfirmDialog
+                open={isRevokeDialogOpen}
+                onClose={() => {
+                    setIsRevokeDialogOpen(false);
+                    setSelectedLinkForAction(null);
+                }}
+                onConfirm={confirmRevoke}
+                title="予約URLを無効化"
+                description={`「${selectedStaff?.name ?? "このスタッフ"}」の予約URLを無効化します。`}
+                confirmText="無効化する"
+                cancelText="キャンセル"
+                variant="danger"
+                loading={isRevoking}
             />
         </div>
     );

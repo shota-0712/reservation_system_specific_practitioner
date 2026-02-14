@@ -5,6 +5,7 @@ import { AlertCircle, Edit2, FileText, Loader2, Plus, RefreshCw, Trash2 } from "
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ConfirmDialog, Dialog, DialogBody, DialogContent, DialogFooter, DialogHeader } from "@/components/ui/dialog";
+import { useToast } from "@/components/ui/toast";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { karteTemplatesApi, kartesApi } from "@/lib/api";
 
@@ -30,6 +31,7 @@ interface KarteTemplateItem {
 }
 
 export default function KartesPage() {
+    const { pushToast } = useToast();
     const [kartes, setKartes] = useState<KarteItem[]>([]);
     const [templates, setTemplates] = useState<KarteTemplateItem[]>([]);
     const [loading, setLoading] = useState(true);
@@ -42,6 +44,8 @@ export default function KartesPage() {
     const [isTemplateDialogOpen, setIsTemplateDialogOpen] = useState(false);
     const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
     const [deleteTarget, setDeleteTarget] = useState<"karte" | "template">("karte");
+    const [karteFormError, setKarteFormError] = useState<string | null>(null);
+    const [templateFormError, setTemplateFormError] = useState<string | null>(null);
 
     const [karteForm, setKarteForm] = useState({
         customerId: "",
@@ -106,6 +110,7 @@ export default function KartesPage() {
 
     const openKarteCreate = () => {
         setSelectedKarte(null);
+        setKarteFormError(null);
         setKarteForm({
             customerId: "",
             customerName: "",
@@ -124,6 +129,7 @@ export default function KartesPage() {
 
     const openKarteEdit = (item: KarteItem) => {
         setSelectedKarte(item);
+        setKarteFormError(null);
         setKarteForm({
             customerId: item.customerId,
             customerName: item.customerName || "",
@@ -141,8 +147,14 @@ export default function KartesPage() {
     };
 
     const saveKarte = async () => {
+        setKarteFormError(null);
         if (!karteForm.customerId || !karteForm.practitionerId || !karteForm.visitDate) {
-            alert("customerId / practitionerId / visitDate は必須です");
+            setKarteFormError("customerId / practitionerId / visitDate は必須です");
+            pushToast({
+                variant: "warning",
+                title: "入力内容を確認してください",
+                description: "customerId / practitionerId / visitDate は必須です。",
+            });
             return;
         }
 
@@ -172,10 +184,19 @@ export default function KartesPage() {
             }
 
             setIsKarteDialogOpen(false);
+            pushToast({
+                variant: "success",
+                title: selectedKarte ? "カルテを更新しました" : "カルテを作成しました",
+            });
             await fetchData();
         } catch (err: any) {
             console.error(err);
             setError(err.message || "カルテ保存に失敗しました");
+            pushToast({
+                variant: "error",
+                title: "カルテ保存に失敗しました",
+                description: err.message || "カルテ保存に失敗しました",
+            });
         } finally {
             setSaving(false);
         }
@@ -183,6 +204,7 @@ export default function KartesPage() {
 
     const openTemplateCreate = () => {
         setSelectedTemplate(null);
+        setTemplateFormError(null);
         setTemplateForm({
             name: "",
             description: "",
@@ -196,6 +218,7 @@ export default function KartesPage() {
 
     const openTemplateEdit = (item: KarteTemplateItem) => {
         setSelectedTemplate(item);
+        setTemplateFormError(null);
         setTemplateForm({
             name: item.name,
             description: item.description || "",
@@ -208,8 +231,14 @@ export default function KartesPage() {
     };
 
     const saveTemplate = async () => {
+        setTemplateFormError(null);
         if (!templateForm.name.trim()) {
-            alert("テンプレート名は必須です");
+            setTemplateFormError("テンプレート名は必須です");
+            pushToast({
+                variant: "warning",
+                title: "入力内容を確認してください",
+                description: "テンプレート名は必須です。",
+            });
             return;
         }
 
@@ -235,10 +264,19 @@ export default function KartesPage() {
             }
 
             setIsTemplateDialogOpen(false);
+            pushToast({
+                variant: "success",
+                title: selectedTemplate ? "テンプレートを更新しました" : "テンプレートを作成しました",
+            });
             await fetchData();
         } catch (err: any) {
             console.error(err);
             setError(err.message || "テンプレート保存に失敗しました");
+            pushToast({
+                variant: "error",
+                title: "テンプレート保存に失敗しました",
+                description: err.message || "テンプレート保存に失敗しました",
+            });
         } finally {
             setSaving(false);
         }
@@ -270,10 +308,19 @@ export default function KartesPage() {
                 if (!res.success) throw new Error(res.error?.message || "テンプレート削除に失敗しました");
             }
             setIsDeleteDialogOpen(false);
+            pushToast({
+                variant: "success",
+                title: deleteTarget === "karte" ? "カルテを削除しました" : "テンプレートを削除しました",
+            });
             await fetchData();
         } catch (err: any) {
             console.error(err);
             setError(err.message || "削除に失敗しました");
+            pushToast({
+                variant: "error",
+                title: "削除に失敗しました",
+                description: err.message || "削除に失敗しました",
+            });
         } finally {
             setSaving(false);
         }
@@ -436,10 +483,18 @@ export default function KartesPage() {
                 <DialogContent className="max-w-2xl">
                     <DialogHeader>{selectedKarte ? "カルテ編集" : "カルテ作成"}</DialogHeader>
                     <DialogBody className="space-y-3">
+                        {karteFormError && (
+                            <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                                {karteFormError}
+                            </div>
+                        )}
                         <div className="grid grid-cols-2 gap-3">
                             <div>
                                 <label className="text-sm font-medium">customerId *</label>
-                                <input className="mt-1 w-full border rounded-md px-3 py-2 text-sm" value={karteForm.customerId} onChange={(e) => setKarteForm((p) => ({ ...p, customerId: e.target.value }))} />
+                                <input className="mt-1 w-full border rounded-md px-3 py-2 text-sm" value={karteForm.customerId} onChange={(e) => {
+                                    setKarteForm((p) => ({ ...p, customerId: e.target.value }));
+                                    if (karteFormError) setKarteFormError(null);
+                                }} />
                             </div>
                             <div>
                                 <label className="text-sm font-medium">customerName</label>
@@ -498,9 +553,17 @@ export default function KartesPage() {
                 <DialogContent className="max-w-xl">
                     <DialogHeader>{selectedTemplate ? "テンプレート編集" : "テンプレート作成"}</DialogHeader>
                     <DialogBody className="space-y-3">
+                        {templateFormError && (
+                            <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                                {templateFormError}
+                            </div>
+                        )}
                         <div>
                             <label className="text-sm font-medium">name *</label>
-                            <input className="mt-1 w-full border rounded-md px-3 py-2 text-sm" value={templateForm.name} onChange={(e) => setTemplateForm((p) => ({ ...p, name: e.target.value }))} />
+                            <input className="mt-1 w-full border rounded-md px-3 py-2 text-sm" value={templateForm.name} onChange={(e) => {
+                                setTemplateForm((p) => ({ ...p, name: e.target.value }));
+                                if (templateFormError) setTemplateFormError(null);
+                            }} />
                         </div>
                         <div>
                             <label className="text-sm font-medium">description</label>

@@ -20,6 +20,8 @@ export interface BookingLinkToken {
     expiresAt?: Date;
     storeName?: string;
     practitionerName?: string;
+    createdByName?: string;
+    createdByEmail?: string;
 }
 
 export interface ResolvedBookingLinkToken {
@@ -44,6 +46,8 @@ interface BookingLinkTokenRow {
     expires_at: Date | null;
     store_name?: string | null;
     practitioner_name?: string | null;
+    created_by_name?: string | null;
+    created_by_email?: string | null;
 }
 
 const TOKEN_ALPHABET_REGEX = /^[A-Za-z0-9_-]{16,128}$/;
@@ -62,6 +66,8 @@ function mapTokenRow(row: BookingLinkTokenRow): BookingLinkToken {
         expiresAt: row.expires_at ?? undefined,
         storeName: row.store_name ?? undefined,
         practitionerName: row.practitioner_name ?? undefined,
+        createdByName: row.created_by_name ?? undefined,
+        createdByEmail: row.created_by_email ?? undefined,
     };
 }
 
@@ -94,12 +100,41 @@ export class BookingLinkTokenService {
         return this.tenantId;
     }
 
-    async list(): Promise<BookingLinkToken[]> {
+    async list(filters?: {
+        status?: BookingLinkTokenStatus;
+        practitionerId?: string;
+        limit?: number;
+    }): Promise<BookingLinkToken[]> {
         const tenantId = this.requireTenantId();
+        const whereClauses = ['blt.tenant_id = $1'];
+        const params: unknown[] = [tenantId];
+        let paramIndex = 2;
+
+        if (filters?.status) {
+            whereClauses.push(`blt.status = $${paramIndex}`);
+            params.push(filters.status);
+            paramIndex += 1;
+        }
+        if (filters?.practitionerId) {
+            whereClauses.push(`blt.practitioner_id = $${paramIndex}`);
+            params.push(filters.practitionerId);
+            paramIndex += 1;
+        }
+
+        let limitClause = '';
+        if (filters?.limit !== undefined) {
+            const normalizedLimit = Math.max(1, Math.min(filters.limit, 100));
+            limitClause = `LIMIT $${paramIndex}`;
+            params.push(normalizedLimit);
+            paramIndex += 1;
+        }
+
         const rows = await DatabaseService.query<BookingLinkTokenRow>(
             `SELECT blt.*,
                     s.name AS store_name,
-                    p.name AS practitioner_name
+                    p.name AS practitioner_name,
+                    a.name AS created_by_name,
+                    a.email AS created_by_email
              FROM booking_link_tokens blt
              LEFT JOIN stores s
                ON s.id = blt.store_id
@@ -107,9 +142,13 @@ export class BookingLinkTokenService {
              LEFT JOIN practitioners p
                ON p.id = blt.practitioner_id
               AND p.tenant_id = blt.tenant_id
-             WHERE blt.tenant_id = $1
-             ORDER BY blt.created_at DESC`,
-            [tenantId],
+             LEFT JOIN admins a
+               ON a.tenant_id = blt.tenant_id
+              AND a.firebase_uid = blt.created_by
+             WHERE ${whereClauses.join(' AND ')}
+             ORDER BY blt.created_at DESC
+             ${limitClause}`,
+            params,
             tenantId
         );
 

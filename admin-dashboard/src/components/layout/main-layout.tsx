@@ -7,7 +7,8 @@ import { Header } from "./header";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/lib/auth-context";
 import { Loader2 } from "lucide-react";
-import { adminContextApi, onboardingApi } from "@/lib/api";
+import { adminContextApi, getTenantKey, onboardingApi, withTenantQuery } from "@/lib/api";
+import { ToastProvider } from "@/components/ui/toast";
 
 interface MainLayoutProps {
     children: React.ReactNode;
@@ -51,7 +52,7 @@ export function MainLayout({ children }: MainLayoutProps) {
 
         // Redirect to login if no user
         if (!user) {
-            router.push("/login");
+            router.push(withTenantQuery("/login", getTenantKey()));
         }
     }, [user, loading, isPublicAuthRoute, router]);
 
@@ -64,7 +65,7 @@ export function MainLayout({ children }: MainLayoutProps) {
         (async () => {
             try {
                 // Resolve admin context first to avoid stale tenant/store localStorage state.
-                await adminContextApi.sync();
+                await adminContextApi.sync(getTenantKey());
             } catch {
                 // continue with existing tenant context
             }
@@ -96,12 +97,12 @@ export function MainLayout({ children }: MainLayoutProps) {
         if (loading || onboardingLoading || !user || !onboardingStatus) return;
 
         if (onboardingStatus !== 'completed' && !isOnboardingRoute) {
-            router.push('/onboarding');
+            router.push(withTenantQuery('/onboarding', getTenantKey()));
             return;
         }
 
         if (onboardingStatus === 'completed' && isOnboardingRoute) {
-            router.push('/');
+            router.push(withTenantQuery('/', getTenantKey()));
         }
     }, [isOnboardingRoute, isPublicAuthRoute, loading, onboardingLoading, onboardingStatus, router, user]);
 
@@ -143,7 +144,8 @@ export function MainLayout({ children }: MainLayoutProps) {
     }
 
     return (
-        <div className="flex h-screen">
+        <ToastProvider>
+            <div className="flex h-screen">
             {/* Desktop Sidebar */}
             <div className="hidden md:block">
                 <Sidebar />
@@ -168,15 +170,16 @@ export function MainLayout({ children }: MainLayoutProps) {
             </div>
 
             {/* Main Content */}
-            <div className="flex flex-1 flex-col overflow-hidden">
-                <Header
-                    onMenuClick={() => setIsSidebarOpen(!isSidebarOpen)}
-                    isSidebarOpen={isSidebarOpen}
-                />
-                <main className="flex-1 overflow-auto bg-gray-50 p-4 md:p-6">
-                    {children}
-                </main>
+                <div className="flex flex-1 flex-col overflow-hidden">
+                    <Header
+                        onMenuClick={() => setIsSidebarOpen(!isSidebarOpen)}
+                        isSidebarOpen={isSidebarOpen}
+                    />
+                    <main className="flex-1 overflow-auto bg-gray-50 p-4 md:p-6">
+                        {children}
+                    </main>
+                </div>
             </div>
-        </div>
+        </ToastProvider>
     );
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
@@ -19,7 +19,16 @@ import {
     Link2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { getActiveStoreId, setActiveStoreId, STORE_CHANGED_EVENT, storesApi } from "@/lib/api";
+import {
+    adminContextApi,
+    getActiveStoreId,
+    getTenantKey,
+    setActiveStoreId,
+    STORE_CHANGED_EVENT,
+    TENANT_CHANGED_EVENT,
+    storesApi,
+    withTenantQuery,
+} from "@/lib/api";
 
 const navigation = [
     { name: "ダッシュボード", href: "/", icon: LayoutDashboard },
@@ -54,44 +63,63 @@ export function Sidebar({ className, onNavigate }: SidebarProps) {
     const [showStoreSelector, setShowStoreSelector] = useState(false);
     const [stores, setStores] = useState<StoreItem[]>([]);
     const [currentStoreId, setCurrentStoreId] = useState<string | null>(null);
+    const [tenantKey, setTenantKeyState] = useState<string>("");
+
+    const loadStoresForTenant = useCallback(async (targetTenantKey: string) => {
+        setTenantKeyState(targetTenantKey);
+
+        const [storeResponse, context] = await Promise.all([
+            storesApi.list(),
+            adminContextApi.sync(targetTenantKey),
+        ]);
+
+        if (!storeResponse.success) {
+            setStores([]);
+            setCurrentStoreId(null);
+            setActiveStoreId(null);
+            return;
+        }
+
+        const storeList = (storeResponse.data as StoreItem[] | undefined) ?? [];
+        const activeStoreList = storeList.filter((store) => store.status !== "inactive");
+        const baseStores = activeStoreList.length > 0 ? activeStoreList : storeList;
+        const allowedStoreIds = (context?.storeIds ?? []).filter(Boolean);
+        const visibleStores = allowedStoreIds.length > 0
+            ? baseStores.filter((store) => allowedStoreIds.includes(store.id))
+            : baseStores;
+
+        setStores(visibleStores);
+
+        if (visibleStores.length === 0) {
+            setCurrentStoreId(null);
+            setActiveStoreId(null);
+            return;
+        }
+
+        const storedStoreId = getActiveStoreId();
+        const initialStoreId = visibleStores.some((store) => store.id === storedStoreId)
+            ? storedStoreId
+            : visibleStores[0].id;
+
+        if (initialStoreId) {
+            setCurrentStoreId(initialStoreId);
+            setActiveStoreId(initialStoreId);
+        }
+    }, []);
 
     useEffect(() => {
         let mounted = true;
-        storesApi
-            .list()
-            .then((response) => {
-                if (!mounted || !response.success) return;
-                const storeList = (response.data as StoreItem[] | undefined) ?? [];
-                const activeStoreList = storeList.filter((store) => store.status !== "inactive");
-                const visibleStores = activeStoreList.length > 0 ? activeStoreList : storeList;
-
-                setStores(visibleStores);
-                if (visibleStores.length > 0) {
-                    const storedStoreId = getActiveStoreId();
-                    const initialStoreId = visibleStores.some((store) => store.id === storedStoreId)
-                        ? storedStoreId
-                        : visibleStores[0].id;
-
-                    if (initialStoreId) {
-                        setCurrentStoreId((prev) => prev ?? initialStoreId);
-                        setActiveStoreId(initialStoreId);
-                    }
-                } else {
-                    setCurrentStoreId(null);
-                    setActiveStoreId(null);
-                }
-            })
-            .catch(() => {
-                if (!mounted) return;
-                setStores([]);
-                setCurrentStoreId(null);
-                setActiveStoreId(null);
-            });
+        loadStoresForTenant(getTenantKey()).catch(() => {
+            if (!mounted) return;
+            setStores([]);
+            setCurrentStoreId(null);
+            setActiveStoreId(null);
+        });
 
         return () => {
             mounted = false;
         };
-    }, []);
+    }, [loadStoresForTenant]);
 
     useEffect(() => {
         const handleStoreChanged = (event: Event) => {
@@ -99,11 +127,17 @@ export function Sidebar({ className, onNavigate }: SidebarProps) {
             const nextStoreId = customEvent.detail?.storeId ?? null;
             setCurrentStoreId(nextStoreId);
         };
+        const handleTenantChanged = () => {
+            const nextTenantKey = getTenantKey();
+            void loadStoresForTenant(nextTenantKey);
+        };
         window.addEventListener(STORE_CHANGED_EVENT, handleStoreChanged);
+        window.addEventListener(TENANT_CHANGED_EVENT, handleTenantChanged);
         return () => {
             window.removeEventListener(STORE_CHANGED_EVENT, handleStoreChanged);
+            window.removeEventListener(TENANT_CHANGED_EVENT, handleTenantChanged);
         };
-    }, []);
+    }, [loadStoresForTenant]);
 
     const currentStore = stores.find((store) => store.id === currentStoreId) ?? stores[0] ?? null;
     const switchableStores = stores.filter((store) => store.id !== currentStoreId);
@@ -135,7 +169,7 @@ export function Sidebar({ className, onNavigate }: SidebarProps) {
                     return (
                         <Link
                             key={item.name}
-                            href={item.href}
+                            href={withTenantQuery(item.href, tenantKey)}
                             onClick={onNavigate}
                             className={cn(
                                 "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
@@ -214,7 +248,7 @@ export function Sidebar({ className, onNavigate }: SidebarProps) {
                                 <button
                                     onClick={() => {
                                         setShowStoreSelector(false);
-                                        router.push("/stores");
+                                        router.push(withTenantQuery("/stores", tenantKey));
                                         onNavigate?.();
                                     }}
                                     className="w-full text-center text-xs text-primary hover:underline py-1"

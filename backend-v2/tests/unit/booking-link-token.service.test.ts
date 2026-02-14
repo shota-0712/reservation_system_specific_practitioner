@@ -159,4 +159,53 @@ describe('booking-link-token.service', () => {
             lineConfigSource: 'practitioner',
         });
     });
+
+    it('lists booking links with filters and creator metadata', async () => {
+        const querySpy = vi.spyOn(DatabaseService, 'query').mockResolvedValue([
+            {
+                id: 'f458155a-f6e4-4d72-a446-9fae27297ee7',
+                tenant_id: 'tenant-1',
+                store_id: null,
+                practitioner_id: '9f7dbab5-f815-4b8e-a00b-552b62993c62',
+                token: 'A23456789012345678901234567890',
+                status: 'active',
+                created_by: 'uid-owner',
+                created_at: new Date('2026-02-13T00:00:00.000Z'),
+                last_used_at: null,
+                expires_at: null,
+                store_name: null,
+                practitioner_name: '担当者',
+                created_by_name: 'オーナー',
+                created_by_email: 'owner@example.com',
+            },
+        ] as any);
+
+        const service = createBookingLinkTokenService('tenant-1');
+        const links = await service.list({
+            status: 'active',
+            practitionerId: '9f7dbab5-f815-4b8e-a00b-552b62993c62',
+            limit: 5,
+        });
+
+        expect(querySpy).toHaveBeenCalledTimes(1);
+        const [sql, params] = querySpy.mock.calls[0] as [string, unknown[]];
+        expect(sql).toContain('a.name AS created_by_name');
+        expect(sql).toContain('blt.status = $2');
+        expect(sql).toContain('blt.practitioner_id = $3');
+        expect(sql).toContain('LIMIT $4');
+        expect(params).toEqual([
+            'tenant-1',
+            'active',
+            '9f7dbab5-f815-4b8e-a00b-552b62993c62',
+            5,
+        ]);
+
+        expect(links).toHaveLength(1);
+        expect(links[0]).toMatchObject({
+            createdBy: 'uid-owner',
+            createdByName: 'オーナー',
+            createdByEmail: 'owner@example.com',
+            practitionerName: '担当者',
+        });
+    });
 });
