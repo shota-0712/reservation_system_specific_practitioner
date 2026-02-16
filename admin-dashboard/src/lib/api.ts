@@ -115,6 +115,10 @@ export function setTenantKey(tenantKey: string): void {
     if (!isTenantKeyValid(tenantKey)) {
         throw new Error('Invalid tenant key');
     }
+    const currentTenantKey = window.localStorage.getItem(TENANT_STORAGE_KEY);
+    if (currentTenantKey === tenantKey) {
+        return;
+    }
     window.localStorage.setItem(TENANT_STORAGE_KEY, tenantKey);
     window.dispatchEvent(new CustomEvent(TENANT_CHANGED_EVENT, { detail: { tenantKey } }));
 }
@@ -124,12 +128,20 @@ export function setActiveStoreId(storeId: string | null): void {
         return;
     }
     if (!storeId) {
+        const currentStoreId = window.localStorage.getItem(STORE_STORAGE_KEY);
+        if (!currentStoreId) {
+            return;
+        }
         window.localStorage.removeItem(STORE_STORAGE_KEY);
         window.dispatchEvent(new CustomEvent(STORE_CHANGED_EVENT, { detail: { storeId: null } }));
         return;
     }
     if (!isStoreIdValid(storeId)) {
         throw new Error('Invalid store id');
+    }
+    const currentStoreId = window.localStorage.getItem(STORE_STORAGE_KEY);
+    if (currentStoreId === storeId) {
+        return;
     }
     window.localStorage.setItem(STORE_STORAGE_KEY, storeId);
     window.dispatchEvent(new CustomEvent(STORE_CHANGED_EVENT, { detail: { storeId } }));
