@@ -34,7 +34,13 @@ export function validateQuery<T extends ZodSchema>(schema: T) {
             return next(result.error);
         }
 
-        req.query = result.data;
+        // req.query can be exposed as a getter-only property depending on runtime/router versions.
+        // Mutate the underlying query object instead of reassigning to avoid TypeError.
+        const currentQuery = req.query as Record<string, unknown>;
+        for (const key of Object.keys(currentQuery)) {
+            delete currentQuery[key];
+        }
+        Object.assign(currentQuery, result.data as Record<string, unknown>);
         next();
     };
 }
