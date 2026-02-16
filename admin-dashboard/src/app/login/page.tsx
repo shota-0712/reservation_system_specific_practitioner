@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Scissors, Eye, EyeOff, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -10,14 +10,19 @@ import { withTenantQuery } from "@/lib/api";
 
 export default function LoginPage() {
     const router = useRouter();
-    const searchParams = useSearchParams();
     const { login } = useAuth();
     const [email, setEmail] = useState("");
     const [password, setPassword] = useState("");
     const [showPassword, setShowPassword] = useState(false);
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState("");
-    const tenantKeyFromQuery = searchParams.get("tenant") || searchParams.get("tenantKey") || undefined;
+    const [tenantKeyFromQuery, setTenantKeyFromQuery] = useState<string | undefined>(undefined);
+
+    useEffect(() => {
+        const params = new URLSearchParams(window.location.search);
+        const key = params.get("tenant") || params.get("tenantKey") || undefined;
+        setTenantKeyFromQuery(key || undefined);
+    }, []);
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();

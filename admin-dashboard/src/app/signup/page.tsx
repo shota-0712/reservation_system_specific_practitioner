@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Scissors, Eye, EyeOff, Loader2, UserPlus } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -10,7 +10,6 @@ import { apiClient, getTenantKeyOrNull, withTenantQuery } from "@/lib/api";
 
 export default function SignupPage() {
     const router = useRouter();
-    const searchParams = useSearchParams();
     const { register } = useAuth();
 
     const [name, setName] = useState("");
@@ -22,7 +21,13 @@ export default function SignupPage() {
     const [isChecking, setIsChecking] = useState(true);
     const [canRegister, setCanRegister] = useState(false);
     const [error, setError] = useState("");
-    const tenantKeyFromQuery = searchParams.get("tenant") || searchParams.get("tenantKey") || undefined;
+    const [tenantKeyFromQuery, setTenantKeyFromQuery] = useState<string | undefined>(undefined);
+
+    useEffect(() => {
+        const params = new URLSearchParams(window.location.search);
+        const key = params.get("tenant") || params.get("tenantKey") || undefined;
+        setTenantKeyFromQuery(key || undefined);
+    }, []);
 
     useEffect(() => {
         const checkBootstrapStatus = async () => {
