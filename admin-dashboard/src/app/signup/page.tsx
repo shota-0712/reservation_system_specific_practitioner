@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { Scissors, Eye, EyeOff, Loader2, UserPlus } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -10,6 +10,7 @@ import { apiClient, getTenantKeyOrNull, withTenantQuery } from "@/lib/api";
 
 export default function SignupPage() {
     const router = useRouter();
+    const searchParams = useSearchParams();
     const { register } = useAuth();
 
     const [name, setName] = useState("");
@@ -21,6 +22,7 @@ export default function SignupPage() {
     const [isChecking, setIsChecking] = useState(true);
     const [canRegister, setCanRegister] = useState(false);
     const [error, setError] = useState("");
+    const tenantKeyFromQuery = searchParams.get("tenant") || searchParams.get("tenantKey") || undefined;
 
     useEffect(() => {
         const checkBootstrapStatus = async () => {
@@ -67,7 +69,7 @@ export default function SignupPage() {
         setIsLoading(true);
         try {
             await register(email, password, name);
-            router.push(withTenantQuery("/"));
+            router.push(withTenantQuery("/", tenantKeyFromQuery));
         } catch (err: any) {
             if (err.code === "auth/email-already-in-use") {
                 setError("このメールアドレスは既に使用されています");
@@ -91,7 +93,7 @@ export default function SignupPage() {
                         <Scissors className="h-8 w-8 text-white" />
                     </div>
                     <h1 className="text-2xl font-bold text-gray-900">初回管理者登録</h1>
-                    <p className="text-gray-500 mt-1">最初のオーナーアカウントを作成（tenant: {getTenantKeyOrNull() || "未指定"}）</p>
+                    <p className="text-gray-500 mt-1">最初のオーナーアカウントを作成（tenant: {tenantKeyFromQuery || getTenantKeyOrNull() || "未指定"}）</p>
                 </div>
 
                 <div className="bg-white rounded-2xl shadow-lg p-8">
@@ -106,7 +108,7 @@ export default function SignupPage() {
                                 このテナントは既に初期登録済みです。新規登録は無効です。
                             </div>
                             <Button className="w-full" asChild>
-                                <Link href={withTenantQuery("/login")}>ログイン画面へ</Link>
+                                <Link href={withTenantQuery("/login", tenantKeyFromQuery)}>ログイン画面へ</Link>
                             </Button>
                         </div>
                     ) : (
@@ -210,7 +212,7 @@ export default function SignupPage() {
 
                     <div className="mt-6 pt-6 border-t border-gray-100 text-center text-sm text-gray-500">
                         既にアカウントをお持ちですか？{" "}
-                        <Link href={withTenantQuery("/login")} className="text-primary hover:underline">
+                        <Link href={withTenantQuery("/login", tenantKeyFromQuery)} className="text-primary hover:underline">
                             ログイン
                         </Link>
                     </div>

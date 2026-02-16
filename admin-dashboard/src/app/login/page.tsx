@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { Scissors, Eye, EyeOff, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -10,12 +10,14 @@ import { withTenantQuery } from "@/lib/api";
 
 export default function LoginPage() {
     const router = useRouter();
+    const searchParams = useSearchParams();
     const { login } = useAuth();
     const [email, setEmail] = useState("");
     const [password, setPassword] = useState("");
     const [showPassword, setShowPassword] = useState(false);
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState("");
+    const tenantKeyFromQuery = searchParams.get("tenant") || searchParams.get("tenantKey") || undefined;
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -24,7 +26,7 @@ export default function LoginPage() {
 
         try {
             await login(email, password);
-            router.push(withTenantQuery("/"));
+            router.push(withTenantQuery("/", tenantKeyFromQuery));
         } catch (err: any) {
             console.error('Login error:', err);
             // Firebase error codes
@@ -145,12 +147,12 @@ export default function LoginPage() {
                         </p>
                         <p className="text-xs text-gray-500 text-center mt-2">
                             新規でサロンを開設する場合は{" "}
-                            <Link href={withTenantQuery("/register")} className="text-primary hover:underline">
+                            <Link href={withTenantQuery("/register", tenantKeyFromQuery)} className="text-primary hover:underline">
                                 サロン登録
                             </Link>
                             {" / "}
                             既存tenantの初回管理者登録は{" "}
-                            <Link href={withTenantQuery("/signup")} className="text-primary hover:underline">
+                            <Link href={withTenantQuery("/signup", tenantKeyFromQuery)} className="text-primary hover:underline">
                                 こちら
                             </Link>
                         </p>
