@@ -310,13 +310,15 @@ router.get(
         }
         const availableTenants = Array.from(availableTenantMap.values());
 
-        const context =
-            (requestedTenantKey
-                ? availableTenants.find((row) => row.tenantKey === requestedTenantKey)
-                : undefined) ?? availableTenants[0];
+        let context = requestedTenantKey
+            ? availableTenants.find((row) => row.tenantKey === requestedTenantKey)
+            : availableTenants[0];
 
-        if (!context) {
+        if (!context && requestedTenantKey) {
             throw new AuthorizationError('指定した tenantKey の管理権限がありません');
+        }
+        if (!context) {
+            throw new AuthorizationError('管理可能なテナントが見つかりません');
         }
 
         const response: ApiResponse<{

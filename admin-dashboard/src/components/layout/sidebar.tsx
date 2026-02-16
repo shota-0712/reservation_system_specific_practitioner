@@ -23,6 +23,7 @@ import {
     adminContextApi,
     getActiveStoreId,
     getTenantKey,
+    getTenantKeyOrNull,
     setActiveStoreId,
     STORE_CHANGED_EVENT,
     TENANT_CHANGED_EVENT,
@@ -65,13 +66,12 @@ export function Sidebar({ className, onNavigate }: SidebarProps) {
     const [currentStoreId, setCurrentStoreId] = useState<string | null>(null);
     const [tenantKey, setTenantKeyState] = useState<string>("");
 
-    const loadStoresForTenant = useCallback(async (targetTenantKey: string) => {
-        setTenantKeyState(targetTenantKey);
+    const loadStoresForTenant = useCallback(async (targetTenantKey?: string) => {
+        const context = await adminContextApi.sync(targetTenantKey);
+        const resolvedTenantKey = context?.tenantKey || targetTenantKey || getTenantKey();
+        setTenantKeyState(resolvedTenantKey);
 
-        const [storeResponse, context] = await Promise.all([
-            storesApi.list(),
-            adminContextApi.sync(targetTenantKey),
-        ]);
+        const storeResponse = await storesApi.list();
 
         if (!storeResponse.success) {
             setStores([]);
@@ -109,7 +109,7 @@ export function Sidebar({ className, onNavigate }: SidebarProps) {
 
     useEffect(() => {
         let mounted = true;
-        loadStoresForTenant(getTenantKey()).catch(() => {
+        loadStoresForTenant(getTenantKeyOrNull() ?? undefined).catch(() => {
             if (!mounted) return;
             setStores([]);
             setCurrentStoreId(null);
@@ -128,7 +128,7 @@ export function Sidebar({ className, onNavigate }: SidebarProps) {
             setCurrentStoreId(nextStoreId);
         };
         const handleTenantChanged = () => {
-            const nextTenantKey = getTenantKey();
+            const nextTenantKey = getTenantKeyOrNull() ?? undefined;
             void loadStoresForTenant(nextTenantKey);
         };
         window.addEventListener(STORE_CHANGED_EVENT, handleStoreChanged);

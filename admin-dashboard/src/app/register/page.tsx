@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { Building2, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/lib/auth-context";
-import { platformOnboardingApi, setTenantKey } from "@/lib/api";
+import { platformOnboardingApi, setTenantKey, withTenantQuery } from "@/lib/api";
 
 export default function RegisterPage() {
     const router = useRouter();
@@ -97,7 +97,7 @@ export default function RegisterPage() {
             }
 
             setTenantKey(response.data.tenantKey);
-            router.push("/onboarding");
+            router.push(withTenantQuery("/onboarding", response.data.tenantKey));
         } catch (err: any) {
             setError(err?.message || "登録に失敗しました");
         } finally {
@@ -179,7 +179,7 @@ export default function RegisterPage() {
                     </div>
 
                     <div className="md:col-span-2 flex items-center justify-between pt-2">
-                        <Link href="/login" className="text-sm text-gray-500 hover:underline">既存アカウントでログイン</Link>
+                        <Link href={withTenantQuery("/login")} className="text-sm text-gray-500 hover:underline">既存アカウントでログイン</Link>
                         <Button type="submit" disabled={loading || !enabled}>
                             {loading ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />登録中...</> : "無料で始める"}
                         </Button>

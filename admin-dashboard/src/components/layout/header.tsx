@@ -21,7 +21,7 @@ import { cn } from "@/lib/utils";
 import {
     adminContextApi,
     dashboardApi,
-    getTenantKey,
+    getTenantKeyOrNull,
     setActiveStoreId,
     TENANT_CHANGED_EVENT,
     withTenantQuery,
@@ -123,7 +123,7 @@ export function Header({ onMenuClick, isSidebarOpen }: HeaderProps) {
 
     useEffect(() => {
         let mounted = true;
-        adminContextApi.sync(getTenantKey()).then((context) => {
+        adminContextApi.sync(getTenantKeyOrNull() ?? undefined).then((context) => {
             if (!mounted || !context) return;
             const options = (context.availableTenants || []).map((tenant) => ({
                 tenantKey: tenant.tenantKey,
@@ -134,11 +134,11 @@ export function Header({ onMenuClick, isSidebarOpen }: HeaderProps) {
         }).catch(() => {
             if (!mounted) return;
             setTenantOptions([]);
-            setSelectedTenantKey(getTenantKey());
+            setSelectedTenantKey(getTenantKeyOrNull() ?? "");
         });
 
         const onTenantChanged = () => {
-            setSelectedTenantKey(getTenantKey());
+            setSelectedTenantKey(getTenantKeyOrNull() ?? "");
         };
         window.addEventListener(TENANT_CHANGED_EVENT, onTenantChanged);
         return () => {
@@ -214,7 +214,7 @@ export function Header({ onMenuClick, isSidebarOpen }: HeaderProps) {
         } catch (error) {
             console.error("Failed to logout:", error);
         }
-        router.push("/login");
+        router.push(withTenantQuery("/login"));
     };
 
     const markAllAsRead = () => {

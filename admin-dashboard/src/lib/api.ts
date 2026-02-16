@@ -74,15 +74,17 @@ function normalizeTenantUrl(path: string, tenantKey: string): string {
     return `${pathname}${nextQuery ? `?${nextQuery}` : ""}${hash ? `#${hash}` : ""}`;
 }
 
+function resolveTenantKey(): string | null {
+    return readTenantKeyFromUrl()
+        || readTenantKeyFromPath()
+        || readTenantKeyFromStorage()
+        || null;
+}
+
 export function withTenantQuery(path: string, tenantKey?: string): string {
     const resolvedTenant = tenantKey && isTenantKeyValid(tenantKey)
         ? tenantKey
-        : (
-            readTenantKeyFromUrl()
-            || readTenantKeyFromPath()
-            || readTenantKeyFromStorage()
-            || null
-        );
+        : resolveTenantKey();
     if (!resolvedTenant) {
         return path;
     }
@@ -145,24 +147,22 @@ export function getActiveStoreId(): string | null {
 }
 
 export function getTenantKey(): string {
-    const fromUrl = readTenantKeyFromUrl();
-    if (fromUrl) {
-        setTenantKey(fromUrl);
-        return fromUrl;
-    }
-
-    const fromPath = readTenantKeyFromPath();
-    if (fromPath) {
-        setTenantKey(fromPath);
-        return fromPath;
-    }
-
-    const fromStorage = readTenantKeyFromStorage();
-    if (fromStorage) {
-        return fromStorage;
+    const resolvedTenant = resolveTenantKey();
+    if (resolvedTenant) {
+        setTenantKey(resolvedTenant);
+        return resolvedTenant;
     }
 
     return TENANT_ID_FALLBACK;
+}
+
+export function getTenantKeyOrNull(): string | null {
+    const resolvedTenant = resolveTenantKey();
+    if (resolvedTenant) {
+        setTenantKey(resolvedTenant);
+        return resolvedTenant;
+    }
+    return null;
 }
 
 function getTenantApiUrl(endpoint: string): string {
@@ -233,8 +233,14 @@ export async function apiClient<T = unknown>(
 
     let { response, json } = await executeRequest(activeStoreId);
 
-    // If the stored storeId becomes invalid (e.g. deleted store), retry once without store scope.
-    if (!response.ok && activeStoreId && json?.error?.code === 'TENANT_NOT_FOUND') {
+    const isTenantNotFound = json?.error?.code === 'TENANT_NOT_FOUND';
+    const errorMessage = typeof json?.error?.message === 'string' ? json.error.message : '';
+    const isStoreScopeForbidden =
+        json?.error?.code === 'AUTHORIZATION_ERROR'
+        && errorMessage.includes('店舗');
+
+    // If the stored storeId becomes invalid (e.g. deleted store / tenant switch), retry once without store scope.
+    if (!response.ok && activeStoreId && (isTenantNotFound || isStoreScopeForbidden)) {
         setActiveStoreId(null);
         ({ response, json } = await executeRequest(null));
     }
@@ -704,12 +710,27 @@ export const adminContextApi = {
 
         if (!adminContextSyncPromise) {
             adminContextSyncPromise = (async () => {
-                const response = await adminContextApi.get(tenantKey);
-                if (!response.success || !response.data) {
+                const requestedTenantKey = tenantKey && isTenantKeyValid(tenantKey)
+                    ? tenantKey
+                    : resolveTenantKey() ?? undefined;
+
+                const tryResolveContext = async (key?: string): Promise<AdminContextData | null> => {
+                    const response = await adminContextApi.get(key);
+                    if (!response.success || !response.data) {
+                        return null;
+                    }
+                    return response.data;
+                };
+
+                let context = await tryResolveContext(requestedTenantKey);
+                if (!context && requestedTenantKey) {
+                    // URL/localStorage mismatch recovery: resolve to an accessible tenant.
+                    context = await tryResolveContext(undefined);
+                }
+                if (!context) {
                     return null;
                 }
 
-                const context = response.data;
                 if (isTenantKeyValid(context.tenantKey)) {
                     setTenantKey(context.tenantKey);
                     syncTenantQueryInCurrentUrl(context.tenantKey);

@@ -6,6 +6,7 @@ import Link from "next/link";
 import { Scissors, Eye, EyeOff, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/lib/auth-context";
+import { withTenantQuery } from "@/lib/api";
 
 export default function LoginPage() {
     const router = useRouter();
@@ -23,7 +24,7 @@ export default function LoginPage() {
 
         try {
             await login(email, password);
-            router.push("/");
+            router.push(withTenantQuery("/"));
         } catch (err: any) {
             console.error('Login error:', err);
             // Firebase error codes
@@ -144,12 +145,12 @@ export default function LoginPage() {
                         </p>
                         <p className="text-xs text-gray-500 text-center mt-2">
                             新規でサロンを開設する場合は{" "}
-                            <Link href="/register" className="text-primary hover:underline">
+                            <Link href={withTenantQuery("/register")} className="text-primary hover:underline">
                                 サロン登録
                             </Link>
                             {" / "}
                             既存tenantの初回管理者登録は{" "}
-                            <Link href="/signup" className="text-primary hover:underline">
+                            <Link href={withTenantQuery("/signup")} className="text-primary hover:underline">
                                 こちら
                             </Link>
                         </p>
