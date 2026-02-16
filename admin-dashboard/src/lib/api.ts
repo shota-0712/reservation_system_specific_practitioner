@@ -710,9 +710,13 @@ export const adminContextApi = {
 
         if (!adminContextSyncPromise) {
             adminContextSyncPromise = (async () => {
-                const requestedTenantKey = tenantKey && isTenantKeyValid(tenantKey)
+                const tenantFromUrlOrPath = readTenantKeyFromUrl() || readTenantKeyFromPath() || null;
+                const explicitTenantKey = tenantKey && isTenantKeyValid(tenantKey)
                     ? tenantKey
-                    : resolveTenantKey() ?? undefined;
+                    : (tenantFromUrlOrPath ?? undefined);
+                const requestedTenantKey = explicitTenantKey
+                    ?? readTenantKeyFromStorage()
+                    ?? undefined;
 
                 const tryResolveContext = async (key?: string): Promise<AdminContextData | null> => {
                     const response = await adminContextApi.get(key);
@@ -723,8 +727,8 @@ export const adminContextApi = {
                 };
 
                 let context = await tryResolveContext(requestedTenantKey);
-                if (!context && requestedTenantKey) {
-                    // URL/localStorage mismatch recovery: resolve to an accessible tenant.
+                if (!context && !explicitTenantKey && requestedTenantKey) {
+                    // Recover only when stale localStorage tenant was used.
                     context = await tryResolveContext(undefined);
                 }
                 if (!context) {
