@@ -6,7 +6,7 @@ import Link from "next/link";
 import { Scissors, Eye, EyeOff, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/lib/auth-context";
-import { withTenantQuery } from "@/lib/api";
+import { adminContextApi, withTenantQuery } from "@/lib/api";
 
 export default function LoginPage() {
     const router = useRouter();
@@ -31,7 +31,12 @@ export default function LoginPage() {
 
         try {
             await login(email, password);
-            router.push(withTenantQuery("/", tenantKeyFromQuery));
+            // Sync admin context immediately after login to resolve the tenant key
+            // before redirecting. Without this, fresh sessions (empty localStorage)
+            // redirect to "/" with no tenant, causing a false onboarding redirect (BUG-02, BUG-03).
+            const context = await adminContextApi.sync(tenantKeyFromQuery || undefined);
+            const resolvedTenantKey = context?.tenantKey || tenantKeyFromQuery || undefined;
+            router.push(withTenantQuery("/", resolvedTenantKey));
         } catch (err: any) {
             console.error('Login error:', err);
             // Firebase error codes

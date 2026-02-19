@@ -5,7 +5,7 @@
 
 import { Request, Response, NextFunction } from 'express';
 import { DatabaseService } from '../config/database.js';
-import { TenantNotFoundError, TenantInactiveError } from '../utils/errors.js';
+import { TenantNotFoundError, TenantInactiveError, AuthorizationError } from '../utils/errors.js';
 import { logger } from '../utils/logger.js';
 import type { Tenant, AuthenticatedRequest } from '../types/index.js';
 
@@ -122,7 +122,12 @@ function extractTenantKey(req: Request): string | null {
     }
 
     const host = req.headers.host || '';
-    const subdomain = host.split('.')[0];
+    // Strip port before extracting subdomain (e.g. "localhost:3000" → "localhost")
+    const hostname = host.split(':')[0];
+    const parts = hostname.split('.');
+    // Only treat as subdomain when there is a real domain (at least 2 parts)
+    // to avoid resolving "localhost" or "api" as tenant keys.
+    const subdomain = parts.length > 1 ? parts[0] : null;
     if (subdomain && subdomain !== 'www' && subdomain !== 'api') {
         return subdomain;
     }
@@ -200,7 +205,9 @@ export function resolveTenant(options: { required?: boolean; allowInactive?: boo
                     tenant.id
                 );
                 if (!storeRow) {
-                    throw new TenantNotFoundError(`store:${requestedStoreId}`);
+                    // BUG-15 fix: throw AuthorizationError (not TenantNotFoundError) so that
+                    // apiClient does NOT silently clear the store ID and retry tenant-wide.
+                    throw new AuthorizationError('指定された店舗へのアクセス権限がありません');
                 }
                 storeId = requestedStoreId;
             }

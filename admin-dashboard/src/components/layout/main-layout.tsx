@@ -16,7 +16,7 @@ interface MainLayoutProps {
 
 export function MainLayout({ children }: MainLayoutProps) {
     const [isSidebarOpen, setIsSidebarOpen] = useState(false);
-    const [onboardingStatus, setOnboardingStatus] = useState<'pending' | 'in_progress' | 'completed' | null>(null);
+    const [onboardingStatus, setOnboardingStatus] = useState<'pending' | 'in_progress' | 'completed' | 'error' | null>(null);
     const [onboardingLoading, setOnboardingLoading] = useState(false);
     const pathname = usePathname();
     const router = useRouter();
@@ -56,6 +56,9 @@ export function MainLayout({ children }: MainLayoutProps) {
         }
     }, [user, loading, isPublicAuthRoute, router]);
 
+    // Run admin context sync + onboarding check only when the user auth state changes,
+    // NOT on every route change (BUG-07: pathname was previously in deps causing 2 API
+    // calls on every navigation and a loading spinner flash on each route change).
     useEffect(() => {
         if (isPublicAuthRoute) return;
         if (loading || !user) return;
@@ -73,13 +76,16 @@ export function MainLayout({ children }: MainLayoutProps) {
             const response = await onboardingApi.getStatus();
             if (!mounted) return;
             if (!response.success) {
-                setOnboardingStatus('pending');
+                // BUG-08 fix: on API error don't force-redirect to /onboarding (would cause
+                // a permanent redirect loop if the API is down). Use a distinct 'error' state
+                // so the redirect effect can skip the redirect.
+                setOnboardingStatus('error');
                 return;
             }
             setOnboardingStatus(response.data?.onboardingStatus ?? 'pending');
         })().catch(() => {
             if (mounted) {
-                setOnboardingStatus('pending');
+                setOnboardingStatus('error');
             }
         }).finally(() => {
             if (mounted) {
@@ -90,11 +96,15 @@ export function MainLayout({ children }: MainLayoutProps) {
         return () => {
             mounted = false;
         };
-    }, [isPublicAuthRoute, loading, user, pathname]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [isPublicAuthRoute, loading, user]); // intentionally omit pathname — only re-run on auth change
 
     useEffect(() => {
         if (isPublicAuthRoute) return;
         if (loading || onboardingLoading || !user || !onboardingStatus) return;
+
+        // 'error' means the status API failed — don't redirect, stay on current page.
+        if (onboardingStatus === 'error') return;
 
         if (onboardingStatus !== 'completed' && !isOnboardingRoute) {
             router.push(withTenantQuery('/onboarding'));

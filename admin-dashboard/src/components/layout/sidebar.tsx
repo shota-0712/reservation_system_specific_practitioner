@@ -22,7 +22,6 @@ import { cn } from "@/lib/utils";
 import {
     adminContextApi,
     getActiveStoreId,
-    getTenantKey,
     getTenantKeyOrNull,
     setActiveStoreId,
     STORE_CHANGED_EVENT,
@@ -68,7 +67,7 @@ export function Sidebar({ className, onNavigate }: SidebarProps) {
 
     const loadStoresForTenant = useCallback(async (targetTenantKey?: string) => {
         const context = await adminContextApi.sync(targetTenantKey);
-        const resolvedTenantKey = context?.tenantKey || targetTenantKey || getTenantKey();
+        const resolvedTenantKey = context?.tenantKey || targetTenantKey || getTenantKeyOrNull() || '';
         setTenantKeyState(resolvedTenantKey);
 
         const storeResponse = await storesApi.list();

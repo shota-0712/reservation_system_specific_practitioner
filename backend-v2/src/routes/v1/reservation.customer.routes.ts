@@ -26,6 +26,7 @@ import {
     resolveStoreContext,
 } from '../../services/reservation-policy.service.js';
 import { getRequestMeta, writeAuditLog } from '../../services/audit-log.service.js';
+import { createBookingLinkTokenService } from '../../services/booking-link-token.service.js';
 import { ConflictError, ValidationError, AuthenticationError } from '../../utils/errors.js';
 import type { ApiResponse, Reservation } from '../../types/index.js';
 
@@ -43,6 +44,10 @@ const createReservationSchema = z.object({
     customerName: z.string().optional(),
     customerPhone: z.string().optional(),
     storeId: z.string().optional(),
+    // Opaque token from the booking link URL (?t=TOKEN).
+    // When present, the server validates that the practitionerId and storeId
+    // in the request match the token so the nominated practitioner cannot be swapped.
+    bookingToken: z.string().optional(),
 });
 
 const updateReservationSchema = z.object({
@@ -91,9 +96,31 @@ function practitionerMatchesStore(practitionerStoreIds: string[] | undefined, st
             customerPhone,
             isNomination,
             storeId,
+            bookingToken,
         } = req.body;
 
-        const { store, policy } = await resolveStoreContext(tenantId, storeId || (req as { storeId?: string }).storeId);
+        // When a booking link token is supplied, validate it server-side so the
+        // nominated practitioner cannot be swapped by a manipulated request body.
+        let tokenStoreId: string | undefined;
+        let tokenForcesNomination = false;
+        if (bookingToken) {
+            const tokenService = createBookingLinkTokenService();
+            const resolved = await tokenService.resolve(bookingToken);
+            if (!resolved) {
+                throw new ValidationError('無効または期限切れの予約URLです');
+            }
+            if (resolved.practitionerId !== practitionerId) {
+                throw new ValidationError('この予約URLで指定された施術者と一致しません');
+            }
+            if (resolved.storeId && storeId && resolved.storeId !== storeId) {
+                throw new ValidationError('この予約URLで指定された店舗と一致しません');
+            }
+            tokenStoreId = resolved.storeId;
+            tokenForcesNomination = true;
+        }
+
+        const effectiveStoreId = storeId || tokenStoreId || (req as { storeId?: string }).storeId;
+        const { store, policy } = await resolveStoreContext(tenantId, effectiveStoreId);
         enforceAdvanceBookingPolicy(date, policy);
 
         const reservationRepo = createReservationRepository(tenantId);
@@ -115,7 +142,8 @@ function practitionerMatchesStore(practitionerStoreIds: string[] | undefined, st
         const optionDuration = options.reduce((sum, o) => sum + o.duration, 0);
         const optionPrice = options.reduce((sum, o) => sum + o.price, 0);
 
-        const nominationFee = isNomination ? (practitioner.nominationFee ?? 0) : 0;
+        const effectiveIsNomination = tokenForcesNomination || (isNomination ?? false);
+        const nominationFee = effectiveIsNomination ? (practitioner.nominationFee ?? 0) : 0;
         const totalDuration = menuDuration + optionDuration;
         const totalPrice = menuPrice + optionPrice + nominationFee;
 

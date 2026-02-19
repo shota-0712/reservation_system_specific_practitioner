@@ -19,6 +19,17 @@ const onboardingService = createOnboardingService();
 const emailRateLimitStore = new Map<string, { count: number; resetAt: number }>();
 const emailRateLimitWindowMs = 15 * 60 * 1000;
 const emailRateLimitMax = 5;
+
+// BUG-27 fix: periodically sweep expired entries to prevent unbounded memory growth.
+// Without this, each unique email that triggers the limiter leaks an entry indefinitely.
+setInterval(() => {
+    const now = Date.now();
+    for (const [key, entry] of emailRateLimitStore.entries()) {
+        if (entry.resetAt <= now) {
+            emailRateLimitStore.delete(key);
+        }
+    }
+}, emailRateLimitWindowMs).unref();
 const ipLimiter = rateLimit({
     windowMs: 15 * 60 * 1000,
     max: 30,
