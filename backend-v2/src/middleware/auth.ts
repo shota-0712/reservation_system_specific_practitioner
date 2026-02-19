@@ -36,67 +36,41 @@ export function requireFirebaseAuth() {
             const decodedToken = await auth.verifyIdToken(token);
 
             const tenantId = authenticatedReq.tenantId;
+            const normalizedEmail = decodedToken.email?.toLowerCase() || null;
 
             if (!tenantId) {
                 throw new AuthenticationError('テナントが特定できません');
             }
 
-            const adminRow = await DatabaseService.queryOne(
+            let adminRow = await DatabaseService.queryOne(
                 'SELECT * FROM admins WHERE tenant_id = $1 AND firebase_uid = $2 AND is_active = true LIMIT 1',
                 [tenantId, decodedToken.uid],
                 tenantId
             );
 
-            if (!adminRow) {
-                const anyAdminRow = await DatabaseService.queryOne(
-                    'SELECT id FROM admins WHERE tenant_id = $1 LIMIT 1',
-                    [tenantId],
+            // Firebase UID can change when auth provider/account linking is reconfigured.
+            // Recover by matching active admin with the same email and relinking UID.
+            if (!adminRow && normalizedEmail) {
+                const adminRowByEmail = await DatabaseService.queryOne(
+                    'SELECT * FROM admins WHERE tenant_id = $1 AND lower(email) = lower($2) AND is_active = true LIMIT 1',
+                    [tenantId, normalizedEmail],
                     tenantId
                 );
 
-                if (!anyAdminRow) {
-                    logger.info(`Creating initial admin for tenant ${tenantId}`);
-                    const permissions = {
-                        canManageReservations: true,
-                        canViewReports: true,
-                        canManageCustomers: true,
-                        canManagePractitioners: true,
-                        canManageMenus: true,
-                        canManageSettings: true,
-                        canManageAdmins: true,
-                    };
-
-                    await DatabaseService.queryOne(
-                        `INSERT INTO admins (tenant_id, firebase_uid, email, name, role, permissions, is_active, store_ids)\n                         VALUES ($1, $2, $3, $4, 'owner', $5, true, ARRAY[]::uuid[])\n                         RETURNING *`,
-                        [tenantId, decodedToken.uid, decodedToken.email || '', decodedToken.name || 'オーナー', permissions],
+                if (adminRowByEmail) {
+                    adminRow = await DatabaseService.queryOne(
+                        'UPDATE admins SET firebase_uid = $1 WHERE id = $2 RETURNING *',
+                        [decodedToken.uid, (adminRowByEmail as { id: string }).id],
                         tenantId
                     );
-
-                    const activeStoreRows = await DatabaseService.query<{ id: string }>(
-                        `SELECT id
-                         FROM stores
-                         WHERE tenant_id = $1
-                           AND status = 'active'
-                         ORDER BY display_order ASC, created_at ASC`,
-                        [tenantId],
-                        tenantId
-                    );
-                    const allowedStoreIds = activeStoreRows.map((row) => row.id);
-                    if (!authenticatedReq.storeId && allowedStoreIds.length > 0) {
-                        authenticatedReq.storeId = allowedStoreIds[0];
-                    }
-
-                    authenticatedReq.user = {
-                        uid: decodedToken.uid,
-                        tenantId,
-                        role: 'owner',
-                        permissions,
-                        storeIds: allowedStoreIds,
-                    };
-                    logger.debug(`Created and authenticated initial admin: ${decodedToken.email}`);
-                    return next();
                 }
+            }
 
+            if (!adminRow) {
+                // SECURITY: Do not auto-create admins. Any Firebase user could claim
+                // ownership of a tenant with zero admins, which is a privilege escalation risk.
+                // The first admin must be created through the secure registration endpoint
+                // (/api/platform/v1/onboarding/register).
                 throw new AuthorizationError('管理者として登録されていません');
             }
 
@@ -121,6 +95,11 @@ export function requireFirebaseAuth() {
             const scopedStoreIds = rowStoreIds.length > 0
                 ? rowStoreIds.filter((storeId) => activeStoreIds.includes(storeId))
                 : activeStoreIds;
+            // BUG-18 fix: if the admin has explicit store restrictions but ALL assigned stores
+            // are now inactive, deny access rather than silently escalating to all active stores.
+            if (rowStoreIds.length > 0 && scopedStoreIds.length === 0) {
+                throw new AuthorizationError('アクセス可能な店舗がありません。管理者に連絡してください。');
+            }
             const allowedStoreIds = scopedStoreIds.length > 0 ? scopedStoreIds : activeStoreIds;
 
             const requestedStoreId =

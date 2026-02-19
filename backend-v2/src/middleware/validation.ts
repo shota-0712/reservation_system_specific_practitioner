@@ -5,6 +5,7 @@
 
 import { Request, Response, NextFunction } from 'express';
 import { z, ZodSchema } from 'zod';
+import { ValidationError } from '../utils/errors.js';
 
 /**
  * Validate request body
@@ -14,7 +15,11 @@ export function validateBody<T extends ZodSchema>(schema: T) {
         const result = schema.safeParse(req.body);
 
         if (!result.success) {
-            return next(result.error);
+            // BUG-26 fix: wrap ZodError in ValidationError so all middleware in the chain
+            // receives an ApiError instance rather than a raw ZodError.
+            return next(new ValidationError('入力値が不正です', {
+                issues: result.error.issues.map(i => ({ path: i.path.join('.'), message: i.message })),
+            }));
         }
 
         // Replace body with parsed data (includes defaults, transformations)
@@ -31,7 +36,9 @@ export function validateQuery<T extends ZodSchema>(schema: T) {
         const result = schema.safeParse(req.query);
 
         if (!result.success) {
-            return next(result.error);
+            return next(new ValidationError('クエリパラメータが不正です', {
+                issues: result.error.issues.map(i => ({ path: i.path.join('.'), message: i.message })),
+            }));
         }
 
         // req.query can be exposed as a getter-only property depending on runtime/router versions.
@@ -53,7 +60,9 @@ export function validateParams<T extends ZodSchema>(schema: T) {
         const result = schema.safeParse(req.params);
 
         if (!result.success) {
-            return next(result.error);
+            return next(new ValidationError('パスパラメータが不正です', {
+                issues: result.error.issues.map(i => ({ path: i.path.join('.'), message: i.message })),
+            }));
         }
 
         req.params = result.data;

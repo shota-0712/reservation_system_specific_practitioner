@@ -28,6 +28,13 @@ initializeFirebase();
 const app: Express = express();
 
 // ============================================
+// Trust Proxy (for Cloud Run / reverse proxy)
+// MUST be set before rate limiter so req.ip reflects the real client IP
+// ============================================
+
+app.set('trust proxy', 1);
+
+// ============================================
 // Security Middleware
 // ============================================
 
@@ -66,7 +73,16 @@ app.use(cors({
     allowedHeaders: ['Content-Type', 'Authorization', 'X-Tenant-Id', 'X-Store-Id'],
 }));
 
-// Rate limiting
+// Rate limiting — applied only to public / unauthenticated routes.
+//
+// /api/v1/* routes require a valid Firebase token for every request, so IP-based
+// rate limiting there is counterproductive: the admin dashboard legitimately fires
+// 6-10 parallel API calls on every page load, which trips the limiter and produces
+// false positives while providing no additional security over Firebase auth.
+//
+// /api/platform/v1/* is a mix of public and authenticated endpoints. The sensitive
+// public one (/onboarding/register) already has its own stricter per-IP and per-email
+// limiter in onboarding.routes.ts, so the global limiter here just acts as a catch-all.
 const limiter = rateLimit({
     windowMs: env.RATE_LIMIT_WINDOW_MS,
     max: env.RATE_LIMIT_MAX_REQUESTS,
@@ -80,8 +96,11 @@ const limiter = rateLimit({
     standardHeaders: true,
     legacyHeaders: false,
     skip: (req) => {
-        // Skip rate limiting for health checks
-        return req.path === '/health' || req.path === '/ready';
+        // Always skip health checks
+        if (req.path === '/health' || req.path === '/ready') return true;
+        // Skip authenticated admin API routes — Firebase token is the real gate
+        if (req.originalUrl.startsWith('/api/v1/')) return true;
+        return false;
     },
 });
 app.use(limiter);
@@ -98,12 +117,6 @@ app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 // ============================================
 
 app.use(requestLogger());
-
-// ============================================
-// Trust Proxy (for Cloud Run)
-// ============================================
-
-app.set('trust proxy', 1);
 
 // ============================================
 // Routes

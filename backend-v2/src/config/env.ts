@@ -174,7 +174,7 @@ function validateConfig(): EnvConfig {
 
         // Rate Limiting
         RATE_LIMIT_WINDOW_MS: getEnvNumber('RATE_LIMIT_WINDOW_MS', 60000),
-        RATE_LIMIT_MAX_REQUESTS: getEnvNumber('RATE_LIMIT_MAX_REQUESTS', 100),
+        RATE_LIMIT_MAX_REQUESTS: getEnvNumber('RATE_LIMIT_MAX_REQUESTS', 300),
 
         // Logging
         LOG_LEVEL: getEnvString('LOG_LEVEL', isProduction ? 'info' : 'debug') as EnvConfig['LOG_LEVEL'],

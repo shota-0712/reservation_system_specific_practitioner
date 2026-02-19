@@ -6,7 +6,7 @@
 import { getIdToken } from './firebase';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080';
-const TENANT_ID_FALLBACK = process.env.NEXT_PUBLIC_TENANT_ID || 'default';
+const TENANT_ID_FALLBACK = process.env.NEXT_PUBLIC_TENANT_ID || '';
 const TENANT_STORAGE_KEY = 'reservation_admin_tenant_key';
 const STORE_STORAGE_KEY = 'reservation_admin_store_id';
 export const STORE_CHANGED_EVENT = 'reserve:store-changed';
@@ -159,22 +159,25 @@ export function getActiveStoreId(): string | null {
 }
 
 export function getTenantKey(): string {
+    // BUG-01 fix: do NOT call setTenantKey() here. setTenantKey() fires TENANT_CHANGED_EVENT
+    // which triggers loadStoresForTenant() in the sidebar on every API call (including parallel
+    // calls on page load). Tenant persistence to localStorage is handled exclusively by
+    // adminContextApi.sync().
     const resolvedTenant = resolveTenantKey();
     if (resolvedTenant) {
-        setTenantKey(resolvedTenant);
         return resolvedTenant;
     }
 
-    return TENANT_ID_FALLBACK;
+    if (TENANT_ID_FALLBACK && isTenantKeyValid(TENANT_ID_FALLBACK)) {
+        return TENANT_ID_FALLBACK;
+    }
+
+    throw new Error('テナントが特定できません。URLにtenantパラメータを指定してください。');
 }
 
 export function getTenantKeyOrNull(): string | null {
-    const resolvedTenant = resolveTenantKey();
-    if (resolvedTenant) {
-        setTenantKey(resolvedTenant);
-        return resolvedTenant;
-    }
-    return null;
+    // BUG-01 fix: read-only — does not write to localStorage or fire events.
+    return resolveTenantKey();
 }
 
 function getTenantApiUrl(endpoint: string): string {
@@ -216,7 +219,15 @@ export async function apiClient<T = unknown>(
         }
     }
 
-    const url = getTenantApiUrl(endpoint);
+    let url: string;
+    try {
+        url = getTenantApiUrl(endpoint);
+    } catch {
+        return {
+            success: false,
+            error: { code: 'TENANT_NOT_RESOLVED', message: 'テナントが特定できません。ログインし直してください。' },
+        };
+    }
     const activeStoreId = getActiveStoreId();
 
     const executeRequest = async (storeId: string | null) => {
@@ -740,7 +751,11 @@ export const adminContextApi = {
 
                 let context = await tryResolveContext(requestedTenantKey);
                 if (!context && !explicitTenantKey && requestedTenantKey) {
-                    // Recover only when stale localStorage tenant was used.
+                    // BUG-05 fix: The stored localStorage tenant key is stale (admin was removed
+                    // from that tenant, or the tenant slug changed). Clear the stale key first so
+                    // the user is not silently switched to a different tenant without any notice.
+                    // Then retry without a key to let the server return their current primary tenant.
+                    window.localStorage.removeItem(TENANT_STORAGE_KEY);
                     context = await tryResolveContext(undefined);
                 }
                 if (!context) {
