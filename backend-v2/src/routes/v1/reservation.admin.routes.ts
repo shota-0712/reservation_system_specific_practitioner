@@ -460,25 +460,77 @@ router.put(
             }
         }
 
-        if (practitioner.calendarId) {
+        // Google Calendar sync (best-effort).
+        // When the practitioner changes, delete the old event and create a new one
+        // on the new practitioner's calendar. Otherwise just update in place.
+        const oldPractitioner = existing.practitionerId === newPractitionerId
+            ? practitioner
+            : await practitionerRepo.findById(existing.practitionerId);
+
+        if (oldPractitioner?.calendarId || practitioner.calendarId) {
             const googleService = createGoogleCalendarService(tenantId);
-            if (updated.googleCalendarEventId) {
+            const queue = createGoogleCalendarSyncQueueService(tenantId);
+
+            if (
+                existing.googleCalendarEventId &&
+                oldPractitioner?.calendarId &&
+                oldPractitioner.calendarId !== practitioner.calendarId
+            ) {
+                // Practitioner changed: delete from old calendar, create on new
+                googleService
+                    .syncDeleteEvent(oldPractitioner.calendarId, existing.googleCalendarEventId)
+                    .then(() => reservationRepo.clearGoogleCalendarRefs(updated.id))
+                    .catch((error) => {
+                        console.error('Failed to delete Google Calendar event', error);
+                        queue
+                            .enqueue({
+                                reservationId: updated.id,
+                                action: 'delete',
+                                calendarId: oldPractitioner.calendarId,
+                                eventId: existing.googleCalendarEventId,
+                            })
+                            .catch(() => undefined);
+                    });
+
+                if (practitioner.calendarId) {
+                    googleService
+                        .syncCreateEvent(practitioner.calendarId, updated, store.timezone || 'Asia/Tokyo')
+                        .then(async (eventId) => {
+                            if (!eventId) return;
+                            await reservationRepo.setGoogleCalendarRefs(updated.id, {
+                                calendarId: practitioner.calendarId as string,
+                                eventId,
+                            });
+                        })
+                        .catch((error) => {
+                            console.error('Failed to create Google Calendar event', error);
+                            queue
+                                .enqueue({
+                                    reservationId: updated.id,
+                                    action: 'create',
+                                    calendarId: practitioner.calendarId,
+                                })
+                                .catch(() => undefined);
+                        });
+                }
+            } else if (existing.googleCalendarEventId && practitioner.calendarId) {
+                // Same practitioner: update existing event
                 const calendarId = updated.googleCalendarId || practitioner.calendarId;
                 googleService
-                    .syncUpdateEvent(calendarId, updated.googleCalendarEventId, updated, store.timezone || 'Asia/Tokyo')
+                    .syncUpdateEvent(calendarId, existing.googleCalendarEventId, updated, store.timezone || 'Asia/Tokyo')
                     .catch((error) => {
                         console.error('Failed to update Google Calendar event', error);
-                        const queue = createGoogleCalendarSyncQueueService(tenantId);
                         queue
                             .enqueue({
                                 reservationId: updated.id,
                                 action: 'update',
                                 calendarId,
-                                eventId: updated.googleCalendarEventId,
+                                eventId: existing.googleCalendarEventId,
                             })
                             .catch(() => undefined);
                     });
-            } else {
+            } else if (!existing.googleCalendarEventId && practitioner.calendarId) {
+                // No existing event yet: create new
                 googleService
                     .syncCreateEvent(practitioner.calendarId, updated, store.timezone || 'Asia/Tokyo')
                     .then(async (eventId) => {
@@ -490,7 +542,6 @@ router.put(
                     })
                     .catch((error) => {
                         console.error('Failed to create Google Calendar event', error);
-                        const queue = createGoogleCalendarSyncQueueService(tenantId);
                         queue
                             .enqueue({
                                 reservationId: updated.id,
@@ -539,6 +590,7 @@ router.get(
     '/by-date/:date',
     requireFirebaseAuth(),
     requirePermission('canManageReservations'),
+    validateParams(z.object({ date: dateSchema })),
     asyncHandler(async (req: Request, res: Response): Promise<void> => {
         const tenantId = getTenantId(req);
         const date = req.params.date as string;

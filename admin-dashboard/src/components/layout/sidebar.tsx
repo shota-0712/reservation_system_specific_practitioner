@@ -25,6 +25,7 @@ import {
     getTenantKeyOrNull,
     setActiveStoreId,
     STORE_CHANGED_EVENT,
+    STORES_UPDATED_EVENT,
     TENANT_CHANGED_EVENT,
     storesApi,
     withTenantQuery,
@@ -130,11 +131,17 @@ export function Sidebar({ className, onNavigate }: SidebarProps) {
             const nextTenantKey = getTenantKeyOrNull() ?? undefined;
             void loadStoresForTenant(nextTenantKey);
         };
+        const handleStoresUpdated = () => {
+            const nextTenantKey = getTenantKeyOrNull() ?? undefined;
+            void loadStoresForTenant(nextTenantKey);
+        };
         window.addEventListener(STORE_CHANGED_EVENT, handleStoreChanged);
         window.addEventListener(TENANT_CHANGED_EVENT, handleTenantChanged);
+        window.addEventListener(STORES_UPDATED_EVENT, handleStoresUpdated);
         return () => {
             window.removeEventListener(STORE_CHANGED_EVENT, handleStoreChanged);
             window.removeEventListener(TENANT_CHANGED_EVENT, handleTenantChanged);
+            window.removeEventListener(STORES_UPDATED_EVENT, handleStoresUpdated);
         };
     }, [loadStoresForTenant]);
 

@@ -19,14 +19,14 @@ export function Dialog({ open, onClose, onOpenChange, children }: DialogProps) {
     };
 
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center">
+        <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto py-4">
             {/* Backdrop */}
             <div
                 className="fixed inset-0 bg-black/50 transition-opacity"
                 onClick={handleClose}
             />
             {/* Content */}
-            <div className="relative z-10 w-full max-w-md mx-4 animate-in fade-in zoom-in-95 duration-200">
+            <div className="relative z-10 w-full max-w-md mx-4 animate-in fade-in zoom-in-95 duration-200 flex flex-col max-h-[90vh]">
                 {children}
             </div>
         </div>
@@ -40,7 +40,7 @@ interface DialogContentProps {
 
 export function DialogContent({ children, className }: DialogContentProps) {
     return (
-        <div className={cn("bg-white rounded-xl shadow-xl overflow-hidden", className)}>
+        <div className={cn("bg-white rounded-xl shadow-xl overflow-hidden flex flex-col max-h-full", className)}>
             {children}
         </div>
     );
@@ -73,7 +73,7 @@ interface DialogBodyProps {
 }
 
 export function DialogBody({ children, className }: DialogBodyProps) {
-    return <div className={cn("p-4", className)}>{children}</div>;
+    return <div className={cn("p-4 overflow-y-auto flex-1", className)}>{children}</div>;
 }
 
 interface DialogFooterProps {

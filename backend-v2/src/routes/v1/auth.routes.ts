@@ -321,7 +321,7 @@ router.get('/admin/bootstrap-status',
     asyncHandler(async (req: Request, res: Response): Promise<void> => {
         const tenantId = getTenantId(req);
         const row = await DatabaseService.queryOne<{ count: number }>(
-            'SELECT COUNT(*)::int AS count FROM admins WHERE tenant_id = $1',
+            'SELECT COUNT(*)::int AS count FROM admins WHERE tenant_id = $1 AND is_active = true',
             [tenantId],
             tenantId
         );
