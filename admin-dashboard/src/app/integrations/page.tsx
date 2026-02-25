@@ -290,7 +290,7 @@ export default function IntegrationsPage() {
                         </div>
                     ) : (
                         <div className="space-y-4">
-                            <div className="grid gap-3 md:grid-cols-2">
+                            <div className="grid gap-3 md:grid-cols-3">
                                 <div className="rounded-lg border p-4">
                                     <div className="text-sm text-muted-foreground">ステータス</div>
                                     <div className="mt-1 flex items-center gap-2 font-semibold">
@@ -306,20 +306,28 @@ export default function IntegrationsPage() {
                                     <div className="text-sm text-muted-foreground">連携アカウント</div>
                                     <div className="mt-1 font-semibold">{status?.email || "-"}</div>
                                 </div>
+                                <div className="rounded-lg border p-4">
+                                    <div className="text-sm text-muted-foreground">最終更新</div>
+                                    <div className="mt-1 font-semibold text-sm">
+                                        {status?.updatedAt ? new Date(status.updatedAt).toLocaleString("ja-JP") : "-"}
+                                    </div>
+                                </div>
                             </div>
 
-                            <div className="rounded-lg border p-4 text-sm text-muted-foreground space-y-1">
-                                <div>scope: {status?.scope || "-"}</div>
-                                <div>updated: {status?.updatedAt || "-"}</div>
-                                {status?.queue && (
-                                    <div>
-                                        queue: pending {status.queue.pending}, running {status.queue.running}, failed {status.queue.failed}, dead {status.queue.dead}
-                                    </div>
-                                )}
-                                {status?.queue?.lastError && (
-                                    <div className="text-red-600">lastError: {status.queue.lastError}</div>
-                                )}
-                            </div>
+                            {status?.queue && (status.queue.failed > 0 || status.queue.dead > 0) && (
+                                <div className="rounded-lg border border-yellow-200 bg-yellow-50 p-4 text-sm space-y-1">
+                                    <div className="font-medium text-yellow-800">同期キューに問題があります</div>
+                                    {status.queue.failed > 0 && (
+                                        <div className="text-yellow-700">失敗: {status.queue.failed} 件</div>
+                                    )}
+                                    {status.queue.dead > 0 && (
+                                        <div className="text-yellow-700">要再投入: {status.queue.dead} 件</div>
+                                    )}
+                                    {status.queue.lastError && (
+                                        <div className="text-red-600 text-xs">{status.queue.lastError}</div>
+                                    )}
+                                </div>
+                            )}
 
                             <div className="flex gap-2">
                                 <Button onClick={startOAuth} disabled={running}>

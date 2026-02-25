@@ -11,6 +11,7 @@ const TENANT_STORAGE_KEY = 'reservation_admin_tenant_key';
 const STORE_STORAGE_KEY = 'reservation_admin_store_id';
 export const STORE_CHANGED_EVENT = 'reserve:store-changed';
 export const TENANT_CHANGED_EVENT = 'reserve:tenant-changed';
+export const STORES_UPDATED_EVENT = 'reserve:stores-updated';
 
 interface FetchOptions extends RequestInit {
     includeAuth?: boolean;

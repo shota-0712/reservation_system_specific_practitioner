@@ -46,6 +46,7 @@ export default function KartesPage() {
     const [deleteTarget, setDeleteTarget] = useState<"karte" | "template">("karte");
     const [karteFormError, setKarteFormError] = useState<string | null>(null);
     const [templateFormError, setTemplateFormError] = useState<string | null>(null);
+    const [creatingDefault, setCreatingDefault] = useState(false);
 
     const [karteForm, setKarteForm] = useState({
         customerId: "",
@@ -326,6 +327,31 @@ export default function KartesPage() {
         }
     };
 
+    const createDefaultTemplate = async () => {
+        setCreatingDefault(true);
+        setError(null);
+        try {
+            const res = await karteTemplatesApi.create({
+                name: "基本カルテ",
+                description: "施術内容・薬剤・仕上がりのスタンダードなカルテ",
+                isDefault: true,
+                isActive: true,
+                displayOrder: 0,
+                applicableMenuCategories: [],
+                fields: [],
+            });
+            if (!res.success) throw new Error(res.error?.message || "テンプレート作成に失敗しました");
+            pushToast({ variant: "success", title: "初期テンプレートを作成しました" });
+            await fetchData();
+        } catch (err: any) {
+            console.error(err);
+            setError(err.message || "初期テンプレート作成に失敗しました");
+            pushToast({ variant: "error", title: "初期テンプレート作成に失敗しました", description: err.message });
+        } finally {
+            setCreatingDefault(false);
+        }
+    };
+
     return (
         <div className="space-y-6">
             <div className="flex items-center justify-between">
@@ -430,7 +456,23 @@ export default function KartesPage() {
                                     <Loader2 className="h-5 w-5 animate-spin" />
                                 </div>
                             ) : templates.length === 0 ? (
-                                <div className="h-40 flex items-center justify-center text-muted-foreground">テンプレートがありません</div>
+                                <div className="h-40 flex flex-col items-center justify-center gap-3 text-muted-foreground">
+                                    <FileText className="h-8 w-8 opacity-30" />
+                                    <p className="text-sm">テンプレートがありません</p>
+                                    <Button
+                                        variant="outline"
+                                        size="sm"
+                                        onClick={createDefaultTemplate}
+                                        disabled={creatingDefault}
+                                    >
+                                        {creatingDefault ? (
+                                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                        ) : (
+                                            <Plus className="mr-2 h-4 w-4" />
+                                        )}
+                                        初期テンプレートを作成
+                                    </Button>
+                                </div>
                             ) : (
                                 <table className="w-full">
                                     <thead>

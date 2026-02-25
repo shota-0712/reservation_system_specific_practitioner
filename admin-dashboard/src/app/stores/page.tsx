@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ConfirmDialog, Dialog, DialogBody, DialogContent, DialogFooter, DialogHeader } from "@/components/ui/dialog";
 import { useToast } from "@/components/ui/toast";
-import { storesApi } from "@/lib/api";
+import { storesApi, STORES_UPDATED_EVENT } from "@/lib/api";
 
 interface StoreItem {
     id: string;
@@ -159,6 +159,7 @@ export default function StoresPage() {
                 variant: "success",
                 title: selected ? "店舗を更新しました" : "店舗を作成しました",
             });
+            window.dispatchEvent(new CustomEvent(STORES_UPDATED_EVENT));
             await fetchData();
         } catch (err: any) {
             console.error(err);
@@ -188,6 +189,7 @@ export default function StoresPage() {
                 variant: "success",
                 title: "店舗を削除しました",
             });
+            window.dispatchEvent(new CustomEvent(STORES_UPDATED_EVENT));
             await fetchData();
         } catch (err: any) {
             console.error(err);

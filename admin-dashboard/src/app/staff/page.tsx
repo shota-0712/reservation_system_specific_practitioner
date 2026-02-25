@@ -180,7 +180,9 @@ export default function StaffPage() {
             setBookingLinks(response.data as BookingLinkToken[]);
             return;
         }
-        throw new Error(response.error?.message || "予約URL一覧の取得に失敗しました");
+        const message = response.error?.message || "予約URL一覧の取得に失敗しました";
+        setError(message);
+        throw new Error(message);
     };
 
     const issueBookingLink = async (practitioner: Practitioner, reissue: boolean) => {
