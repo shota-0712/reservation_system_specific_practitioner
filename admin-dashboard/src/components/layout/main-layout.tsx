@@ -7,7 +7,7 @@ import { Header } from "./header";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/lib/auth-context";
 import { Loader2 } from "lucide-react";
-import { adminContextApi, getTenantKeyOrNull, onboardingApi, withTenantQuery } from "@/lib/api";
+import { adminContextApi, onboardingApi } from "@/lib/api";
 import { ToastProvider } from "@/components/ui/toast";
 
 interface MainLayoutProps {
@@ -52,7 +52,7 @@ export function MainLayout({ children }: MainLayoutProps) {
 
         // Redirect to login if no user
         if (!user) {
-            router.push(withTenantQuery("/login"));
+            router.push("/login");
         }
     }, [user, loading, isPublicAuthRoute, router]);
 
@@ -67,10 +67,10 @@ export function MainLayout({ children }: MainLayoutProps) {
         setOnboardingLoading(true);
         (async () => {
             try {
-                // Resolve admin context first to avoid stale tenant/store localStorage state.
-                await adminContextApi.sync(getTenantKeyOrNull() ?? undefined);
+                // Resolve admin context first to avoid stale store localStorage state.
+                await adminContextApi.sync();
             } catch {
-                // continue with existing tenant context
+                // continue with existing context
             }
 
             const response = await onboardingApi.getStatus();
@@ -107,12 +107,12 @@ export function MainLayout({ children }: MainLayoutProps) {
         if (onboardingStatus === 'error') return;
 
         if (onboardingStatus !== 'completed' && !isOnboardingRoute) {
-            router.push(withTenantQuery('/onboarding'));
+            router.push('/onboarding');
             return;
         }
 
         if (onboardingStatus === 'completed' && isOnboardingRoute) {
-            router.push(withTenantQuery('/'));
+            router.push('/');
         }
     }, [isOnboardingRoute, isPublicAuthRoute, loading, onboardingLoading, onboardingStatus, router, user]);
 

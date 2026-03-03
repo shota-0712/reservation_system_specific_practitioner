@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { Building2, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/lib/auth-context";
-import { platformOnboardingApi, setTenantKey, withTenantQuery } from "@/lib/api";
+import { platformOnboardingApi } from "@/lib/api";
 
 export default function RegisterPage() {
     const router = useRouter();
@@ -25,13 +25,6 @@ export default function RegisterPage() {
     const [enabled, setEnabled] = useState(true);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState("");
-    const [tenantKeyFromQuery, setTenantKeyFromQuery] = useState<string | undefined>(undefined);
-
-    useEffect(() => {
-        const params = new URLSearchParams(window.location.search);
-        const key = params.get("tenant") || params.get("tenantKey") || undefined;
-        setTenantKeyFromQuery(key || undefined);
-    }, []);
 
     useEffect(() => {
         let mounted = true;
@@ -103,8 +96,7 @@ export default function RegisterPage() {
                 throw new Error(response.error?.message || "テナント登録に失敗しました");
             }
 
-            setTenantKey(response.data.tenantKey);
-            router.push(withTenantQuery("/onboarding", response.data.tenantKey));
+            router.push("/onboarding");
         } catch (err: any) {
             setError(err?.message || "登録に失敗しました");
         } finally {
@@ -186,7 +178,7 @@ export default function RegisterPage() {
                     </div>
 
                     <div className="md:col-span-2 flex items-center justify-between pt-2">
-                        <Link href={withTenantQuery("/login", tenantKeyFromQuery)} className="text-sm text-gray-500 hover:underline">既存アカウントでログイン</Link>
+                        <Link href="/login" className="text-sm text-gray-500 hover:underline">既存アカウントでログイン</Link>
                         <Button type="submit" disabled={loading || !enabled}>
                             {loading ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />登録中...</> : "無料で始める"}
                         </Button>

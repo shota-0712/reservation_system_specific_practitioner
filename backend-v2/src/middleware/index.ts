@@ -6,6 +6,7 @@
 export { resolveTenant, clearTenantCache, getTenantId } from './tenant.js';
 export {
     requireFirebaseAuth,
+    requireJwtTenant,
     requireLineAuth,
     requireRole,
     requirePermission,

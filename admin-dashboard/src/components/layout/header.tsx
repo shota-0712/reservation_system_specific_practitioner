@@ -21,10 +21,7 @@ import { cn } from "@/lib/utils";
 import {
     adminContextApi,
     dashboardApi,
-    getTenantKeyOrNull,
     setActiveStoreId,
-    TENANT_CHANGED_EVENT,
-    withTenantQuery,
 } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
 
@@ -107,12 +104,7 @@ export function Header({ onMenuClick, isSidebarOpen }: HeaderProps) {
     const [showNotifications, setShowNotifications] = useState(false);
     const [notifications, setNotifications] = useState<Notification[]>([]);
     const [loadingNotifications, setLoadingNotifications] = useState(false);
-    const [tenantOptions, setTenantOptions] = useState<Array<{
-        tenantKey: string;
-        tenantName: string;
-    }>>([]);
-    const [selectedTenantKey, setSelectedTenantKey] = useState<string>("");
-    const [tenantSwitching, setTenantSwitching] = useState(false);
+    const [tenantName, setTenantName] = useState<string>("");
 
     const userMenuRef = useRef<HTMLDivElement>(null);
     const notificationRef = useRef<HTMLDivElement>(null);
@@ -123,27 +115,14 @@ export function Header({ onMenuClick, isSidebarOpen }: HeaderProps) {
 
     useEffect(() => {
         let mounted = true;
-        adminContextApi.sync(getTenantKeyOrNull() ?? undefined).then((context) => {
+        adminContextApi.sync().then((context) => {
             if (!mounted || !context) return;
-            const options = (context.availableTenants || []).map((tenant) => ({
-                tenantKey: tenant.tenantKey,
-                tenantName: tenant.tenantName || tenant.tenantKey,
-            }));
-            setTenantOptions(options);
-            setSelectedTenantKey(context.tenantKey);
+            setTenantName(context.availableTenants?.[0]?.tenantName || context.tenantKey || "");
         }).catch(() => {
             if (!mounted) return;
-            setTenantOptions([]);
-            setSelectedTenantKey(getTenantKeyOrNull() ?? "");
         });
-
-        const onTenantChanged = () => {
-            setSelectedTenantKey(getTenantKeyOrNull() ?? "");
-        };
-        window.addEventListener(TENANT_CHANGED_EVENT, onTenantChanged);
         return () => {
             mounted = false;
-            window.removeEventListener(TENANT_CHANGED_EVENT, onTenantChanged);
         };
     }, []);
 
@@ -211,10 +190,11 @@ export function Header({ onMenuClick, isSidebarOpen }: HeaderProps) {
     const handleLogout = async () => {
         try {
             await logout();
+            setActiveStoreId(null);
         } catch (error) {
             console.error("Failed to logout:", error);
         }
-        router.push(withTenantQuery("/login"));
+        router.push("/login");
     };
 
     const markAllAsRead = () => {
@@ -227,25 +207,6 @@ export function Header({ onMenuClick, isSidebarOpen }: HeaderProps) {
                 notification.id === id ? { ...notification, read: true } : notification
             )
         );
-    };
-
-    const handleTenantChange = async (nextTenantKey: string) => {
-        if (!nextTenantKey || nextTenantKey === selectedTenantKey) {
-            return;
-        }
-        setTenantSwitching(true);
-        try {
-            setActiveStoreId(null);
-            await adminContextApi.sync(nextTenantKey);
-            const nextPath = withTenantQuery(
-                `${window.location.pathname}${window.location.search}${window.location.hash}`,
-                nextTenantKey
-            );
-            router.push(nextPath);
-            router.refresh();
-        } finally {
-            setTenantSwitching(false);
-        }
     };
 
     return (
@@ -271,28 +232,12 @@ export function Header({ onMenuClick, isSidebarOpen }: HeaderProps) {
             </div>
 
             <div className="flex items-center gap-2 md:gap-4">
-                <div className="hidden md:flex items-center gap-2">
-                    <span className="text-xs text-gray-500">テナント</span>
-                    <select
-                        value={selectedTenantKey}
-                        onChange={(event) => {
-                            void handleTenantChange(event.target.value);
-                        }}
-                        disabled={tenantSwitching || tenantOptions.length <= 1}
-                        className="h-9 rounded-md border border-gray-200 bg-white px-3 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-primary disabled:cursor-not-allowed disabled:opacity-60"
-                    >
-                        {tenantOptions.length === 0 && (
-                            <option value={selectedTenantKey || ""}>
-                                {selectedTenantKey || "-"}
-                            </option>
-                        )}
-                        {tenantOptions.map((tenant) => (
-                            <option key={tenant.tenantKey} value={tenant.tenantKey}>
-                                {tenant.tenantName}
-                            </option>
-                        ))}
-                    </select>
-                </div>
+                {tenantName && (
+                    <div className="hidden md:flex items-center gap-2">
+                        <span className="text-xs text-gray-500">テナント</span>
+                        <span className="text-sm font-medium text-gray-700">{tenantName}</span>
+                    </div>
+                )}
 
                 <div ref={notificationRef} className="relative">
                     <Button
@@ -405,7 +350,7 @@ export function Header({ onMenuClick, isSidebarOpen }: HeaderProps) {
                                 <button
                                     onClick={() => {
                                         setShowUserMenu(false);
-                                        router.push(withTenantQuery("/settings"));
+                                        router.push("/settings");
                                     }}
                                     className="flex items-center gap-3 w-full px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
                                 >

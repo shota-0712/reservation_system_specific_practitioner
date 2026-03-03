@@ -6,122 +6,16 @@
 import { getIdToken } from './firebase';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080';
-const TENANT_ID_FALLBACK = process.env.NEXT_PUBLIC_TENANT_ID || '';
-const TENANT_STORAGE_KEY = 'reservation_admin_tenant_key';
 const STORE_STORAGE_KEY = 'reservation_admin_store_id';
 export const STORE_CHANGED_EVENT = 'reserve:store-changed';
-export const TENANT_CHANGED_EVENT = 'reserve:tenant-changed';
 export const STORES_UPDATED_EVENT = 'reserve:stores-updated';
 
 interface FetchOptions extends RequestInit {
     includeAuth?: boolean;
 }
 
-function isTenantKeyValid(value: string): boolean {
-    return /^[a-z0-9](?:[a-z0-9-]{1,38}[a-z0-9])?$/.test(value);
-}
-
 function isStoreIdValid(value: string): boolean {
     return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
-}
-
-function readTenantKeyFromUrl(): string | null {
-    if (typeof window === 'undefined') {
-        return null;
-    }
-    const params = new URLSearchParams(window.location.search);
-    const key = params.get('tenant') || params.get('tenantKey');
-    if (key && isTenantKeyValid(key)) {
-        return key;
-    }
-    return null;
-}
-
-function readTenantKeyFromPath(): string | null {
-    if (typeof window === 'undefined') {
-        return null;
-    }
-
-    const match = window.location.pathname.match(/^\/(?:t|tenant)\/([a-z0-9-]+)(?:\/|$)/i);
-    const key = match?.[1]?.toLowerCase();
-    if (key && isTenantKeyValid(key)) {
-        return key;
-    }
-    return null;
-}
-
-function readTenantKeyFromStorage(): string | null {
-    if (typeof window === 'undefined') {
-        return null;
-    }
-    const value = window.localStorage.getItem(TENANT_STORAGE_KEY);
-    if (!value || !isTenantKeyValid(value)) {
-        return null;
-    }
-    return value;
-}
-
-function normalizeTenantUrl(path: string, tenantKey: string): string {
-    if (!tenantKey || !isTenantKeyValid(tenantKey)) {
-        return path;
-    }
-
-    const [pathAndQuery, hash = ""] = path.split("#", 2);
-    const [pathname, query = ""] = pathAndQuery.split("?", 2);
-    const params = new URLSearchParams(query);
-    params.set("tenant", tenantKey);
-    params.delete("tenantKey");
-    const nextQuery = params.toString();
-    return `${pathname}${nextQuery ? `?${nextQuery}` : ""}${hash ? `#${hash}` : ""}`;
-}
-
-function resolveTenantKey(): string | null {
-    return readTenantKeyFromUrl()
-        || readTenantKeyFromPath()
-        || readTenantKeyFromStorage()
-        || null;
-}
-
-export function withTenantQuery(path: string, tenantKey?: string): string {
-    const resolvedTenant = tenantKey && isTenantKeyValid(tenantKey)
-        ? tenantKey
-        : resolveTenantKey();
-    if (!resolvedTenant) {
-        return path;
-    }
-    return normalizeTenantUrl(path, resolvedTenant);
-}
-
-export function syncTenantQueryInCurrentUrl(tenantKey: string): void {
-    if (typeof window === "undefined") {
-        return;
-    }
-    if (!isTenantKeyValid(tenantKey)) {
-        return;
-    }
-    const nextUrl = normalizeTenantUrl(
-        `${window.location.pathname}${window.location.search}${window.location.hash}`,
-        tenantKey
-    );
-    const currentUrl = `${window.location.pathname}${window.location.search}${window.location.hash}`;
-    if (nextUrl !== currentUrl) {
-        window.history.replaceState({}, "", nextUrl);
-    }
-}
-
-export function setTenantKey(tenantKey: string): void {
-    if (typeof window === 'undefined') {
-        return;
-    }
-    if (!isTenantKeyValid(tenantKey)) {
-        throw new Error('Invalid tenant key');
-    }
-    const currentTenantKey = window.localStorage.getItem(TENANT_STORAGE_KEY);
-    if (currentTenantKey === tenantKey) {
-        return;
-    }
-    window.localStorage.setItem(TENANT_STORAGE_KEY, tenantKey);
-    window.dispatchEvent(new CustomEvent(TENANT_CHANGED_EVENT, { detail: { tenantKey } }));
 }
 
 export function setActiveStoreId(storeId: string | null): void {
@@ -159,30 +53,10 @@ export function getActiveStoreId(): string | null {
     return value;
 }
 
-export function getTenantKey(): string {
-    // BUG-01 fix: do NOT call setTenantKey() here. setTenantKey() fires TENANT_CHANGED_EVENT
-    // which triggers loadStoresForTenant() in the sidebar on every API call (including parallel
-    // calls on page load). Tenant persistence to localStorage is handled exclusively by
-    // adminContextApi.sync().
-    const resolvedTenant = resolveTenantKey();
-    if (resolvedTenant) {
-        return resolvedTenant;
-    }
-
-    if (TENANT_ID_FALLBACK && isTenantKeyValid(TENANT_ID_FALLBACK)) {
-        return TENANT_ID_FALLBACK;
-    }
-
-    throw new Error('テナントが特定できません。URLにtenantパラメータを指定してください。');
-}
-
-export function getTenantKeyOrNull(): string | null {
-    // BUG-01 fix: read-only — does not write to localStorage or fire events.
-    return resolveTenantKey();
-}
-
-function getTenantApiUrl(endpoint: string): string {
-    return `${API_BASE_URL}/api/v1/${getTenantKey()}${endpoint}`;
+function getAdminApiUrl(endpoint: string): string {
+    // Normalize: strip leading /admin to avoid /api/v1/admin/admin/... double prefix
+    const path = endpoint.startsWith('/admin') ? endpoint.slice(6) : endpoint;
+    return `${API_BASE_URL}/api/v1/admin${path}`;
 }
 
 function getPlatformApiUrl(endpoint: string): string {
@@ -200,7 +74,7 @@ function buildQuery(params: Record<string, string | number | boolean | undefined
 }
 
 /**
- * 認証付きAPIリクエスト
+ * 認証付きAPIリクエスト（管理者用 /api/v1/admin/... に向く）
  */
 export async function apiClient<T = unknown>(
     endpoint: string,
@@ -220,15 +94,7 @@ export async function apiClient<T = unknown>(
         }
     }
 
-    let url: string;
-    try {
-        url = getTenantApiUrl(endpoint);
-    } catch {
-        return {
-            success: false,
-            error: { code: 'TENANT_NOT_RESOLVED', message: 'テナントが特定できません。ログインし直してください。' },
-        };
-    }
+    const url = getAdminApiUrl(endpoint);
     const activeStoreId = getActiveStoreId();
 
     const executeRequest = async (storeId: string | null) => {
@@ -257,14 +123,13 @@ export async function apiClient<T = unknown>(
 
     let { response, json } = await executeRequest(activeStoreId);
 
-    const isTenantNotFound = json?.error?.code === 'TENANT_NOT_FOUND';
     const errorMessage = typeof json?.error?.message === 'string' ? json.error.message : '';
     const isStoreScopeForbidden =
         json?.error?.code === 'AUTHORIZATION_ERROR'
         && errorMessage.includes('店舗');
 
-    // If the stored storeId becomes invalid (e.g. deleted store / tenant switch), retry once without store scope.
-    if (!response.ok && activeStoreId && (isTenantNotFound || isStoreScopeForbidden)) {
+    // If the stored storeId becomes invalid (e.g. deleted store), retry once without store scope.
+    if (!response.ok && activeStoreId && isStoreScopeForbidden) {
         setActiveStoreId(null);
         ({ response, json } = await executeRequest(null));
     }
@@ -409,7 +274,7 @@ export const customersApi = {
 export const practitionersApi = {
     list: () => apiClient('/admin/practitioners'),
     listAll: () => apiClient('/admin/practitioners'),
-    get: (id: string) => apiClient(`/practitioners/${id}`, { includeAuth: false }),
+    get: (id: string) => apiClient(`/admin/practitioners/${id}`),
     create: (data: Record<string, unknown>) =>
         apiClient('/admin/practitioners', {
             method: 'POST',
@@ -436,8 +301,8 @@ export const practitionersApi = {
 export const menusApi = {
     list: () => apiClient('/admin/menus'),
     listAll: () => apiClient('/admin/menus'),
-    listPublic: () => apiClient('/menus', { includeAuth: false }),
-    get: (id: string) => apiClient(`/menus/${id}`, { includeAuth: false }),
+    listPublic: () => apiClient('/admin/menus'),
+    get: (id: string) => apiClient(`/admin/menus/${id}`),
     create: (data: Record<string, unknown>) =>
         apiClient('/admin/menus', {
             method: 'POST',
@@ -463,7 +328,7 @@ export const menusApi = {
 
 export const optionsApi = {
     list: () => apiClient('/admin/options'),
-    listPublic: (menuId?: string) => apiClient(`/options${buildQuery({ menuId })}`, { includeAuth: false }),
+    listPublic: (menuId?: string) => apiClient(`/admin/options${buildQuery({ menuId })}`),
     create: (data: Record<string, unknown>) =>
         apiClient('/admin/options', {
             method: 'POST',
@@ -725,49 +590,21 @@ export const platformOnboardingApi = {
 // ============================================
 
 export const adminContextApi = {
-    get: (tenantKey?: string) =>
-        platformApiClient<AdminContextData>('/admin/context' + buildQuery({ tenantKey })),
-    sync: async (tenantKey?: string): Promise<AdminContextData | null> => {
+    get: () =>
+        platformApiClient<AdminContextData>('/admin/context'),
+    sync: async (): Promise<AdminContextData | null> => {
         if (typeof window === 'undefined') {
             return null;
         }
 
         if (!adminContextSyncPromise) {
             adminContextSyncPromise = (async () => {
-                const tenantFromUrlOrPath = readTenantKeyFromUrl() || readTenantKeyFromPath() || null;
-                const explicitTenantKey = tenantKey && isTenantKeyValid(tenantKey)
-                    ? tenantKey
-                    : (tenantFromUrlOrPath ?? undefined);
-                const requestedTenantKey = explicitTenantKey
-                    ?? readTenantKeyFromStorage()
-                    ?? undefined;
-
-                const tryResolveContext = async (key?: string): Promise<AdminContextData | null> => {
-                    const response = await adminContextApi.get(key);
-                    if (!response.success || !response.data) {
-                        return null;
-                    }
-                    return response.data;
-                };
-
-                let context = await tryResolveContext(requestedTenantKey);
-                if (!context && !explicitTenantKey && requestedTenantKey) {
-                    // BUG-05 fix: The stored localStorage tenant key is stale (admin was removed
-                    // from that tenant, or the tenant slug changed). Clear the stale key first so
-                    // the user is not silently switched to a different tenant without any notice.
-                    // Then retry without a key to let the server return their current primary tenant.
-                    window.localStorage.removeItem(TENANT_STORAGE_KEY);
-                    context = await tryResolveContext(undefined);
-                }
-                if (!context) {
+                const response = await adminContextApi.get();
+                if (!response.success || !response.data) {
                     return null;
                 }
 
-                if (isTenantKeyValid(context.tenantKey)) {
-                    setTenantKey(context.tenantKey);
-                    syncTenantQueryInCurrentUrl(context.tenantKey);
-                }
-
+                const context = response.data;
                 const validStoreIds = (context.storeIds || []).filter((id) => isStoreIdValid(id));
                 const currentStoreId = getActiveStoreId();
 

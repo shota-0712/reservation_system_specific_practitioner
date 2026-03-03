@@ -22,13 +22,10 @@ import { cn } from "@/lib/utils";
 import {
     adminContextApi,
     getActiveStoreId,
-    getTenantKeyOrNull,
     setActiveStoreId,
     STORE_CHANGED_EVENT,
     STORES_UPDATED_EVENT,
-    TENANT_CHANGED_EVENT,
     storesApi,
-    withTenantQuery,
 } from "@/lib/api";
 
 const navigation = [
@@ -64,12 +61,9 @@ export function Sidebar({ className, onNavigate }: SidebarProps) {
     const [showStoreSelector, setShowStoreSelector] = useState(false);
     const [stores, setStores] = useState<StoreItem[]>([]);
     const [currentStoreId, setCurrentStoreId] = useState<string | null>(null);
-    const [tenantKey, setTenantKeyState] = useState<string>("");
 
-    const loadStoresForTenant = useCallback(async (targetTenantKey?: string) => {
-        const context = await adminContextApi.sync(targetTenantKey);
-        const resolvedTenantKey = context?.tenantKey || targetTenantKey || getTenantKeyOrNull() || '';
-        setTenantKeyState(resolvedTenantKey);
+    const loadStores = useCallback(async () => {
+        const context = await adminContextApi.sync();
 
         const storeResponse = await storesApi.list();
 
@@ -109,7 +103,7 @@ export function Sidebar({ className, onNavigate }: SidebarProps) {
 
     useEffect(() => {
         let mounted = true;
-        loadStoresForTenant(getTenantKeyOrNull() ?? undefined).catch(() => {
+        loadStores().catch(() => {
             if (!mounted) return;
             setStores([]);
             setCurrentStoreId(null);
@@ -119,7 +113,7 @@ export function Sidebar({ className, onNavigate }: SidebarProps) {
         return () => {
             mounted = false;
         };
-    }, [loadStoresForTenant]);
+    }, [loadStores]);
 
     useEffect(() => {
         const handleStoreChanged = (event: Event) => {
@@ -127,23 +121,16 @@ export function Sidebar({ className, onNavigate }: SidebarProps) {
             const nextStoreId = customEvent.detail?.storeId ?? null;
             setCurrentStoreId(nextStoreId);
         };
-        const handleTenantChanged = () => {
-            const nextTenantKey = getTenantKeyOrNull() ?? undefined;
-            void loadStoresForTenant(nextTenantKey);
-        };
         const handleStoresUpdated = () => {
-            const nextTenantKey = getTenantKeyOrNull() ?? undefined;
-            void loadStoresForTenant(nextTenantKey);
+            void loadStores();
         };
         window.addEventListener(STORE_CHANGED_EVENT, handleStoreChanged);
-        window.addEventListener(TENANT_CHANGED_EVENT, handleTenantChanged);
         window.addEventListener(STORES_UPDATED_EVENT, handleStoresUpdated);
         return () => {
             window.removeEventListener(STORE_CHANGED_EVENT, handleStoreChanged);
-            window.removeEventListener(TENANT_CHANGED_EVENT, handleTenantChanged);
             window.removeEventListener(STORES_UPDATED_EVENT, handleStoresUpdated);
         };
-    }, [loadStoresForTenant]);
+    }, [loadStores]);
 
     const currentStore = stores.find((store) => store.id === currentStoreId) ?? stores[0] ?? null;
     const switchableStores = stores.filter((store) => store.id !== currentStoreId);
@@ -175,7 +162,7 @@ export function Sidebar({ className, onNavigate }: SidebarProps) {
                     return (
                         <Link
                             key={item.name}
-                            href={withTenantQuery(item.href, tenantKey)}
+                            href={item.href}
                             onClick={onNavigate}
                             className={cn(
                                 "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
@@ -254,7 +241,7 @@ export function Sidebar({ className, onNavigate }: SidebarProps) {
                                 <button
                                     onClick={() => {
                                         setShowStoreSelector(false);
-                                        router.push(withTenantQuery("/stores", tenantKey));
+                                        router.push("/stores");
                                         onNavigate?.();
                                     }}
                                     className="w-full text-center text-xs text-primary hover:underline py-1"

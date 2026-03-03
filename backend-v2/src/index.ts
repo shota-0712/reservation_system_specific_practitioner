@@ -19,6 +19,7 @@ import {
 } from './middleware/index.js';
 import { systemRoutes } from './routes/system.routes.js';
 import { v1Router } from './routes/v1/index.js';
+import { adminV1Router } from './routes/v1/admin-index.js';
 import { platformOnboardingRoutes } from './routes/platform/onboarding.routes.js';
 
 // Initialize Firebase
@@ -129,6 +130,8 @@ app.use('/', systemRoutes);
 app.use(writeFreezeGuard());
 
 // API v1 routes
+// Admin router must be registered BEFORE /:tenantKey to prevent "admin" matching as a tenant slug.
+app.use('/api/v1/admin', adminV1Router);
 app.use('/api/v1/:tenantKey', v1Router);
 app.use('/api/platform/v1', platformOnboardingRoutes);
 

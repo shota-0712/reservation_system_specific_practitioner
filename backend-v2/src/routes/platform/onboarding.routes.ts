@@ -403,6 +403,10 @@ router.post(
             phone,
         });
 
+        // Set Firebase Custom Claims so the tenant_id is embedded in the JWT.
+        // This allows the admin API to resolve the tenant without a URL slug.
+        await auth.setCustomUserClaims(firebaseUid, { tenantId: result.tenantId });
+
         const response: ApiResponse<{
             tenantId: string;
             tenantKey: string;
@@ -419,6 +423,35 @@ router.post(
         };
 
         res.status(201).json(response);
+    })
+);
+
+// Sync Firebase Custom Claims for existing admins who don't have tenantId in their token yet.
+// Called automatically by the frontend on first login after this migration.
+router.post(
+    '/admin/claims/sync',
+    asyncHandler(async (req: Request, res: Response) => {
+        const token = getBearerToken(req);
+        const auth = getAuthInstance();
+        const decoded = await auth.verifyIdToken(token);
+
+        const row = await DatabaseService.query<{ tenant_id: string }>(
+            'SELECT tenant_id FROM admins WHERE firebase_uid = $1 AND is_active = true LIMIT 1',
+            [decoded.uid]
+        );
+
+        if (row.length === 0) {
+            throw new AuthorizationError('管理者として登録されていません');
+        }
+
+        const tenantId = row[0].tenant_id;
+        await auth.setCustomUserClaims(decoded.uid, { tenantId });
+
+        const response: ApiResponse<{ tenantId: string }> = {
+            success: true,
+            data: { tenantId },
+        };
+        res.json(response);
     })
 );
 
