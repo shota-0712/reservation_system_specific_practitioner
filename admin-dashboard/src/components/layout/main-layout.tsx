@@ -7,7 +7,7 @@ import { Header } from "./header";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/lib/auth-context";
 import { Loader2 } from "lucide-react";
-import { adminContextApi, onboardingApi } from "@/lib/api";
+import { adminContextApi, onboardingApi, platformAdminApi } from "@/lib/api";
 import { ToastProvider } from "@/components/ui/toast";
 
 interface MainLayoutProps {
@@ -67,7 +67,15 @@ export function MainLayout({ children }: MainLayoutProps) {
         setOnboardingLoading(true);
         (async () => {
             try {
-                // Resolve admin context first to avoid stale store localStorage state.
+                // Ensure tenantId custom claim exists in the Firebase JWT.
+                // Existing admins created before the custom-claims rollout won't have it.
+                const idTokenResult = await user.getIdTokenResult();
+                if (!idTokenResult.claims['tenantId']) {
+                    await platformAdminApi.syncClaims();
+                    // Force-refresh so the new claim is included in subsequent API calls.
+                    await user.getIdToken(true);
+                }
+                // Resolve admin context to populate store state from JWT claims.
                 await adminContextApi.sync();
             } catch {
                 // continue with existing context

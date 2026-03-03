@@ -555,6 +555,11 @@ export const onboardingApi = {
 // 公開セルフ登録 API
 // ============================================
 
+export const platformAdminApi = {
+    syncClaims: () =>
+        platformApiClient<{ tenantId: string }>('/admin/claims/sync', { method: 'POST' }),
+};
+
 export const platformOnboardingApi = {
     getRegistrationConfig: () =>
         platformApiClient<{
