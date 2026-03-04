@@ -11,6 +11,9 @@
 **/.cache/
 **/.cache/**
 
+# TypeScript build cache
+**/*.tsbuildinfo
+
 **/dist/
 **/dist/**
 **/build/
