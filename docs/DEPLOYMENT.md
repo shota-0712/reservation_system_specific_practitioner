@@ -176,25 +176,25 @@ Firebase Consoleの「Authentication」→「Users」から手動で管理者ア
 
 ## 5. LINE Developers設定
 
-### 5.1 Messaging API チャネル作成
+### 5.1 LINEミニアプリチャネル作成
 
-1. [LINE Developers Console](https://developers.line.biz/) にログイン
-2. プロバイダー作成
-3. 「Messaging API」チャネル作成
-4. 以下を取得：
+1. [LINE Developers Console](https://developers.line.biz/console/) にログイン
+2. 対象プロバイダーを選択
+3. `チャネル設定 > 新規チャネル作成 > LINEミニアプリ` を選択
+4. 必須項目（提供地域、チャネル名、説明、連絡先、規約同意）を入力して作成
+5. 以下を取得・管理：
    - Channel ID
    - Channel Secret
    - Channel Access Token
 
-### 5.2 LIFF アプリ作成
+> 詳細要件と審査前チェックは `docs/LINE_MINI_APP_SETUP.md` を参照。
 
-1. チャネル設定 → 「LIFF」タブ
-2. 「追加」をクリック
-3. 設定：
-   - サイズ: Full
-   - エンドポイントURL: `https://reserve-customer-xxxxx.run.app`（デプロイ後に設定）
-   - BLE feature: OFF
-4. LIFF IDを取得
+### 5.2 ウェブアプリ設定 / LIFF設定
+
+1. チャネル設定で `ウェブアプリ設定` を開く
+2. 開発用/審査用/本番用のエンドポイントURLを設定
+3. LIFF 設定で必要な URL と表示設定を投入
+4. LIFF ID を取得し、テナントの `lineConfig.liffId` へ反映
 
 ---
 

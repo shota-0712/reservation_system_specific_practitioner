@@ -82,3 +82,11 @@ cd customer-app
 ## 補足
 
 - 旧 `backend/` は廃止しました（必要なら Git 履歴から参照可能）。新規開発と本番運用は `backend-v2/` を前提にします。
+
+## AI運用メモ（毎回更新）
+
+- 正本: `docs/PROJECT_MEMORY.md`
+- 同期先: `CLAUDE.md` / `CODEX.md`
+- 更新手順:
+  1. 作業終了時に `docs/PROJECT_MEMORY.md` を更新
+  2. `npm run sync:agent-context` を実行

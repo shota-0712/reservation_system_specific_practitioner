@@ -1,4 +1,7 @@
 {
+  "scripts": {
+    "sync:agent-context": "bash scripts/sync_agent_context.sh"
+  },
   "dependencies": {
     "@types/pg": "^8.16.0",
     "pg": "^8.18.0"
