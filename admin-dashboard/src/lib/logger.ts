@@ -7,13 +7,13 @@
 const isDev = process.env.NODE_ENV !== 'production';
 
 export const logger = {
-    error: (msg: string, ...args: unknown[]): void => {
-        if (isDev) console.error(msg, ...args);
+    error: (...args: unknown[]): void => {
+        if (isDev) console.error(...args);
     },
-    warn: (msg: string, ...args: unknown[]): void => {
-        if (isDev) console.warn(msg, ...args);
+    warn: (...args: unknown[]): void => {
+        if (isDev) console.warn(...args);
     },
-    info: (msg: string, ...args: unknown[]): void => {
-        if (isDev) console.info(msg, ...args);
+    info: (...args: unknown[]): void => {
+        if (isDev) console.info(...args);
     },
 };
