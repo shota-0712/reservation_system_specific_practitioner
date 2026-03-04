@@ -8,6 +8,7 @@ import { Dialog, DialogContent, DialogHeader, DialogBody, DialogFooter, ConfirmD
 import { useToast } from "@/components/ui/toast";
 import { cn } from "@/lib/utils";
 import { menusApi } from "@/lib/api";
+import { logger } from "@/lib/logger";
 
 interface Menu {
     id: string;
@@ -57,7 +58,7 @@ export default function MenusPage() {
                 setError(res.error?.message || 'データの取得に失敗しました');
             }
         } catch (err) {
-            console.error(err);
+            logger.error(err);
             setError('データの取得に失敗しました');
         } finally {
             setIsLoading(false);

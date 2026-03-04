@@ -7,6 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ConfirmDialog, Dialog, DialogBody, DialogContent, DialogFooter, DialogHeader } from "@/components/ui/dialog";
 import { useToast } from "@/components/ui/toast";
 import { storesApi, STORES_UPDATED_EVENT } from "@/lib/api";
+import { logger } from "@/lib/logger";
 
 interface StoreItem {
     id: string;
@@ -58,7 +59,7 @@ export default function StoresPage() {
                 setError(res.error?.message || "店舗一覧の取得に失敗しました");
             }
         } catch (err) {
-            console.error(err);
+            logger.error(err);
             setError("店舗一覧の取得に失敗しました");
         } finally {
             setLoading(false);
@@ -162,7 +163,7 @@ export default function StoresPage() {
             window.dispatchEvent(new CustomEvent(STORES_UPDATED_EVENT));
             await fetchData();
         } catch (err: any) {
-            console.error(err);
+            logger.error(err);
             setError(err.message || "店舗保存に失敗しました");
             pushToast({
                 variant: "error",
@@ -192,7 +193,7 @@ export default function StoresPage() {
             window.dispatchEvent(new CustomEvent(STORES_UPDATED_EVENT));
             await fetchData();
         } catch (err: any) {
-            console.error(err);
+            logger.error(err);
             setError(err.message || "店舗削除に失敗しました");
             pushToast({
                 variant: "error",

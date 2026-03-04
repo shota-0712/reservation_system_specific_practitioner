@@ -1,13 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Scissors, Eye, EyeOff, Loader2, UserPlus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/lib/auth-context";
-import { apiClient, getTenantKeyOrNull, withTenantQuery } from "@/lib/api";
-
 export default function SignupPage() {
     const router = useRouter();
     const { register } = useAuth();
@@ -18,48 +16,11 @@ export default function SignupPage() {
     const [confirmPassword, setConfirmPassword] = useState("");
     const [showPassword, setShowPassword] = useState(false);
     const [isLoading, setIsLoading] = useState(false);
-    const [isChecking, setIsChecking] = useState(true);
-    const [canRegister, setCanRegister] = useState(false);
     const [error, setError] = useState("");
-    const [tenantKeyFromQuery, setTenantKeyFromQuery] = useState<string | undefined>(undefined);
-
-    useEffect(() => {
-        const params = new URLSearchParams(window.location.search);
-        const key = params.get("tenant") || params.get("tenantKey") || undefined;
-        setTenantKeyFromQuery(key || undefined);
-    }, []);
-
-    useEffect(() => {
-        const checkBootstrapStatus = async () => {
-            setIsChecking(true);
-            setError("");
-            try {
-                const response = await apiClient<{ canRegister: boolean }>('/auth/admin/bootstrap-status', {
-                    includeAuth: false,
-                });
-                if (!response.success) {
-                    throw new Error(response.error?.message || "初期登録状態の確認に失敗しました");
-                }
-                setCanRegister(Boolean(response.data?.canRegister));
-            } catch (err: any) {
-                setCanRegister(false);
-                setError(err?.message || "初期登録状態の確認に失敗しました");
-            } finally {
-                setIsChecking(false);
-            }
-        };
-
-        checkBootstrapStatus();
-    }, []);
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         setError("");
-
-        if (!canRegister) {
-            setError("このテナントは初期登録済みです。既存アカウントでログインしてください。");
-            return;
-        }
 
         if (password !== confirmPassword) {
             setError("パスワードが一致しません");
@@ -74,7 +35,7 @@ export default function SignupPage() {
         setIsLoading(true);
         try {
             await register(email, password, name);
-            router.push(withTenantQuery("/", tenantKeyFromQuery));
+            router.push("/");
         } catch (err: any) {
             if (err.code === "auth/email-already-in-use") {
                 setError("このメールアドレスは既に使用されています");
@@ -97,26 +58,11 @@ export default function SignupPage() {
                     <div className="inline-flex items-center justify-center w-16 h-16 bg-primary rounded-2xl mb-4">
                         <Scissors className="h-8 w-8 text-white" />
                     </div>
-                    <h1 className="text-2xl font-bold text-gray-900">初回管理者登録</h1>
-                    <p className="text-gray-500 mt-1">最初のオーナーアカウントを作成（tenant: {tenantKeyFromQuery || getTenantKeyOrNull() || "未指定"}）</p>
+                    <h1 className="text-2xl font-bold text-gray-900">管理者アカウント登録</h1>
+                    <p className="text-gray-500 mt-1">Firebaseアカウントを作成します</p>
                 </div>
 
                 <div className="bg-white rounded-2xl shadow-lg p-8">
-                    {isChecking ? (
-                        <div className="py-10 flex flex-col items-center gap-3 text-gray-500">
-                            <Loader2 className="h-6 w-6 animate-spin" />
-                            <p className="text-sm">登録可否を確認中...</p>
-                        </div>
-                    ) : !canRegister ? (
-                        <div className="space-y-4">
-                            <div className="bg-amber-50 border border-amber-200 text-amber-700 px-4 py-3 rounded-lg text-sm">
-                                このテナントは既に初期登録済みです。新規登録は無効です。
-                            </div>
-                            <Button className="w-full" asChild>
-                                <Link href={withTenantQuery("/login", tenantKeyFromQuery)}>ログイン画面へ</Link>
-                            </Button>
-                        </div>
-                    ) : (
                         <form onSubmit={handleSubmit} className="space-y-6">
                             {error && (
                                 <div className="bg-red-50 border border-red-200 text-red-600 px-4 py-3 rounded-lg text-sm">
@@ -210,14 +156,13 @@ export default function SignupPage() {
                             </Button>
 
                             <p className="text-xs text-gray-500 text-center">
-                                登録後、初回APIアクセス時に owner 権限が自動付与されます。
+                                登録後、管理者から権限を付与してもらう必要があります。
                             </p>
                         </form>
-                    )}
 
                     <div className="mt-6 pt-6 border-t border-gray-100 text-center text-sm text-gray-500">
                         既にアカウントをお持ちですか？{" "}
-                        <Link href={withTenantQuery("/login", tenantKeyFromQuery)} className="text-primary hover:underline">
+                        <Link href="/login" className="text-primary hover:underline">
                             ログイン
                         </Link>
                     </div>

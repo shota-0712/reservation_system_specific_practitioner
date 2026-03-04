@@ -8,6 +8,7 @@ import { TodayReservations } from "@/components/dashboard/today-reservations";
 import { StaffUtilization } from "@/components/dashboard/staff-utilization";
 import { dashboardApi, reportsApi } from "@/lib/api";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { logger } from "@/lib/logger";
 
 type ReservationStatus =
     | "confirmed"
@@ -279,7 +280,7 @@ export default function DashboardPage() {
                     setActivities([]);
                 }
             } catch (err) {
-                console.error(err);
+                logger.error(err);
                 setError("データの取得に失敗しました");
             } finally {
                 setIsLoading(false);

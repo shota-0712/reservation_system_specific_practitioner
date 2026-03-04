@@ -7,7 +7,7 @@ import { Header } from "./header";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/lib/auth-context";
 import { Loader2 } from "lucide-react";
-import { adminContextApi, getTenantKeyOrNull, onboardingApi, withTenantQuery } from "@/lib/api";
+import { adminContextApi, onboardingApi, platformAdminApi } from "@/lib/api";
 import { ToastProvider } from "@/components/ui/toast";
 
 interface MainLayoutProps {
@@ -18,9 +18,10 @@ export function MainLayout({ children }: MainLayoutProps) {
     const [isSidebarOpen, setIsSidebarOpen] = useState(false);
     const [onboardingStatus, setOnboardingStatus] = useState<'pending' | 'in_progress' | 'completed' | 'error' | null>(null);
     const [onboardingLoading, setOnboardingLoading] = useState(false);
+    const [claimsError, setClaimsError] = useState<string | null>(null);
     const pathname = usePathname();
     const router = useRouter();
-    const { user, loading } = useAuth();
+    const { user, loading, logout } = useAuth();
 
     // Close sidebar on route change (mobile)
     useEffect(() => {
@@ -52,7 +53,7 @@ export function MainLayout({ children }: MainLayoutProps) {
 
         // Redirect to login if no user
         if (!user) {
-            router.push(withTenantQuery("/login"));
+            router.push("/login");
         }
     }, [user, loading, isPublicAuthRoute, router]);
 
@@ -67,10 +68,28 @@ export function MainLayout({ children }: MainLayoutProps) {
         setOnboardingLoading(true);
         (async () => {
             try {
-                // Resolve admin context first to avoid stale tenant/store localStorage state.
-                await adminContextApi.sync(getTenantKeyOrNull() ?? undefined);
+                // Ensure tenantId custom claim exists in the Firebase JWT.
+                // Existing admins created before the custom-claims rollout won't have it.
+                const idTokenResult = await user.getIdTokenResult();
+                if (!idTokenResult.claims['tenantId']) {
+                    const syncResult = await platformAdminApi.syncClaims();
+                    if (!syncResult.success) {
+                        // User has no admin record — show a proper error instead of
+                        // silently continuing and hitting cryptic 403s in child pages.
+                        if (mounted) {
+                            setClaimsError(syncResult.error?.message ?? '管理者権限が見つかりませんでした。先にサロン登録を完了してください。');
+                            setOnboardingLoading(false);
+                        }
+                        return;
+                    }
+                    // Claim was set server-side; force-refresh so subsequent API calls
+                    // carry the new tenantId in the JWT.
+                    await user.getIdToken(true);
+                }
+                // Resolve admin context to populate store state from JWT claims.
+                await adminContextApi.sync();
             } catch {
-                // continue with existing tenant context
+                // Non-claims errors (network, etc.): continue and let child pages handle it.
             }
 
             const response = await onboardingApi.getStatus();
@@ -107,12 +126,12 @@ export function MainLayout({ children }: MainLayoutProps) {
         if (onboardingStatus === 'error') return;
 
         if (onboardingStatus !== 'completed' && !isOnboardingRoute) {
-            router.push(withTenantQuery('/onboarding'));
+            router.push('/onboarding');
             return;
         }
 
         if (onboardingStatus === 'completed' && isOnboardingRoute) {
-            router.push(withTenantQuery('/'));
+            router.push('/');
         }
     }, [isOnboardingRoute, isPublicAuthRoute, loading, onboardingLoading, onboardingStatus, router, user]);
 
@@ -136,6 +155,31 @@ export function MainLayout({ children }: MainLayoutProps) {
     // Don't render protected content if not authenticated
     if (!user) {
         return null;
+    }
+
+    // Show error when admin claims could not be synced (e.g. no admin record in DB).
+    if (claimsError) {
+        return (
+            <div className="flex h-screen items-center justify-center bg-gray-50">
+                <div className="w-full max-w-md text-center p-8 bg-white rounded-2xl shadow-lg">
+                    <div className="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                        <Loader2 className="h-6 w-6 text-red-500" />
+                    </div>
+                    <h2 className="text-lg font-semibold text-gray-900 mb-2">管理者権限がありません</h2>
+                    <p className="text-sm text-gray-500 mb-6">{claimsError}</p>
+                    <button
+                        onClick={async () => { await logout(); router.push('/login'); }}
+                        className="w-full py-2 px-4 bg-primary text-white rounded-lg text-sm font-medium hover:opacity-90 transition-opacity"
+                    >
+                        ログアウトして別のアカウントでログイン
+                    </button>
+                    <p className="mt-4 text-xs text-gray-400">
+                        新規サロン登録は{" "}
+                        <a href="/register" className="text-primary hover:underline">こちら</a>
+                    </p>
+                </div>
+            </div>
+        );
     }
 
     if (onboardingLoading) {

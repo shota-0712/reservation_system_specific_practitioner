@@ -7,6 +7,7 @@ import { ja } from "date-fns/locale";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { practitionersApi, reservationsApi } from "@/lib/api";
+import { logger } from "@/lib/logger";
 
 const HOURS = Array.from({ length: 12 }, (_, i) => i + 9); // 9:00 - 20:00
 
@@ -51,7 +52,7 @@ export default function CalendarPage() {
                 setReservations(reservationsRes.data as Reservation[]);
             }
         } catch (err) {
-            console.error(err);
+            logger.error(err);
             setError('データの取得に失敗しました');
         } finally {
             setIsLoading(false);

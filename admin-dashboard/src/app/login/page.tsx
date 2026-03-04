@@ -1,12 +1,13 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Scissors, Eye, EyeOff, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/lib/auth-context";
-import { adminContextApi, withTenantQuery } from "@/lib/api";
+import { adminContextApi } from "@/lib/api";
+import { logger } from "@/lib/logger";
 
 export default function LoginPage() {
     const router = useRouter();
@@ -16,13 +17,6 @@ export default function LoginPage() {
     const [showPassword, setShowPassword] = useState(false);
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState("");
-    const [tenantKeyFromQuery, setTenantKeyFromQuery] = useState<string | undefined>(undefined);
-
-    useEffect(() => {
-        const params = new URLSearchParams(window.location.search);
-        const key = params.get("tenant") || params.get("tenantKey") || undefined;
-        setTenantKeyFromQuery(key || undefined);
-    }, []);
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -31,14 +25,11 @@ export default function LoginPage() {
 
         try {
             await login(email, password);
-            // Sync admin context immediately after login to resolve the tenant key
-            // before redirecting. Without this, fresh sessions (empty localStorage)
-            // redirect to "/" with no tenant, causing a false onboarding redirect (BUG-02, BUG-03).
-            const context = await adminContextApi.sync(tenantKeyFromQuery || undefined);
-            const resolvedTenantKey = context?.tenantKey || tenantKeyFromQuery || undefined;
-            router.push(withTenantQuery("/", resolvedTenantKey));
+            // Sync admin context immediately after login to resolve store state.
+            await adminContextApi.sync();
+            router.push("/");
         } catch (err: any) {
-            console.error('Login error:', err);
+            logger.error('Login error:', err);
             // Firebase error codes
             if (err.code === 'auth/user-not-found') {
                 setError("このメールアドレスは登録されていません");
@@ -157,12 +148,12 @@ export default function LoginPage() {
                         </p>
                         <p className="text-xs text-gray-500 text-center mt-2">
                             新規でサロンを開設する場合は{" "}
-                            <Link href={withTenantQuery("/register", tenantKeyFromQuery)} className="text-primary hover:underline">
+                            <Link href="/register" className="text-primary hover:underline">
                                 サロン登録
                             </Link>
                             {" / "}
                             既存tenantの初回管理者登録は{" "}
-                            <Link href={withTenantQuery("/signup", tenantKeyFromQuery)} className="text-primary hover:underline">
+                            <Link href="/signup" className="text-primary hover:underline">
                                 こちら
                             </Link>
                         </p>

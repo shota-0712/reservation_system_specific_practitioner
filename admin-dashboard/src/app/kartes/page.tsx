@@ -8,6 +8,7 @@ import { ConfirmDialog, Dialog, DialogBody, DialogContent, DialogFooter, DialogH
 import { useToast } from "@/components/ui/toast";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { karteTemplatesApi, kartesApi } from "@/lib/api";
+import { logger } from "@/lib/logger";
 
 interface KarteItem {
     id: string;
@@ -98,7 +99,7 @@ export default function KartesPage() {
                 throw new Error(templatesRes.error?.message || "テンプレート一覧の取得に失敗しました");
             }
         } catch (err: any) {
-            console.error(err);
+            logger.error(err);
             setError(err.message || "カルテデータの取得に失敗しました");
         } finally {
             setLoading(false);
@@ -191,7 +192,7 @@ export default function KartesPage() {
             });
             await fetchData();
         } catch (err: any) {
-            console.error(err);
+            logger.error(err);
             setError(err.message || "カルテ保存に失敗しました");
             pushToast({
                 variant: "error",
@@ -271,7 +272,7 @@ export default function KartesPage() {
             });
             await fetchData();
         } catch (err: any) {
-            console.error(err);
+            logger.error(err);
             setError(err.message || "テンプレート保存に失敗しました");
             pushToast({
                 variant: "error",
@@ -315,7 +316,7 @@ export default function KartesPage() {
             });
             await fetchData();
         } catch (err: any) {
-            console.error(err);
+            logger.error(err);
             setError(err.message || "削除に失敗しました");
             pushToast({
                 variant: "error",
@@ -344,7 +345,7 @@ export default function KartesPage() {
             pushToast({ variant: "success", title: "初期テンプレートを作成しました" });
             await fetchData();
         } catch (err: any) {
-            console.error(err);
+            logger.error(err);
             setError(err.message || "初期テンプレート作成に失敗しました");
             pushToast({ variant: "error", title: "初期テンプレート作成に失敗しました", description: err.message });
         } finally {

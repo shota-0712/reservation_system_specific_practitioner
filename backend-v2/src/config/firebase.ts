@@ -12,6 +12,7 @@ import { initializeApp, cert, getApps, App, applicationDefault } from 'firebase-
 import { getAuth, Auth } from 'firebase-admin/auth';
 import { getStorage, Storage } from 'firebase-admin/storage';
 import { env } from './env.js';
+import { logger } from '../utils/logger.js';
 
 let app: App;
 let auth: Auth;
@@ -63,7 +64,7 @@ export function initializeFirebase(): void {
 
         console.log('✅ Firebase initialized successfully');
     } catch (error) {
-        console.error('❌ Failed to initialize Firebase:', error);
+        logger.error('Failed to initialize Firebase', { error: error instanceof Error ? error.message : String(error) });
         throw error;
     }
 }

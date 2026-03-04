@@ -150,6 +150,40 @@ export function requireFirebaseAuth() {
 }
 
 /**
+ * Resolve tenant from Firebase Custom Claims (for admin routes that don't use URL slug).
+ * Must be placed BEFORE requireFirebaseAuth() in the middleware chain.
+ * Sets req.tenantId from the JWT `tenantId` custom claim.
+ */
+export function requireJwtTenant() {
+    return async (req: Request, _res: Response, next: NextFunction): Promise<void> => {
+        const authenticatedReq = req as AuthenticatedRequest;
+        try {
+            const authHeader = req.headers.authorization;
+            if (!authHeader?.startsWith('Bearer ')) {
+                throw new AuthenticationError('認証トークンが必要です');
+            }
+            const token = authHeader.split(' ')[1];
+            const decodedToken = await getAuthInstance().verifyIdToken(token);
+            const tenantId = (decodedToken as Record<string, unknown>).tenantId as string | undefined;
+            if (!tenantId) {
+                throw new AuthorizationError(
+                    'テナント情報がトークンにありません。/api/platform/v1/admin/claims/sync を呼んでトークンを更新してください'
+                );
+            }
+            authenticatedReq.tenantId = tenantId;
+            next();
+        } catch (error) {
+            if (error instanceof AuthenticationError || error instanceof AuthorizationError) {
+                next(error);
+            } else {
+                logger.error('JWT tenant resolution error:', { error });
+                next(new AuthenticationError('認証に失敗しました'));
+            }
+        }
+    };
+}
+
+/**
  * Verify LINE ID Token (for Customer LIFF App)
  */
 export function requireLineAuth() {

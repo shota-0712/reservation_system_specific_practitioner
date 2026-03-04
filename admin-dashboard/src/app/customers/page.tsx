@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 import { customersApi } from "@/lib/api";
+import { logger } from "@/lib/logger";
 
 interface Customer {
     id: string;
@@ -67,7 +68,7 @@ export default function CustomersPage() {
                 setError(res.error?.message || 'データの取得に失敗しました');
             }
         } catch (err) {
-            console.error(err);
+            logger.error(err);
             setError('データの取得に失敗しました');
         } finally {
             setIsLoading(false);
