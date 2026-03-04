@@ -29,6 +29,7 @@ import {
 } from '../../services/reservation-policy.service.js';
 import { getRequestMeta, writeAuditLog } from '../../services/audit-log.service.js';
 import { ConflictError, ValidationError } from '../../utils/errors.js';
+import { logger } from '../../utils/logger.js';
 import type { ApiResponse, Reservation } from '../../types/index.js';
 
 const router = Router();
@@ -255,7 +256,7 @@ router.post(
         if (targetToken) {
             const messageService = createServiceMessageService(tenantId);
             messageService.sendConfirmation(targetToken, reservation).catch((err) => {
-                console.error('Failed to send confirmation', err);
+                logger.error('Failed to send confirmation', { reservationId: reservation.id, error: err instanceof Error ? err.message : String(err) });
             });
         }
 
@@ -271,7 +272,7 @@ router.post(
                     });
                 })
                 .catch((error) => {
-                    console.error('Failed to sync reservation to Google Calendar', error);
+                    logger.error('Failed to sync reservation to Google Calendar', { reservationId: reservation.id, error: error instanceof Error ? error.message : String(error) });
                     const queue = createGoogleCalendarSyncQueueService(tenantId);
                     queue
                         .enqueue({
@@ -279,7 +280,9 @@ router.post(
                             action: 'create',
                             calendarId: practitioner.calendarId,
                         })
-                        .catch(() => undefined);
+                        .catch((enqueueErr) => {
+                            logger.warn('Failed to enqueue Google Calendar sync task', { reservationId: reservation.id, action: 'create', error: enqueueErr instanceof Error ? enqueueErr.message : String(enqueueErr) });
+                        });
                 });
         }
 
@@ -481,7 +484,7 @@ router.put(
                     .syncDeleteEvent(oldPractitioner.calendarId, existing.googleCalendarEventId)
                     .then(() => reservationRepo.clearGoogleCalendarRefs(updated.id))
                     .catch((error) => {
-                        console.error('Failed to delete Google Calendar event', error);
+                        logger.error('Failed to delete Google Calendar event', { reservationId: updated.id, error: error instanceof Error ? error.message : String(error) });
                         queue
                             .enqueue({
                                 reservationId: updated.id,
@@ -489,7 +492,9 @@ router.put(
                                 calendarId: oldPractitioner.calendarId,
                                 eventId: existing.googleCalendarEventId,
                             })
-                            .catch(() => undefined);
+                            .catch((enqueueErr) => {
+                                logger.warn('Failed to enqueue Google Calendar sync task', { reservationId: updated.id, action: 'delete', error: enqueueErr instanceof Error ? enqueueErr.message : String(enqueueErr) });
+                            });
                     });
 
                 if (practitioner.calendarId) {
@@ -503,14 +508,16 @@ router.put(
                             });
                         })
                         .catch((error) => {
-                            console.error('Failed to create Google Calendar event', error);
+                            logger.error('Failed to create Google Calendar event', { reservationId: updated.id, error: error instanceof Error ? error.message : String(error) });
                             queue
                                 .enqueue({
                                     reservationId: updated.id,
                                     action: 'create',
                                     calendarId: practitioner.calendarId,
                                 })
-                                .catch(() => undefined);
+                                .catch((enqueueErr) => {
+                                    logger.warn('Failed to enqueue Google Calendar sync task', { reservationId: updated.id, action: 'create', error: enqueueErr instanceof Error ? enqueueErr.message : String(enqueueErr) });
+                                });
                         });
                 }
             } else if (existing.googleCalendarEventId && practitioner.calendarId) {
@@ -519,7 +526,7 @@ router.put(
                 googleService
                     .syncUpdateEvent(calendarId, existing.googleCalendarEventId, updated, store.timezone || 'Asia/Tokyo')
                     .catch((error) => {
-                        console.error('Failed to update Google Calendar event', error);
+                        logger.error('Failed to update Google Calendar event', { reservationId: updated.id, error: error instanceof Error ? error.message : String(error) });
                         queue
                             .enqueue({
                                 reservationId: updated.id,
@@ -527,7 +534,9 @@ router.put(
                                 calendarId,
                                 eventId: existing.googleCalendarEventId,
                             })
-                            .catch(() => undefined);
+                            .catch((enqueueErr) => {
+                                logger.warn('Failed to enqueue Google Calendar sync task', { reservationId: updated.id, action: 'update', error: enqueueErr instanceof Error ? enqueueErr.message : String(enqueueErr) });
+                            });
                     });
             } else if (!existing.googleCalendarEventId && practitioner.calendarId) {
                 // No existing event yet: create new
@@ -541,14 +550,16 @@ router.put(
                         });
                     })
                     .catch((error) => {
-                        console.error('Failed to create Google Calendar event', error);
+                        logger.error('Failed to create Google Calendar event', { reservationId: updated.id, error: error instanceof Error ? error.message : String(error) });
                         queue
                             .enqueue({
                                 reservationId: updated.id,
                                 action: 'create',
                                 calendarId: practitioner.calendarId,
                             })
-                            .catch(() => undefined);
+                            .catch((enqueueErr) => {
+                                logger.warn('Failed to enqueue Google Calendar sync task', { reservationId: updated.id, action: 'create', error: enqueueErr instanceof Error ? enqueueErr.message : String(enqueueErr) });
+                            });
                     });
             }
         }
@@ -683,7 +694,7 @@ router.patch(
                     .syncDeleteEvent(calendarId, reservation.googleCalendarEventId)
                     .then(() => reservationRepo.clearGoogleCalendarRefs(reservation.id))
                     .catch((error) => {
-                        console.error('Failed to delete Google Calendar event', error);
+                        logger.error('Failed to delete Google Calendar event', { reservationId: reservation.id, error: error instanceof Error ? error.message : String(error) });
                         const queue = createGoogleCalendarSyncQueueService(tenantId);
                         queue
                             .enqueue({
@@ -692,7 +703,9 @@ router.patch(
                                 calendarId,
                                 eventId: reservation.googleCalendarEventId,
                             })
-                            .catch(() => undefined);
+                            .catch((enqueueErr) => {
+                                logger.warn('Failed to enqueue Google Calendar sync task', { reservationId: reservation.id, action: 'delete', error: enqueueErr instanceof Error ? enqueueErr.message : String(enqueueErr) });
+                            });
                     });
             }
         }

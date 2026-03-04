@@ -25,6 +25,7 @@ import { cn } from "@/lib/utils";
 import { format, addDays, startOfWeek, endOfWeek, isToday, isTomorrow, parseISO } from "date-fns";
 import { ja } from "date-fns/locale";
 import { reservationsApi, practitionersApi, menusApi } from "@/lib/api";
+import { logger } from "@/lib/logger";
 
 // 予約ステータスの定義
 type ReservationStatus = "confirmed" | "pending" | "completed" | "canceled" | "no_show";
@@ -119,7 +120,7 @@ export default function ReservationsPage() {
                 setError(res.error?.message || '予約データの取得に失敗しました');
             }
         } catch (err) {
-            console.error(err);
+            logger.error(err);
             setError('予約データの取得に失敗しました');
         } finally {
             setIsLoading(false);
@@ -166,7 +167,7 @@ export default function ReservationsPage() {
                 setError(res.error?.message || 'ステータスの更新に失敗しました');
             }
         } catch (err) {
-            console.error(err);
+            logger.error(err);
             setError('ステータスの更新に失敗しました');
         } finally {
             setIsUpdating(null);

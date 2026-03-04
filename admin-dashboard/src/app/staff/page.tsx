@@ -8,6 +8,7 @@ import { Dialog, DialogContent, DialogHeader, DialogBody, DialogFooter, ConfirmD
 import { useToast } from "@/components/ui/toast";
 import { cn } from "@/lib/utils";
 import { bookingLinksApi, getActiveStoreId, practitionersApi, STORE_CHANGED_EVENT } from "@/lib/api";
+import { logger } from "@/lib/logger";
 
 const DAYS = ["日", "月", "火", "水", "木", "金", "土"];
 
@@ -235,7 +236,7 @@ export default function StaffPage() {
                 title: "予約URLをコピーしました",
             });
         } catch (error) {
-            console.error(error);
+            logger.error(error);
             pushToast({
                 variant: "error",
                 title: "URLのコピーに失敗しました",
@@ -265,7 +266,7 @@ export default function StaffPage() {
             }
             setBookingLinks(bookingLinkRes.data as BookingLinkToken[]);
         } catch (err) {
-            console.error(err);
+            logger.error(err);
             setError('データの取得に失敗しました');
         } finally {
             setIsLoading(false);

@@ -7,6 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogBody, DialogContent, DialogFooter, DialogHeader, ConfirmDialog } from "@/components/ui/dialog";
 import { useToast } from "@/components/ui/toast";
 import { menusApi, optionsApi } from "@/lib/api";
+import { logger } from "@/lib/logger";
 
 interface OptionItem {
     id: string;
@@ -64,7 +65,7 @@ export default function OptionsPage() {
                 setMenus(activeMenus);
             }
         } catch (err) {
-            console.error(err);
+            logger.error(err);
             setError("オプションの取得に失敗しました");
         } finally {
             setLoading(false);
@@ -148,7 +149,7 @@ export default function OptionsPage() {
             });
             await fetchData();
         } catch (err: any) {
-            console.error(err);
+            logger.error(err);
             setError(err.message || "保存に失敗しました");
             pushToast({
                 variant: "error",
@@ -177,7 +178,7 @@ export default function OptionsPage() {
             });
             await fetchData();
         } catch (err: any) {
-            console.error(err);
+            logger.error(err);
             setError(err.message || "削除に失敗しました");
             pushToast({
                 variant: "error",

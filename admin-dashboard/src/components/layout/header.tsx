@@ -24,6 +24,7 @@ import {
     setActiveStoreId,
 } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
+import { logger } from "@/lib/logger";
 
 interface Notification {
     id: string;
@@ -161,7 +162,7 @@ export function Header({ onMenuClick, isSidebarOpen }: HeaderProps) {
                     }));
                 });
             } catch (error) {
-                console.error("Failed to load notifications:", error);
+                logger.error("Failed to load notifications:", error);
                 setNotifications([]);
             } finally {
                 setLoadingNotifications(false);
@@ -192,7 +193,7 @@ export function Header({ onMenuClick, isSidebarOpen }: HeaderProps) {
             await logout();
             setActiveStoreId(null);
         } catch (error) {
-            console.error("Failed to logout:", error);
+            logger.error("Failed to logout:", error);
         }
         router.push("/login");
     };

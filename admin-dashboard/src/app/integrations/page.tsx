@@ -7,6 +7,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { ConfirmDialog } from "@/components/ui/dialog";
 import { useToast } from "@/components/ui/toast";
 import { adminJobsApi, googleCalendarApi } from "@/lib/api";
+import { logger } from "@/lib/logger";
 
 interface GoogleStatus {
     connected: boolean;
@@ -48,7 +49,7 @@ export default function IntegrationsPage() {
             }
             setStatus(res.data as GoogleStatus);
         } catch (err: any) {
-            console.error(err);
+            logger.error(err);
             setError(err.message || "Google連携状態の取得に失敗しました");
         } finally {
             setLoading(false);
@@ -143,7 +144,7 @@ export default function IntegrationsPage() {
                 window.location.href = authUrl;
             }
         } catch (err: any) {
-            console.error(err);
+            logger.error(err);
             setError(err.message || "OAuth開始に失敗しました");
             pushToast({
                 variant: "error",
@@ -170,7 +171,7 @@ export default function IntegrationsPage() {
                 title: "Google連携を解除しました",
             });
         } catch (err: any) {
-            console.error(err);
+            logger.error(err);
             setError(err.message || "連携解除に失敗しました");
             pushToast({
                 variant: "error",
@@ -240,7 +241,7 @@ export default function IntegrationsPage() {
                 setJobResult(`リマインダー送信を実行しました / sent: ${sent}件, failed: ${failed}件`);
             }
         } catch (err: any) {
-            console.error(err);
+            logger.error(err);
             setError(err.message || "ジョブ実行に失敗しました");
         } finally {
             setJobRunning(false);

@@ -15,6 +15,7 @@ import {
 import { AlertCircle, Loader2 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { reportsApi } from "@/lib/api";
+import { logger } from "@/lib/logger";
 
 interface SummaryData {
     revenue: { value: number; change: number };
@@ -140,7 +141,7 @@ export default function ReportsPage() {
                     setPractitionerRevenue([]);
                 }
             } catch (error) {
-                console.error("Failed to fetch reports:", error);
+                logger.error("Failed to fetch reports:", error);
                 setError("レポートデータの取得に失敗しました");
                 setSummary(EMPTY_SUMMARY);
                 setMonthlyRevenue([]);

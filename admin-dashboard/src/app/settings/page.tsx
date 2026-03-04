@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 import { settingsApi } from "@/lib/api";
+import { logger } from "@/lib/logger";
 
 const DAYS = ["日", "月", "火", "水", "木", "金", "土"];
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -59,6 +60,7 @@ interface LineResolvePreviewResponse {
 export default function SettingsPage() {
     const [activeTab, setActiveTab] = useState("general");
     const [loading, setLoading] = useState(true);
+    const [fetchError, setFetchError] = useState<string | null>(null);
     const [saving, setSaving] = useState(false);
     const [saveMessage, setSaveMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
     const [linePreview, setLinePreview] = useState<LineResolvePreviewResponse | null>(null);
@@ -192,7 +194,8 @@ export default function SettingsPage() {
                     }
                 }
             } catch (error) {
-                console.error('Failed to fetch settings:', error);
+                logger.error('Failed to fetch settings:', error);
+                setFetchError(error instanceof Error ? error.message : '設定の読み込みに失敗しました');
             } finally {
                 setLoading(false);
             }
@@ -267,7 +270,7 @@ export default function SettingsPage() {
             setSaveMessage({ type: 'success', text: '設定を保存しました' });
             setTimeout(() => setSaveMessage(null), 3000);
         } catch (error: any) {
-            console.error('Failed to save settings:', error);
+            logger.error('Failed to save settings:', error);
             setSaveMessage({ type: 'error', text: error.message || '保存に失敗しました' });
         } finally {
             setSaving(false);
@@ -305,6 +308,13 @@ export default function SettingsPage() {
                     店舗の各種設定を管理します
                 </p>
             </div>
+
+            {/* Fetch error banner */}
+            {fetchError && (
+                <div className="rounded-md border border-destructive/50 bg-destructive/10 px-4 py-3 text-sm text-destructive">
+                    設定の読み込みに失敗しました: {fetchError}
+                </div>
+            )}
 
             {/* Tabs */}
             <div className="flex gap-2 border-b pb-2 overflow-x-auto">

@@ -7,6 +7,7 @@ import { Scissors, Eye, EyeOff, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/lib/auth-context";
 import { adminContextApi } from "@/lib/api";
+import { logger } from "@/lib/logger";
 
 export default function LoginPage() {
     const router = useRouter();
@@ -28,7 +29,7 @@ export default function LoginPage() {
             await adminContextApi.sync();
             router.push("/");
         } catch (err: any) {
-            console.error('Login error:', err);
+            logger.error('Login error:', err);
             // Firebase error codes
             if (err.code === 'auth/user-not-found') {
                 setError("このメールアドレスは登録されていません");
