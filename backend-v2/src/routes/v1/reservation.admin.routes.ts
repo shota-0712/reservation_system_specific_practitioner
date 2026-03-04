@@ -11,7 +11,7 @@ import {
     paginationSchema,
 } from '../../middleware/index.js';
 import { getTenantId } from '../../middleware/tenant.js';
-import { requireFirebaseAuth, requirePermission } from '../../middleware/auth.js';
+import { requirePermission } from '../../middleware/auth.js';
 import {
     createReservationRepository,
     createCustomerRepository,
@@ -97,7 +97,6 @@ function practitionerMatchesStore(practitionerStoreIds: string[] | undefined, st
 
 router.get(
     '/',
-    requireFirebaseAuth(),
     requirePermission('canManageReservations'),
     validateQuery(reservationFiltersSchema),
     asyncHandler(async (req: Request, res: Response): Promise<void> => {
@@ -128,7 +127,6 @@ router.get(
 
 router.post(
     '/',
-    requireFirebaseAuth(),
     requirePermission('canManageReservations'),
     validateBody(createAdminReservationSchema),
     asyncHandler(async (req: Request, res: Response): Promise<void> => {
@@ -306,7 +304,6 @@ router.post(
 
 router.put(
     '/:id',
-    requireFirebaseAuth(),
     requirePermission('canManageReservations'),
     validateParams(idParamSchema),
     validateBody(updateReservationSchema),
@@ -585,7 +582,6 @@ router.put(
 
 router.get(
     '/today',
-    requireFirebaseAuth(),
     requirePermission('canManageReservations'),
     asyncHandler(async (req: Request, res: Response): Promise<void> => {
         const tenantId = getTenantId(req);
@@ -599,7 +595,6 @@ router.get(
 
 router.get(
     '/by-date/:date',
-    requireFirebaseAuth(),
     requirePermission('canManageReservations'),
     validateParams(z.object({ date: dateSchema })),
     asyncHandler(async (req: Request, res: Response): Promise<void> => {
@@ -615,7 +610,6 @@ router.get(
 
 router.get(
     '/stats',
-    requireFirebaseAuth(),
     requirePermission('canViewReports'),
     validateQuery(
         z.object({
@@ -637,7 +631,6 @@ router.get(
 
 router.get(
     '/:id',
-    requireFirebaseAuth(),
     requirePermission('canManageReservations'),
     validateParams(idParamSchema),
     asyncHandler(async (req: Request, res: Response): Promise<void> => {
@@ -652,7 +645,6 @@ router.get(
 
 router.patch(
     '/:id/status',
-    requireFirebaseAuth(),
     requirePermission('canManageReservations'),
     validateParams(idParamSchema),
     validateBody(updateReservationStatusSchema),

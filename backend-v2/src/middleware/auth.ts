@@ -58,6 +58,13 @@ export function requireFirebaseAuth() {
                 );
 
                 if (adminRowByEmail) {
+                    // セキュリティイベント: Firebase UID の自動再リンクをログ記録
+                    logger.warn('🔐 SECURITY: Firebase UID relinked by email match', {
+                        adminId: (adminRowByEmail as { id: string }).id,
+                        tenantId,
+                        newUid: decodedToken.uid,
+                        email: normalizedEmail,
+                    });
                     adminRow = await DatabaseService.queryOne(
                         'UPDATE admins SET firebase_uid = $1 WHERE id = $2 RETURNING *',
                         [decodedToken.uid, (adminRowByEmail as { id: string }).id],
@@ -359,11 +366,7 @@ async function verifyLineIdToken(
 
             logger.debug('LINE token verified successfully');
         } else {
-            // No channel secret configured - log warning but allow in development
-            if (process.env.NODE_ENV === 'production') {
-                throw new AuthenticationError('LINE認証が設定されていません');
-            }
-            logger.warn('⚠️ LINE channel secret not configured - skipping signature verification');
+            throw new AuthenticationError('LINE認証設定が不完全です（チャンネルシークレット未設定）');
         }
 
         return payload;

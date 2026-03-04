@@ -99,8 +99,8 @@ const limiter = rateLimit({
     skip: (req) => {
         // Always skip health checks
         if (req.path === '/health' || req.path === '/ready') return true;
-        // Skip authenticated admin API routes — Firebase token is the real gate
-        if (req.originalUrl.startsWith('/api/v1/')) return true;
+        // Skip authenticated admin routes only — Firebase token is the real gate
+        if (req.originalUrl.startsWith('/api/v1/admin/')) return true;
         return false;
     },
 });

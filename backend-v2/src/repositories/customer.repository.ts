@@ -122,37 +122,25 @@ export class CustomerRepository {
      */
     async findOrCreate(
         lineUserId: string,
-        lineDisplayName: string,
-        linePictureUrl?: string
+        lineDisplayName: string | null,
+        linePictureUrl?: string | null
     ): Promise<Customer> {
-        const existing = await this.findByLineUserId(lineUserId);
-
-        if (existing) {
-            // Update LINE info
-            const row = await DatabaseService.queryOne(
-                `UPDATE customers SET
-                    line_display_name = $3,
-                    line_picture_url = $4,
-                    updated_at = NOW()
-                 WHERE id = $1 AND tenant_id = $2
-                 RETURNING *`,
-                [existing.id, this.tenantId, lineDisplayName, linePictureUrl ?? null],
-                this.tenantId
-            );
-            return mapCustomer(row as Record<string, any>);
-        }
-
-        // Create new customer
+        // Atomic upsert: prevents TOCTOU race condition where concurrent requests
+        // could create duplicate customers for the same LINE user ID
         const row = await DatabaseService.queryOne(
             `INSERT INTO customers (
                 tenant_id, line_user_id, line_display_name, line_picture_url,
                 name, is_active, total_visits, total_spend, cancel_count, no_show_count, tags
-            ) VALUES ($1, $2, $3, $4, $5, true, 0, 0, 0, 0, '{}')
+            ) VALUES ($1, $2, $3, $4, $3, true, 0, 0, 0, 0, '{}')
+            ON CONFLICT (tenant_id, line_user_id) DO UPDATE SET
+                line_display_name = EXCLUDED.line_display_name,
+                line_picture_url  = COALESCE(EXCLUDED.line_picture_url, customers.line_picture_url),
+                updated_at        = NOW()
             RETURNING *`,
-            [this.tenantId, lineUserId, lineDisplayName, linePictureUrl ?? null, lineDisplayName],
+            [this.tenantId, lineUserId, lineDisplayName ?? null, linePictureUrl ?? null],
             this.tenantId
         );
-
+        if (!row) throw new Error('findOrCreate failed unexpectedly');
         return mapCustomer(row as Record<string, any>);
     }
 

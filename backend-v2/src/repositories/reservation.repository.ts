@@ -385,8 +385,10 @@ export class ReservationRepository {
     /**
      * Find today's reservations
      */
-    async findToday(): Promise<Reservation[]> {
-        const today = new Date().toISOString().split('T')[0];
+    async findToday(timezone: string = 'Asia/Tokyo'): Promise<Reservation[]> {
+        const { format } = await import('date-fns');
+        const { toZonedTime } = await import('date-fns-tz');
+        const today = format(toZonedTime(new Date(), timezone), 'yyyy-MM-dd');
         return this.findByDate(today);
     }
 
