@@ -272,130 +272,33 @@ router.get('/',
             duration?: number;
         };
 
-        const practitionerRepo = createPractitionerRepository(tenantId);
-        const reservationRepo = createReservationRepository(tenantId);
         const menuRepo = createMenuRepository(tenantId);
-        const store = await resolveStoreConfig(tenantId, storeId);
-        const timezone = store?.timezone || DEFAULT_TIMEZONE;
-        const dayOfWeek = getDayOfWeekInTimezone(date, timezone);
+        const totalDuration = await calculateMenuDuration(menuIds, duration, menuRepo);
+        const data = await calculateDaySlots(tenantId, date, storeId, practitionerId, totalDuration);
 
-        // Calculate total duration from menus or use provided duration
-        let totalDuration = duration || 60; // Default 60 minutes
-        if (menuIds) {
-            const menuIdArray = menuIds.split(',');
-            const menus = await Promise.all(
-                menuIdArray.map(id => menuRepo.findById(id))
-            );
-            totalDuration = menus
-                .filter((m): m is MenuType => m !== null)
-                .reduce((sum, m) => sum + m.duration, 0);
-        }
-
-        // Get practitioners
-        let practitioners: Practitioner[];
-        if (practitionerId) {
-            const p = await practitionerRepo.findById(practitionerId);
-            practitioners = p && p.isActive && practitionerMatchesStore(p, storeId) ? [p] : [];
-        } else {
-            practitioners = await practitionerRepo.findAllActiveScoped(storeId);
-        }
-
-        // Filter practitioners who work on this day
-        practitioners = practitioners.filter(p => practitionerWorksOnDay(p, dayOfWeek));
-
-        if (practitioners.length === 0) {
-            const response: ApiResponse<DaySlots> = {
-                success: true,
-                data: {
-                    date,
-                    dayOfWeek,
-                    isHoliday: false,
-                    slots: [],
-                },
-            };
-            res.json(response);
-            return;
-        }
-
-        // Get reservations for the date
-        const existingReservations = await reservationRepo.findByDate(date);
-
-        // Build reservation map by practitioner
-        const reservationsByPractitioner: Record<string, Array<{ startTime: string; endTime: string }>> = {};
-        for (const res of existingReservations) {
-            if (res.status === 'canceled') continue;
-            if (!reservationsByPractitioner[res.practitionerId]) {
-                reservationsByPractitioner[res.practitionerId] = [];
-            }
-            reservationsByPractitioner[res.practitionerId].push({
-                startTime: res.startTime,
-                endTime: res.endTime,
-            });
-        }
-
-        const businessHours = getBusinessHours(store, dayOfWeek);
-
-        if (isBeyondAdvanceBooking(date, store) || isHoliday(date, dayOfWeek, store) || !businessHours.isOpen) {
-            const response: ApiResponse<DaySlots> = {
-                success: true,
-                data: {
-                    date,
-                    dayOfWeek,
-                    isHoliday: true,
-                    slots: [],
-                },
-            };
-            res.json(response);
-            return;
-        }
-
-        // Generate time slots
-        const slotDuration = store?.slotDuration ?? 30;
-        const allSlots = generateTimeSlots(
-            businessHours.open,
-            businessHours.close,
-            slotDuration
-        );
-
-        // Check availability for each slot
-        const slots: TimeSlot[] = allSlots.map(time => {
-            const availablePractitioners: string[] = [];
-
-            for (const practitioner of practitioners) {
-                // Check if within practitioner's work hours
-                if (!isWithinWorkHours(time, practitioner, totalDuration)) {
-                    continue;
-                }
-
-                // Check for conflicts
-                const practitionerReservations = reservationsByPractitioner[practitioner.id] || [];
-                if (!hasConflict(time, totalDuration, practitionerReservations)) {
-                    availablePractitioners.push(practitioner.id);
-                }
-            }
-
-            return {
-                time,
-                available: availablePractitioners.length > 0,
-                practitionerIds: availablePractitioners,
-            };
-        });
-
-        const filteredSlots = filterPastSlotsForDate(date, slots, timezone);
-
-        const response: ApiResponse<DaySlots> = {
-            success: true,
-            data: {
-                date,
-                dayOfWeek,
-                isHoliday: false,
-                slots: filteredSlots,
-            },
-        };
-
+        const response: ApiResponse<DaySlots> = { success: true, data };
         res.json(response);
     })
 );
+
+/**
+ * Calculate total duration from a comma-separated list of menu IDs, or fall back to `duration`.
+ */
+async function calculateMenuDuration(
+    menuIds: string | undefined,
+    duration: number | undefined,
+    menuRepo: ReturnType<typeof createMenuRepository>
+): Promise<number> {
+    if (menuIds) {
+        const ids = menuIds.split(',');
+        const menus = await Promise.all(ids.map(id => menuRepo.findById(id)));
+        const total = menus
+            .filter((m): m is MenuType => m !== null)
+            .reduce((sum, m) => sum + m.duration, 0);
+        if (total > 0) return total;
+    }
+    return duration || 60;
+}
 
 /**
  * Calculate slots for a single day (shared function)
@@ -418,7 +321,7 @@ async function calculateDaySlots(
     let practitioners: Practitioner[];
     if (practitionerId) {
         const p = await practitionerRepo.findById(practitionerId);
-        practitioners = p && practitionerMatchesStore(p, storeId) ? [p] : [];
+        practitioners = p && p.isActive && practitionerMatchesStore(p, storeId) ? [p] : [];
     } else {
         practitioners = await practitionerRepo.findAllActiveScoped(storeId);
     }
@@ -520,18 +423,7 @@ router.get('/week',
         };
 
         const menuRepo = createMenuRepository(tenantId);
-
-        // Calculate total duration from menus
-        let totalDuration = 60; // Default 60 minutes
-        if (menuIds) {
-            const menuIdArray = menuIds.split(',');
-            const menus = await Promise.all(
-                menuIdArray.map(id => menuRepo.findById(id))
-            );
-            totalDuration = menus
-                .filter((m): m is MenuType => m !== null)
-                .reduce((sum, m) => sum + m.duration, 0);
-        }
+        const totalDuration = await calculateMenuDuration(menuIds, undefined, menuRepo);
 
         // Generate dates for the week
         const dates: string[] = [];

@@ -1,6 +1,6 @@
 import { Router, Request, Response } from 'express';
 import { z } from 'zod';
-import { asyncHandler, validateBody, validateParams, idParamSchema } from '../../middleware/index.js';
+import { asyncHandler, validateBody, validateParams, validateQuery, idParamSchema } from '../../middleware/index.js';
 import { requireFirebaseAuth, requirePermission } from '../../middleware/auth.js';
 import { getTenantId } from '../../middleware/tenant.js';
 import { createKarteRepository } from '../../repositories/index.js';
@@ -10,16 +10,16 @@ import type { ApiResponse } from '../../types/index.js';
 const router = Router();
 
 const createKarteSchema = z.object({
-    customerId: z.string().min(1),
-    reservationId: z.string().optional(),
-    storeId: z.string().optional(),
-    practitionerId: z.string().min(1),
+    customerId: z.string().uuid(),
+    reservationId: z.string().uuid().optional(),
+    storeId: z.string().uuid().optional(),
+    practitionerId: z.string().uuid(),
     customerName: z.string().optional(),
     customerPictureUrl: z.string().url().optional(),
     visitDate: z.string(),
-    menuIds: z.array(z.string()).default([]),
+    menuIds: z.array(z.string().uuid()).default([]),
     menuNames: z.array(z.string()).default([]),
-    optionIds: z.array(z.string()).default([]),
+    optionIds: z.array(z.string().uuid()).default([]),
     duration: z.number().int().optional(),
     totalAmount: z.number().int().optional(),
     treatmentDescription: z.string().optional(),
@@ -38,13 +38,18 @@ const createKarteSchema = z.object({
 
 const updateKarteSchema = createKarteSchema.partial();
 
+const listKarteQuerySchema = z.object({
+    limit: z.coerce.number().int().min(1).max(500).default(100),
+});
+
 router.get(
     '/',
     requireFirebaseAuth(),
     requirePermission('canManageCustomers'),
+    validateQuery(listKarteQuerySchema),
     asyncHandler(async (req: Request, res: Response): Promise<void> => {
         const tenantId = getTenantId(req);
-        const limit = Math.min(parseInt((req.query.limit as string) || '100', 10), 500);
+        const { limit } = req.query as unknown as z.infer<typeof listKarteQuerySchema>;
         const karteRepo = createKarteRepository(tenantId);
         const kartes = await karteRepo.findAll(limit);
 
@@ -104,7 +109,10 @@ router.post(
             data: karte,
         };
 
-        res.status(201).json(response);
+        res
+            .status(201)
+            .setHeader('Location', `/api/v1/admin/kartes/${karte.id}`)
+            .json(response);
     })
 );
 

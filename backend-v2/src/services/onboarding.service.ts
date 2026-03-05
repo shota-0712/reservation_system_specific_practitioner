@@ -1,4 +1,5 @@
 import type { PoolClient } from 'pg';
+import { randomUUID } from 'crypto';
 import { DatabaseService } from '../config/database.js';
 import { ConflictError, ValidationError } from '../utils/errors.js';
 import { logger } from '../utils/logger.js';
@@ -120,29 +121,6 @@ async function generateUniqueStoreCode(client: PoolClient): Promise<string> {
     throw new Error('店舗コード生成に失敗しました');
 }
 
-async function generateUniqueTenantSlug(client: PoolClient, tenantName: string): Promise<string> {
-    const base = deriveSlugBase(tenantName);
-
-    for (let attempts = 0; attempts < 1000; attempts += 1) {
-        const candidate = buildSlugCandidate(base, attempts);
-        if (candidate.length < SLUG_MIN_LENGTH || candidate.length > SLUG_MAX_LENGTH) {
-            continue;
-        }
-
-        validateSlug(candidate);
-
-        const exists = await client.query<{ id: string }>(
-            'SELECT id FROM tenants WHERE slug = $1 LIMIT 1',
-            [candidate]
-        );
-        if ((exists.rowCount ?? 0) === 0) {
-            return candidate;
-        }
-    }
-
-    throw new Error('テナント識別子の生成に失敗しました');
-}
-
 export class OnboardingService {
     async isSlugAvailable(slug: string): Promise<boolean> {
         const normalized = normalizeSlug(slug);
@@ -166,36 +144,48 @@ export class OnboardingService {
 
         try {
             return await DatabaseService.transaction<RegistrationResult>(async (client) => {
-                const adminExists = await client.query<{ id: string }>(
-                    'SELECT id FROM admins WHERE firebase_uid = $1 LIMIT 1',
-                    [input.firebaseUid]
-                );
-                if ((adminExists.rowCount ?? 0) > 0) {
-                    throw new ConflictError('このFirebaseユーザーは既に管理者登録されています');
+                const slugBase = deriveSlugBase(input.tenantName);
+                let tenant: TenantInsertRow | undefined;
+
+                // RLS on tenants requires app.current_tenant to match inserted id.
+                // Generate tenant_id first, set tenant context, then attempt insert.
+                for (let attempts = 0; attempts < 1000; attempts += 1) {
+                    const candidateSlug = buildSlugCandidate(slugBase, attempts);
+                    if (candidateSlug.length < SLUG_MIN_LENGTH || candidateSlug.length > SLUG_MAX_LENGTH) {
+                        continue;
+                    }
+                    validateSlug(candidateSlug);
+
+                    const tenantId = randomUUID();
+                    await DatabaseService.setTenantContext(client, tenantId);
+
+                    const tenantInsert = await client.query<TenantInsertRow>(
+                        `INSERT INTO tenants (
+                            id,
+                            slug,
+                            name,
+                            plan,
+                            status,
+                            onboarding_status,
+                            onboarding_payload
+                        )
+                        VALUES ($1, $2, $3, 'trial', 'active', 'pending', $4::jsonb)
+                        ON CONFLICT (slug) DO NOTHING
+                        RETURNING id, slug`,
+                        [tenantId, candidateSlug, input.tenantName, JSON.stringify(payload)]
+                    );
+
+                    tenant = tenantInsert.rows[0];
+                    if (tenant) {
+                        break;
+                    }
                 }
 
-                const generatedSlug = await generateUniqueTenantSlug(client, input.tenantName);
-
-                const tenantInsert = await client.query<TenantInsertRow>(
-                    `INSERT INTO tenants (
-                        slug,
-                        name,
-                        plan,
-                        status,
-                        onboarding_status,
-                        onboarding_payload
-                    )
-                    VALUES ($1, $2, 'trial', 'active', 'pending', $3::jsonb)
-                    RETURNING id, slug`,
-                    [generatedSlug, input.tenantName, JSON.stringify(payload)]
-                );
-
-                const tenant = tenantInsert.rows[0];
                 if (!tenant) {
-                    throw new Error('テナント作成に失敗しました');
+                    throw new Error('テナント識別子の生成に失敗しました');
                 }
 
-                await client.query('SELECT set_tenant($1)', [tenant.id]);
+                await DatabaseService.setTenantContext(client, tenant.id);
                 const storeCode = await generateUniqueStoreCode(client);
 
                 const storeInsert = await client.query<StoreInsertRow>(

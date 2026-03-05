@@ -23,6 +23,14 @@ pool.on('error', (err) => {
 
 export class DatabaseService {
     /**
+     * Set tenant context in transaction-local scope.
+     * Equivalent to `SET LOCAL app.current_tenant = ...` with safe parameter binding.
+     */
+    static async setTenantContext(client: PoolClient, tenantId: string): Promise<void> {
+        await client.query(`SELECT set_config('app.current_tenant', $1, true)`, [tenantId]);
+    }
+
+    /**
      * クエリを実行する汎用メソッド
      * テナントIDが指定されている場合はRLSを設定してからクエリを実行する
      */
@@ -34,12 +42,27 @@ export class DatabaseService {
         const client = await pool.connect();
         try {
             if (tenantId) {
-                // RLS用のテナントIDを設定（ローカルセッション）
-                await client.query(`SELECT set_tenant($1)`, [tenantId]);
+                // Tenant context is always set inside an explicit transaction-local scope.
+                await client.query('BEGIN');
+                await this.setTenantContext(client, tenantId);
             }
 
             const res = await client.query(text, params);
+
+            if (tenantId) {
+                await client.query('COMMIT');
+            }
+
             return res.rows;
+        } catch (error) {
+            if (tenantId) {
+                try {
+                    await client.query('ROLLBACK');
+                } catch {
+                    // noop
+                }
+            }
+            throw error;
         } finally {
             client.release();
         }
@@ -57,8 +80,7 @@ export class DatabaseService {
             await client.query('BEGIN');
 
             if (tenantId) {
-                // RLS用のテナントIDを設定
-                await client.query(`SELECT set_tenant($1)`, [tenantId]);
+                await this.setTenantContext(client, tenantId);
             }
 
             const result = await callback(client);

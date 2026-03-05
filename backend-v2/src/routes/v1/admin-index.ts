@@ -23,6 +23,8 @@ import { bookingLinkAdminRoutes } from './booking-link.admin.routes.js';
 import { karteAdminRoutes } from './karte.admin.routes.js';
 import { karteTemplateAdminRoutes } from './karte-template.admin.routes.js';
 import { googleCalendarAdminRoutes } from './google-calendar.routes.js';
+import { exportAdminRoutes } from './export.admin.routes.js';
+import { assignmentAdminRoutes } from './assignment.admin.routes.js';
 
 const router = Router();
 
@@ -30,6 +32,11 @@ const router = Router();
 router.use(requireJwtTenant());
 // 2. Verify Firebase token and load admin role/permissions from DB
 router.use(requireFirebaseAuth());
+// 3. Admin APIs contain tenant-private operational data.
+router.use((_req, res, next) => {
+    res.setHeader('Cache-Control', 'private, no-store');
+    next();
+});
 
 router.use('/dashboard', dashboardRoutes);
 router.use('/customers', customerRoutes);
@@ -44,6 +51,8 @@ router.use('/practitioners', practitionerAdminRoutes);
 router.use('/options', optionAdminRoutes);
 router.use('/stores', storeAdminRoutes);
 router.use('/booking-links', bookingLinkAdminRoutes);
+router.use('/assignments', assignmentAdminRoutes);
+router.use('/exports', exportAdminRoutes);
 router.use('/kartes', karteAdminRoutes);
 router.use('/karte-templates', karteTemplateAdminRoutes);
 router.use('/integrations/google-calendar', googleCalendarAdminRoutes);

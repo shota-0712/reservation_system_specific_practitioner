@@ -219,6 +219,20 @@ substitutions:
 EOF
 ```
 
+Export/分析CSV を使う場合は backend サービスに以下も設定:
+
+```bash
+# 例: Cloud SQL集計を使う（BigQuery未使用）
+gcloud run services update reserve-api \
+  --region=asia-northeast1 \
+  --update-env-vars=ANALYTICS_EXPORT_SOURCE=cloudsql,EXPORT_GCS_PREFIX=exports,EXPORT_SIGNED_URL_TTL_MINUTES=30
+
+# 例: BigQuery mart を使う（推奨）
+gcloud run services update reserve-api \
+  --region=asia-northeast1 \
+  --update-env-vars=ANALYTICS_EXPORT_SOURCE=bigquery,BIGQUERY_PROJECT_ID=YOUR_PROJECT_ID,BIGQUERY_MART_DATASET=reservation_mart,EXPORT_GCS_BUCKET=your-export-bucket,EXPORT_GCS_PREFIX=exports,EXPORT_SIGNED_URL_TTL_MINUTES=30
+```
+
 ### 6.2 Cloud Build実行
 
 ```bash
@@ -289,7 +303,11 @@ _NEXT_PUBLIC_ADMIN_URL=https://reserve-admin-xxxxx.run.app
 `_RUN_MIGRATIONS=true` の場合:
 - `database/migrations/*.sql` をファイル名昇順で確認
 - `schema_migrations` に未登録のファイルのみ適用
-- 適用後に `schema_migrations(filename, checksum, applied_at)` へ記録
+- 既適用ファイルは `checksum` 一致を検証（不一致時は即失敗）
+- 適用後に `schema_migrations(filename, version, checksum, applied_at)` へ記録
+- 既定で `lock_timeout=5s`, `statement_timeout=15min` を適用
+- `app_user` に `BYPASSRLS` が残っている場合は migration を失敗させる（要 `ALTER ROLE app_user NOBYPASSRLS`）
+- 詳細運用ルールは `docs/runbooks/DB_MIGRATION_GUARDRAILS.md` を参照
 
 `_DEPLOY_TARGET` 指定時:
 - 指定対象以外の quality/build/push/deploy ステップは実行せず成功終了する

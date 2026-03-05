@@ -30,7 +30,7 @@ interface TenantRow {
  * 前日リマインダー送信ジョブ
  * Cloud Scheduler で毎日 18:00 JST に実行
  */
-export async function sendDayBeforeReminders(): Promise<ReminderStats> {
+export async function sendDayBeforeReminders(tenantId?: string): Promise<ReminderStats> {
     // 日本時間で「明日」の日付を取得
     const now = new Date();
     const jstNow = toZonedTime(now, TIMEZONE);
@@ -46,11 +46,13 @@ export async function sendDayBeforeReminders(): Promise<ReminderStats> {
     const stats: ReminderStats = { total: 0, sent: 0, skipped: 0, failed: 0 };
 
     try {
-        // アクティブな全テナントを取得
-        const tenants = await DatabaseService.query<TenantRow>(
-            `SELECT id, name
-             FROM tenants WHERE status = 'active'`
-        );
+        // tenantId が指定されている場合はそのテナントのみ処理
+        const tenants = tenantId
+            ? [{ id: tenantId, name: 'scoped-tenant' }]
+            : await DatabaseService.query<TenantRow>(
+                `SELECT id, name
+                 FROM tenants WHERE status = 'active'`
+            );
 
         for (const tenant of tenants) {
             try {
@@ -88,7 +90,7 @@ export async function sendDayBeforeReminders(): Promise<ReminderStats> {
  * 当日リマインダー送信ジョブ
  * Cloud Scheduler で毎日 08:00 JST に実行
  */
-export async function sendSameDayReminders(): Promise<ReminderStats> {
+export async function sendSameDayReminders(tenantId?: string): Promise<ReminderStats> {
     // 日本時間で「今日」の日付を取得
     const now = new Date();
     const jstNow = toZonedTime(now, TIMEZONE);
@@ -103,10 +105,12 @@ export async function sendSameDayReminders(): Promise<ReminderStats> {
     const stats: ReminderStats = { total: 0, sent: 0, skipped: 0, failed: 0 };
 
     try {
-        const tenants = await DatabaseService.query<TenantRow>(
-            `SELECT id, name
-             FROM tenants WHERE status = 'active'`
-        );
+        const tenants = tenantId
+            ? [{ id: tenantId, name: 'scoped-tenant' }]
+            : await DatabaseService.query<TenantRow>(
+                `SELECT id, name
+                 FROM tenants WHERE status = 'active'`
+            );
 
         for (const tenant of tenants) {
             try {
@@ -232,12 +236,16 @@ async function sendRemindersForTenant(
  * HTTP エンドポイント用のハンドラ
  * Cloud Scheduler から直接呼び出される
  */
-export async function handleDayBeforeReminderRequest(): Promise<{ success: boolean; stats: ReminderStats }> {
-    const stats = await sendDayBeforeReminders();
+export async function handleDayBeforeReminderRequest(
+    tenantId?: string
+): Promise<{ success: boolean; stats: ReminderStats }> {
+    const stats = await sendDayBeforeReminders(tenantId);
     return { success: true, stats };
 }
 
-export async function handleSameDayReminderRequest(): Promise<{ success: boolean; stats: ReminderStats }> {
-    const stats = await sendSameDayReminders();
+export async function handleSameDayReminderRequest(
+    tenantId?: string
+): Promise<{ success: boolean; stats: ReminderStats }> {
+    const stats = await sendSameDayReminders(tenantId);
     return { success: true, stats };
 }

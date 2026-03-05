@@ -1,0 +1,214 @@
+// ============================================
+// 予約
+// ============================================
+
+export type ReservationSource =
+    | 'line' | 'phone' | 'walk_in' | 'salonboard' | 'hotpepper' | 'web' | 'admin' | 'google_calendar';
+
+export interface CreateAdminReservationRequest {
+    customerId?: string;
+    customerName: string;
+    customerPhone?: string | null;
+    customerEmail?: string | null;
+    practitionerId: string;
+    menuIds: string[];
+    optionIds?: string[];
+    date: string;        // YYYY-MM-DD
+    startTime: string;  // HH:mm
+    status?: 'pending' | 'confirmed' | string;
+    isNomination?: boolean;
+    customerNote?: string | null;
+    staffNote?: string | null;
+    source?: ReservationSource | string;
+    storeId?: string;
+}
+
+export type UpdateAdminReservationRequest = Partial<CreateAdminReservationRequest> & {
+    status?: 'pending' | 'confirmed' | 'completed' | 'canceled' | 'no_show';
+};
+
+// ============================================
+// 顧客
+// ============================================
+
+export interface UpdateCustomerRequest {
+    name?: string | null;
+    nameKana?: string | null;
+    phone?: string | null;
+    email?: string | null;
+    birthDate?: string | null;
+    gender?: 'male' | 'female' | 'other' | 'undisclosed';
+    tags?: string[] | null;
+    memo?: string | null;
+}
+
+// ============================================
+// 施術者
+// ============================================
+
+export interface PractitionerSchedule {
+    workDays: number[];
+    workHours: { start: string; end: string };
+    breakTime?: { start: string; end: string };
+}
+
+export interface CreatePractitionerRequest {
+    name: string;
+    nameKana?: string | null;
+    role?: 'stylist' | 'assistant' | 'owner';
+    phone?: string | null;
+    email?: string | null;
+    color?: string | null;
+    title?: string | null;
+    description?: string | null;
+    nominationFee?: number | null;
+    storeIds?: string[] | null;
+    schedule?: PractitionerSchedule | null;
+    displayOrder?: number;
+    isActive?: boolean;
+}
+
+export type UpdatePractitionerRequest = Partial<CreatePractitionerRequest>;
+
+// ============================================
+// メニュー
+// ============================================
+
+export interface CreateMenuRequest {
+    name: string;
+    description?: string | null;
+    category?: string | null;
+    duration: number;
+    price: number;
+    imageUrl?: string | null;
+    availablePractitionerIds?: string[] | null;
+    displayOrder?: number | null;
+    isActive?: boolean | null;
+}
+
+export type UpdateMenuRequest = Partial<CreateMenuRequest>;
+
+// ============================================
+// オプション
+// ============================================
+
+export interface CreateOptionRequest {
+    name: string;
+    description?: string | null;
+    duration: number;
+    price: number;
+    applicableMenuIds?: string[] | null;
+    displayOrder?: number | null;
+    isActive?: boolean | null;
+}
+
+export type UpdateOptionRequest = Partial<CreateOptionRequest>;
+
+// ============================================
+// 店舗
+// ============================================
+
+export interface BusinessHoursConfig {
+    isOpen: boolean;
+    openTime?: string;
+    closeTime?: string;
+}
+
+export interface CreateStoreRequest {
+    name: string;
+    storeCode?: string | null;
+    address?: string | null;
+    phone?: string | null;
+    email?: string | null;
+    timezone?: string | null;
+    businessHours?: Record<string, BusinessHoursConfig> | null;
+    regularHolidays?: number[] | null;
+    slotDuration?: number | null;
+    advanceBookingDays?: number | null;
+    cancelDeadlineHours?: number | null;
+}
+
+export type UpdateStoreRequest = Partial<CreateStoreRequest>;
+
+// ============================================
+// カルテ
+// ============================================
+
+export interface CreateKarteRequest {
+    customerId: string;
+    reservationId?: string | null;
+    storeId?: string | null;
+    practitionerId: string;
+    customerName?: string | null;
+    customerPictureUrl?: string | null;
+    visitDate: string;
+    menuIds?: string[] | null;
+    menuNames?: string[] | null;
+    optionIds?: string[] | null;
+    duration?: number | null;
+    totalAmount?: number | null;
+    treatmentDescription?: string | null;
+    colorFormula?: string | null;
+    productsUsed?: string[] | null;
+    customerRequest?: string | null;
+    conversationMemo?: string | null;
+    nextVisitNote?: string | null;
+    customFields?: Record<string, unknown> | null;
+    photosBefore?: string[] | null;
+    photosAfter?: string[] | null;
+    photosOther?: Record<string, unknown>[] | null;
+    status?: 'draft' | 'completed' | null;
+    tags?: string[] | null;
+}
+
+export type UpdateKarteRequest = Partial<CreateKarteRequest>;
+
+// ============================================
+// カルテテンプレート
+// ============================================
+
+export interface CreateKarteTemplateRequest {
+    name: string;
+    description?: string | null;
+    isDefault?: boolean | null;
+    fields?: Record<string, unknown>[] | null;
+    applicableMenuCategories?: string[] | null;
+    isActive?: boolean | null;
+    displayOrder?: number | null;
+    // backward compatibility
+    content?: string | null;
+    tags?: string[] | null;
+}
+
+export type UpdateKarteTemplateRequest = Partial<CreateKarteTemplateRequest>;
+
+// ============================================
+// 設定
+// ============================================
+
+export interface UpdateProfileRequest {
+    name?: string | null;
+    email?: string | null;
+    phone?: string | null;
+    address?: string | null;
+}
+
+export interface UpdateBusinessRequest {
+    storeName?: string | null;
+    address?: string | null;
+    phone?: string | null;
+    timezone?: string | null;
+    businessHours?: Record<string, BusinessHoursConfig> | null;
+    regularHolidays?: number[] | null;
+    slotDuration?: number | null;
+    advanceBookingDays?: number | null;
+    cancelDeadlineHours?: number | null;
+}
+
+export interface UpdateLineRequest {
+    channelId?: string | null;
+    channelSecret?: string | null;
+    channelAccessToken?: string | null;
+    liffId?: string | null;
+    mode?: 'tenant' | 'store' | 'practitioner' | string | null;
+}

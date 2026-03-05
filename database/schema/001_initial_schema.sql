@@ -678,8 +678,11 @@ CREATE UNIQUE INDEX idx_admins_email_tenant ON admins (tenant_id, email);
 -- RLS
 ALTER TABLE admins ENABLE ROW LEVEL SECURITY;
 CREATE POLICY tenant_isolation ON admins FOR ALL
-    USING (tenant_id = current_setting('app.current_tenant', true)::UUID)
-    WITH CHECK (tenant_id = current_setting('app.current_tenant', true)::UUID);
+    USING (tenant_id = NULLIF(current_setting('app.current_tenant', true), '')::UUID)
+    WITH CHECK (tenant_id = NULLIF(current_setting('app.current_tenant', true), '')::UUID);
+
+CREATE POLICY firebase_uid_lookup ON admins FOR SELECT
+    USING (firebase_uid = NULLIF(current_setting('app.current_firebase_uid', true), ''));
 
 -- ============================================================
 -- 15. 日次集計テーブル（分析用）

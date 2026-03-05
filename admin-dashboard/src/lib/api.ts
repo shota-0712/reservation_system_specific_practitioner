@@ -4,6 +4,26 @@
  */
 
 import { getIdToken } from './firebase';
+import type {
+    CreateAdminReservationRequest,
+    UpdateAdminReservationRequest,
+    UpdateCustomerRequest,
+    CreatePractitionerRequest,
+    UpdatePractitionerRequest,
+    CreateMenuRequest,
+    UpdateMenuRequest,
+    CreateOptionRequest,
+    UpdateOptionRequest,
+    CreateStoreRequest,
+    UpdateStoreRequest,
+    CreateKarteRequest,
+    UpdateKarteRequest,
+    CreateKarteTemplateRequest,
+    UpdateKarteTemplateRequest,
+    UpdateProfileRequest,
+    UpdateBusinessRequest,
+    UpdateLineRequest,
+} from '@/types/api-request-types';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080';
 const STORE_STORAGE_KEY = 'reservation_admin_store_id';
@@ -234,12 +254,12 @@ export const reservationsApi = {
     }) => apiClient(`/admin/reservations${buildQuery(params || {})}`),
     get: (id: string) => apiClient(`/admin/reservations/${id}`),
     getToday: () => apiClient('/admin/reservations/today'),
-    createAdmin: (data: Record<string, unknown>) =>
+    createAdmin: (data: CreateAdminReservationRequest) =>
         apiClient('/admin/reservations', {
             method: 'POST',
             body: JSON.stringify(data),
         }),
-    update: (id: string, data: Record<string, unknown>) =>
+    update: (id: string, data: UpdateAdminReservationRequest) =>
         apiClient(`/admin/reservations/${id}`, {
             method: 'PUT',
             body: JSON.stringify(data),
@@ -259,7 +279,7 @@ export const customersApi = {
     list: (params?: { page?: number; limit?: number; sortBy?: string; sortOrder?: 'asc' | 'desc' }) =>
         apiClient(`/admin/customers${buildQuery(params || {})}`),
     get: (id: string) => apiClient(`/admin/customers/${id}`),
-    update: (id: string, data: Record<string, unknown>) =>
+    update: (id: string, data: UpdateCustomerRequest) =>
         apiClient(`/admin/customers/${id}`, {
             method: 'PUT',
             body: JSON.stringify(data),
@@ -275,12 +295,12 @@ export const practitionersApi = {
     list: () => apiClient('/admin/practitioners'),
     listAll: () => apiClient('/admin/practitioners'),
     get: (id: string) => apiClient(`/admin/practitioners/${id}`),
-    create: (data: Record<string, unknown>) =>
+    create: (data: CreatePractitionerRequest) =>
         apiClient('/admin/practitioners', {
             method: 'POST',
             body: JSON.stringify(data),
         }),
-    update: (id: string, data: Record<string, unknown>) =>
+    update: (id: string, data: UpdatePractitionerRequest) =>
         apiClient(`/admin/practitioners/${id}`, {
             method: 'PUT',
             body: JSON.stringify(data),
@@ -303,12 +323,12 @@ export const menusApi = {
     listAll: () => apiClient('/admin/menus'),
     listPublic: () => apiClient('/admin/menus'),
     get: (id: string) => apiClient(`/admin/menus/${id}`),
-    create: (data: Record<string, unknown>) =>
+    create: (data: CreateMenuRequest) =>
         apiClient('/admin/menus', {
             method: 'POST',
             body: JSON.stringify(data),
         }),
-    update: (id: string, data: Record<string, unknown>) =>
+    update: (id: string, data: UpdateMenuRequest) =>
         apiClient(`/admin/menus/${id}`, {
             method: 'PUT',
             body: JSON.stringify(data),
@@ -329,12 +349,12 @@ export const menusApi = {
 export const optionsApi = {
     list: () => apiClient('/admin/options'),
     listPublic: (menuId?: string) => apiClient(`/admin/options${buildQuery({ menuId })}`),
-    create: (data: Record<string, unknown>) =>
+    create: (data: CreateOptionRequest) =>
         apiClient('/admin/options', {
             method: 'POST',
             body: JSON.stringify(data),
         }),
-    update: (id: string, data: Record<string, unknown>) =>
+    update: (id: string, data: UpdateOptionRequest) =>
         apiClient(`/admin/options/${id}`, {
             method: 'PUT',
             body: JSON.stringify(data),
@@ -349,12 +369,12 @@ export const optionsApi = {
 
 export const storesApi = {
     list: () => apiClient('/admin/stores'),
-    create: (data: Record<string, unknown>) =>
+    create: (data: CreateStoreRequest) =>
         apiClient('/admin/stores', {
             method: 'POST',
             body: JSON.stringify(data),
         }),
-    update: (id: string, data: Record<string, unknown>) =>
+    update: (id: string, data: UpdateStoreRequest) =>
         apiClient(`/admin/stores/${id}`, {
             method: 'PUT',
             body: JSON.stringify(data),
@@ -369,12 +389,12 @@ export const storesApi = {
 export const kartesApi = {
     list: (params?: { customerId?: string; practitionerId?: string; dateFrom?: string; dateTo?: string; limit?: number }) =>
         apiClient(`/admin/kartes${buildQuery(params || {})}`),
-    create: (data: Record<string, unknown>) =>
+    create: (data: CreateKarteRequest) =>
         apiClient('/admin/kartes', {
             method: 'POST',
             body: JSON.stringify(data),
         }),
-    update: (id: string, data: Record<string, unknown>) =>
+    update: (id: string, data: UpdateKarteRequest) =>
         apiClient(`/admin/kartes/${id}`, {
             method: 'PUT',
             body: JSON.stringify(data),
@@ -384,12 +404,12 @@ export const kartesApi = {
 
 export const karteTemplatesApi = {
     list: () => apiClient('/admin/karte-templates'),
-    create: (data: Record<string, unknown>) =>
+    create: (data: CreateKarteTemplateRequest) =>
         apiClient('/admin/karte-templates', {
             method: 'POST',
             body: JSON.stringify(data),
         }),
-    update: (id: string, data: Record<string, unknown>) =>
+    update: (id: string, data: UpdateKarteTemplateRequest) =>
         apiClient(`/admin/karte-templates/${id}`, {
             method: 'PUT',
             body: JSON.stringify(data),
@@ -421,17 +441,17 @@ export const googleCalendarApi = {
 
 export const settingsApi = {
     get: () => apiClient('/admin/settings'),
-    updateProfile: (data: Record<string, unknown>) =>
+    updateProfile: (data: UpdateProfileRequest) =>
         apiClient('/admin/settings/profile', {
             method: 'PUT',
             body: JSON.stringify(data),
         }),
-    updateBusiness: (data: Record<string, unknown>) =>
+    updateBusiness: (data: UpdateBusinessRequest) =>
         apiClient('/admin/settings/business', {
             method: 'PUT',
             body: JSON.stringify(data),
         }),
-    updateLine: (data: Record<string, unknown>) =>
+    updateLine: (data: UpdateLineRequest) =>
         apiClient('/admin/settings/line', {
             method: 'PUT',
             body: JSON.stringify(data),
@@ -493,6 +513,32 @@ export const reportsApi = {
         apiClient(`/admin/reports/menu-ranking${buildQuery({ period })}`),
     getPractitionerRevenue: (period?: string) =>
         apiClient(`/admin/reports/practitioner-revenue${buildQuery({ period })}`),
+};
+
+// ============================================
+// CSV Export API
+// ============================================
+
+export const exportsApi = {
+    create: (data: {
+        exportType:
+            | 'operations_reservations'
+            | 'operations_customers'
+            | 'analytics_store_daily_kpi'
+            | 'analytics_menu_performance';
+        storeId?: string;
+        format?: 'csv';
+        params?: Record<string, unknown>;
+    }) =>
+        apiClient('/admin/exports', {
+            method: 'POST',
+            body: JSON.stringify(data),
+        }),
+    list: (params?: { page?: number; limit?: number }) =>
+        apiClient(`/admin/exports${buildQuery(params || {})}`),
+    get: (id: string) =>
+        apiClient(`/admin/exports/${id}`),
+    downloadUrl: (id: string) => `${API_BASE_URL}/api/v1/admin/exports/${id}/download`,
 };
 
 // ============================================

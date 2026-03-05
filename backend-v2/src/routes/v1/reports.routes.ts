@@ -7,10 +7,16 @@ import { Router, Request, Response } from 'express';
 import { requireFirebaseAuth, requireRole } from '../../middleware/auth.js';
 import { getTenant } from '../../middleware/tenant.js';
 import { asyncHandler } from '../../middleware/error-handler.js';
+import { validateQuery } from '../../middleware/validation.js';
 import { DatabaseService } from '../../config/database.js';
 import { getMenuRankingData, getPractitionerRevenueData } from '../../services/reports-aggregation.service.js';
+import { z } from 'zod';
 
 const router = Router();
+
+const reportSummaryQuerySchema = z.object({
+    period: z.enum(['week', 'month', 'year']).default('month'),
+});
 
 const formatDate = (d: Date): string => d.toISOString().split('T')[0];
 
@@ -81,9 +87,10 @@ router.get(
     '/summary',
     requireFirebaseAuth(),
     requireRole('manager', 'owner'),
+    validateQuery(reportSummaryQuerySchema),
     asyncHandler(async (req: Request, res: Response): Promise<void> => {
         const tenant = getTenant(req);
-        const period = (req.query.period as string) || 'month'; // 'week', 'month', 'year'
+        const { period } = req.query as unknown as z.infer<typeof reportSummaryQuerySchema>;
 
         const today = new Date();
         let startDate: Date;

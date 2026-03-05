@@ -387,7 +387,8 @@ async function getLineChannelSecret(tenantId?: string): Promise<string | null> {
         try {
             const row = await DatabaseService.queryOne(
                 'SELECT line_channel_secret_encrypted FROM tenants WHERE id = $1',
-                [tenantId]
+                [tenantId],
+                tenantId
             );
             const encrypted = row?.line_channel_secret_encrypted as string | undefined;
             if (encrypted) {
@@ -414,7 +415,8 @@ async function getLineChannelId(tenantId?: string): Promise<string | null> {
         try {
             const row = await DatabaseService.queryOne(
                 'SELECT line_channel_id FROM tenants WHERE id = $1',
-                [tenantId]
+                [tenantId],
+                tenantId
             );
             const channelId = row?.line_channel_id as string | undefined;
             if (channelId) return channelId;

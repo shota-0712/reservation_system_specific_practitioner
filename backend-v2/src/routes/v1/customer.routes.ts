@@ -7,7 +7,7 @@ import { Router, Request, Response } from 'express';
 import { requireFirebaseAuth, requireRole } from '../../middleware/auth.js';
 import { getTenant } from '../../middleware/tenant.js';
 import { asyncHandler } from '../../middleware/error-handler.js';
-import { validateBody } from '../../middleware/validation.js';
+import { validateBody, validateParams, validateQuery, idParamSchema } from '../../middleware/validation.js';
 import { CustomerRepository } from '../../repositories/customer.repository.js';
 import { z } from 'zod';
 
@@ -32,6 +32,19 @@ const searchCustomerSchema = z.object({
     query: z.string().min(1),
 });
 
+const listCustomersQuerySchema = z.object({
+    page: z.coerce.number().int().min(1).default(1),
+    limit: z.coerce.number().int().min(1).max(100).default(20),
+    sortBy: z.enum(['created_at', 'name', 'total_spend', 'total_visits', 'last_visit_at']).default('created_at'),
+    sortOrder: z.enum(['asc', 'desc']).default('desc'),
+    tag: z.string().min(1).optional(),
+    rfmSegment: z.string().min(1).optional(),
+});
+
+const customerSearchQuerySchema = z.object({
+    limit: z.coerce.number().int().min(1).max(100).default(20),
+});
+
 /**
  * 顧客一覧を取得
  * @route GET /v1/:storeCode/admin/customers
@@ -41,23 +54,22 @@ router.get(
     '/',
     requireFirebaseAuth(),
     requireRole('staff', 'manager', 'owner'),
+    validateQuery(listCustomersQuerySchema),
     asyncHandler(async (req: Request, res: Response): Promise<void> => {
         const tenant = getTenant(req);
         const customerRepo = new CustomerRepository(tenant.id);
 
-        const page = parseInt(req.query.page as string) || 1;
-        const limit = Math.min(parseInt(req.query.limit as string) || 20, 100);
-        const sortBy = (req.query.sortBy as string) || 'createdAt';
-        const sortOrder = (req.query.sortOrder as 'asc' | 'desc') || 'desc';
+        const query = req.query as unknown as z.infer<typeof listCustomersQuerySchema>;
+        const { page, limit, sortBy, sortOrder } = query;
 
         // フィルター
         const filters: Record<string, unknown> = {};
 
-        if (req.query.tag) {
-            filters.tag = req.query.tag;
+        if (query.tag) {
+            filters.tag = query.tag;
         }
-        if (req.query.rfmSegment) {
-            filters.rfmSegment = req.query.rfmSegment;
+        if (query.rfmSegment) {
+            filters.rfmSegment = query.rfmSegment;
         }
 
         const result = await customerRepo.findPaginatedWithFilters(
@@ -89,13 +101,14 @@ router.post(
     '/search',
     requireFirebaseAuth(),
     requireRole('staff', 'manager', 'owner'),
+    validateQuery(customerSearchQuerySchema),
     validateBody(searchCustomerSchema),
     asyncHandler(async (req: Request, res: Response): Promise<void> => {
         const tenant = getTenant(req);
         const customerRepo = new CustomerRepository(tenant.id);
         const { query } = req.body;
 
-        const limit = Math.min(parseInt(req.query.limit as string) || 20, 100);
+        const { limit } = req.query as unknown as z.infer<typeof customerSearchQuerySchema>;
 
         const customers = await customerRepo.search(query, limit);
 
@@ -115,6 +128,7 @@ router.get(
     '/:id',
     requireFirebaseAuth(),
     requireRole('staff', 'manager', 'owner'),
+    validateParams(idParamSchema),
     asyncHandler(async (req: Request, res: Response): Promise<void> => {
         const tenant = getTenant(req);
         const customerId = req.params.id as string;
@@ -149,6 +163,7 @@ router.put(
     '/:id',
     requireFirebaseAuth(),
     requireRole('staff', 'manager', 'owner'),
+    validateParams(idParamSchema),
     validateBody(updateCustomerSchema),
     asyncHandler(async (req: Request, res: Response): Promise<void> => {
         const tenant = getTenant(req);
@@ -214,6 +229,7 @@ router.get(
     '/:id/reservations',
     requireFirebaseAuth(),
     requireRole('staff', 'manager', 'owner'),
+    validateParams(idParamSchema),
     asyncHandler(async (req: Request, res: Response): Promise<void> => {
         const tenant = getTenant(req);
         const customerId = req.params.id as string;
@@ -250,6 +266,7 @@ router.post(
     '/:id/tags',
     requireFirebaseAuth(),
     requireRole('manager', 'owner'),
+    validateParams(idParamSchema),
     validateBody(z.object({ tags: z.array(z.string()) })),
     asyncHandler(async (req: Request, res: Response): Promise<void> => {
         const tenant = getTenant(req);
@@ -292,6 +309,7 @@ router.delete(
     '/:id/tags/:tag',
     requireFirebaseAuth(),
     requireRole('manager', 'owner'),
+    validateParams(z.object({ id: z.string().min(1), tag: z.string().min(1) })),
     asyncHandler(async (req: Request, res: Response): Promise<void> => {
         const tenant = getTenant(req);
         const customerId = req.params.id as string;

@@ -401,7 +401,7 @@ async function aggregateTenantDailyAnalytics(
 /**
  * Run daily analytics job for all active tenants.
  */
-export async function runDailyAnalytics(date?: string): Promise<DailyAnalyticsStats> {
+export async function runDailyAnalytics(date?: string, tenantId?: string): Promise<DailyAnalyticsStats> {
     const targetDate = resolveDailyAnalyticsTargetDate(date);
     logger.info('Starting daily analytics job', { targetDate, timezone: TIMEZONE });
 
@@ -413,11 +413,13 @@ export async function runDailyAnalytics(date?: string): Promise<DailyAnalyticsSt
         failedTenants: 0,
     };
 
-    const tenants = await DatabaseService.query<TenantRow>(
-        `SELECT id
-         FROM tenants
-         WHERE status IN ('active', 'trial')`
-    );
+    const tenants = tenantId
+        ? [{ id: tenantId }]
+        : await DatabaseService.query<TenantRow>(
+            `SELECT id
+             FROM tenants
+             WHERE status IN ('active', 'trial')`
+        );
 
     for (const tenant of tenants) {
         try {
@@ -442,10 +444,10 @@ export async function runDailyAnalytics(date?: string): Promise<DailyAnalyticsSt
 /**
  * HTTP endpoint handler helper
  */
-export async function handleDailyAnalyticsRequest(date?: string): Promise<{
+export async function handleDailyAnalyticsRequest(date?: string, tenantId?: string): Promise<{
     success: boolean;
     stats: DailyAnalyticsStats;
 }> {
-    const stats = await runDailyAnalytics(date);
+    const stats = await runDailyAnalytics(date, tenantId);
     return { success: true, stats };
 }

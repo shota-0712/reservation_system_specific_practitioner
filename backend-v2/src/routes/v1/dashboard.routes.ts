@@ -7,9 +7,11 @@ import { Router, Request, Response } from 'express';
 import { requireFirebaseAuth, requireRole } from '../../middleware/auth.js';
 import { getTenant } from '../../middleware/tenant.js';
 import { asyncHandler } from '../../middleware/error-handler.js';
+import { validateQuery } from '../../middleware/validation.js';
 import { DatabaseService } from '../../config/database.js';
 import { createReservationRepository, createPractitionerRepository } from '../../repositories/index.js';
 import type { Reservation, Practitioner } from '../../types/index.js';
+import { z } from 'zod';
 
 const router = Router();
 
@@ -20,6 +22,10 @@ const minutesBetween = (start: string, end: string): number => {
     const [eh, em] = end.split(':').map(Number);
     return (eh * 60 + em) - (sh * 60 + sm);
 };
+
+const dashboardActivityQuerySchema = z.object({
+    limit: z.coerce.number().int().min(1).max(100).default(20),
+});
 
 /**
  * ダッシュボード KPI 取得
@@ -40,27 +46,28 @@ router.get(
         yesterday.setDate(yesterday.getDate() - 1);
         const yesterdayStr = formatDate(yesterday);
 
-        const todayStats = await DatabaseService.queryOne(
-            `SELECT
-                COALESCE(SUM(total_price) FILTER (WHERE status = 'completed'), 0) as revenue,
-                COUNT(*) FILTER (WHERE status IN ('confirmed','pending','completed')) as bookings,
-                COUNT(*) FILTER (WHERE status = 'completed') as completed_count
-             FROM reservations
-             WHERE tenant_id = $1 AND date = $2`,
-            [tenant.id, todayStr],
-            tenant.id
-        );
-
-        const yesterdayStats = await DatabaseService.queryOne(
-            `SELECT
-                COALESCE(SUM(total_price) FILTER (WHERE status = 'completed'), 0) as revenue,
-                COUNT(*) FILTER (WHERE status IN ('confirmed','pending','completed')) as bookings,
-                COUNT(*) FILTER (WHERE status = 'completed') as completed_count
-             FROM reservations
-             WHERE tenant_id = $1 AND date = $2`,
-            [tenant.id, yesterdayStr],
-            tenant.id
-        );
+        const [todayStats, yesterdayStats] = await Promise.all([
+            DatabaseService.queryOne(
+                `SELECT
+                    COALESCE(SUM(total_price) FILTER (WHERE status = 'completed'), 0) as revenue,
+                    COUNT(*) FILTER (WHERE status IN ('confirmed','pending','completed')) as bookings,
+                    COUNT(*) FILTER (WHERE status = 'completed') as completed_count
+                 FROM reservations
+                 WHERE tenant_id = $1 AND date = $2`,
+                [tenant.id, todayStr],
+                tenant.id
+            ),
+            DatabaseService.queryOne(
+                `SELECT
+                    COALESCE(SUM(total_price) FILTER (WHERE status = 'completed'), 0) as revenue,
+                    COUNT(*) FILTER (WHERE status IN ('confirmed','pending','completed')) as bookings,
+                    COUNT(*) FILTER (WHERE status = 'completed') as completed_count
+                 FROM reservations
+                 WHERE tenant_id = $1 AND date = $2`,
+                [tenant.id, yesterdayStr],
+                tenant.id
+            ),
+        ]);
 
         const todayRevenue = parseInt(todayStats?.revenue || '0', 10);
         const yesterdayRevenue = parseInt(yesterdayStats?.revenue || '0', 10);
@@ -75,20 +82,22 @@ router.get(
         tomorrowStart.setDate(tomorrowStart.getDate() + 1);
         const yesterdayStart = new Date(yesterdayStr);
 
-        const newCustomersTodayRow = await DatabaseService.queryOne(
-            `SELECT COUNT(*) as count
-             FROM customers
-             WHERE tenant_id = $1 AND created_at >= $2 AND created_at < $3`,
-            [tenant.id, todayStart, tomorrowStart],
-            tenant.id
-        );
-        const newCustomersYesterdayRow = await DatabaseService.queryOne(
-            `SELECT COUNT(*) as count
-             FROM customers
-             WHERE tenant_id = $1 AND created_at >= $2 AND created_at < $3`,
-            [tenant.id, yesterdayStart, todayStart],
-            tenant.id
-        );
+        const [newCustomersTodayRow, newCustomersYesterdayRow] = await Promise.all([
+            DatabaseService.queryOne(
+                `SELECT COUNT(*) as count
+                 FROM customers
+                 WHERE tenant_id = $1 AND created_at >= $2 AND created_at < $3`,
+                [tenant.id, todayStart, tomorrowStart],
+                tenant.id
+            ),
+            DatabaseService.queryOne(
+                `SELECT COUNT(*) as count
+                 FROM customers
+                 WHERE tenant_id = $1 AND created_at >= $2 AND created_at < $3`,
+                [tenant.id, yesterdayStart, todayStart],
+                tenant.id
+            ),
+        ]);
 
         const newCustomersToday = parseInt(newCustomersTodayRow?.count || '0', 10);
         const newCustomersYesterday = parseInt(newCustomersYesterdayRow?.count || '0', 10);
@@ -292,9 +301,10 @@ router.get(
     '/activity',
     requireFirebaseAuth(),
     requireRole('staff', 'manager', 'owner'),
+    validateQuery(dashboardActivityQuerySchema),
     asyncHandler(async (req: Request, res: Response): Promise<void> => {
         const tenant = getTenant(req);
-        const limit = Math.min(parseInt((req.query.limit as string) || '20', 10), 100);
+        const { limit } = req.query as unknown as z.infer<typeof dashboardActivityQuerySchema>;
 
         const rows = await DatabaseService.query(
             `SELECT action, entity_type, entity_id, actor_type, actor_id, actor_name, created_at

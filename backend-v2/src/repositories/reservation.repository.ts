@@ -9,6 +9,14 @@ import type { Reservation, ReservationStatus, PaginationParams } from '../types/
 
 const DEFAULT_TIMEZONE = 'Asia/Tokyo';
 
+function buildTimestampAtSql(
+    dateIdx: number,
+    timeIdx: number,
+    timezoneIdx: number
+): string {
+    return `(($${dateIdx}::date || ' ' || $${timeIdx} || ':00')::timestamp AT TIME ZONE $${timezoneIdx})`;
+}
+
 function buildPeriodRangeSql(
     dateIdx: number,
     startTimeIdx: number,
@@ -79,6 +87,9 @@ function mapReservation(row: Record<string, any>): Reservation {
         menuNames: row.menu_names ?? [],
         optionIds: row.option_ids ?? [],
         optionNames: row.option_names ?? [],
+        startsAt: row.starts_at ?? undefined,
+        endsAt: row.ends_at ?? undefined,
+        timezone: row.timezone ?? undefined,
         date: row.date instanceof Date ? row.date.toISOString().split('T')[0] : row.date,
         startTime: row.start_time,
         endTime: row.end_time,
@@ -467,7 +478,9 @@ export class ReservationRepository {
             const row = await client.query(
                 `INSERT INTO reservations (
                     tenant_id, store_id, customer_id, practitioner_id,
-                    period, date, start_time, end_time,
+                    starts_at, ends_at,
+                    date, start_time, end_time,
+                    timezone,
                     status, source,
                     subtotal, option_total, nomination_fee, discount, total_price,
                     total_duration,
@@ -476,8 +489,10 @@ export class ReservationRepository {
                     google_calendar_id, google_calendar_event_id, salonboard_reservation_id
                 ) VALUES (
                     $1, $2, $3, $4,
-                    ${buildPeriodRangeSql(5, 6, 7, 24)},
+                    ${buildTimestampAtSql(5, 6, 24)},
+                    ${buildTimestampAtSql(5, 7, 24)},
                     $5::date, $6::time, $7::time,
+                    $24,
                     $8, $9,
                     $10, $11, $12, $13, $14,
                     $15,
@@ -587,10 +602,12 @@ export class ReservationRepository {
         data: Partial<Reservation>,
         timezone: string = DEFAULT_TIMEZONE
     ): Promise<Reservation> {
-        // Build period update if date/time changed
-        let periodUpdate = '';
+        // When all date/time parts are provided, also update canonical starts_at/ends_at.
+        let canonicalTimeUpdate = '';
         if (data.date && data.startTime && data.endTime) {
-            periodUpdate = `, period = ${buildPeriodRangeSql(17, 18, 19, 20)}`;
+            canonicalTimeUpdate = `,
+                starts_at = ${buildTimestampAtSql(17, 18, 20)},
+                ends_at = ${buildTimestampAtSql(17, 19, 20)}`;
         }
 
         const tz = timezone || DEFAULT_TIMEZONE;
@@ -616,7 +633,7 @@ export class ReservationRepository {
             data.startTime ?? null,
             data.endTime ?? null,
         ];
-        if (periodUpdate) {
+        if (canonicalTimeUpdate) {
             params.push(tz);
         }
 
@@ -637,7 +654,7 @@ export class ReservationRepository {
                 practitioner_name = COALESCE($15, practitioner_name),
                 notes = COALESCE($16, notes),
                 updated_at = NOW()
-                ${periodUpdate}
+                ${canonicalTimeUpdate}
              WHERE id = $1 AND tenant_id = $2
              RETURNING *`,
             params,
@@ -672,10 +689,12 @@ export class ReservationRepository {
                     store_id = $3,
                     customer_id = $4,
                     practitioner_id = $5,
-                    period = ${buildPeriodRangeSql(6, 7, 8, 25)},
+                    starts_at = ${buildTimestampAtSql(6, 7, 25)},
+                    ends_at = ${buildTimestampAtSql(6, 8, 25)},
                     date = $6::date,
                     start_time = $7::time,
                     end_time = $8::time,
+                    timezone = $25,
                     status = $9,
                     source = $10,
                     subtotal = $11,
@@ -858,7 +877,7 @@ export class ReservationRepository {
             WHERE tenant_id = $1
               AND practitioner_id = $2
               AND status NOT IN ('canceled', 'no_show')
-              AND period && ${buildPeriodRangeSql(3, 4, 5, 6)}
+              AND tstzrange(starts_at, ends_at, '[)') && ${buildPeriodRangeSql(3, 4, 5, 6)}
         `;
         const params: any[] = [this.tenantId, practitionerId, date, startTime, endTime, tz];
 

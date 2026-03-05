@@ -7,6 +7,13 @@ import { NotFoundError } from '../utils/errors.js';
 import { encrypt } from '../utils/crypto.js';
 import type { Practitioner } from '../types/index.js';
 
+function isUndefinedTableError(error: unknown): boolean {
+    return typeof error === 'object'
+        && error !== null
+        && 'code' in error
+        && (error as { code?: string }).code === '42P01';
+}
+
 type WorkScheduleDay = {
     isWorking: boolean;
     startTime?: string;
@@ -137,8 +144,122 @@ function maybeEncrypt(value?: string): string | null {
 export class PractitionerRepository {
     constructor(private tenantId: string) {}
 
-    private storeScopeSql(parameterIndex: number): string {
-        return `(COALESCE(array_length(store_ids, 1), 0) = 0 OR $${parameterIndex} = ANY(store_ids))`;
+    private matchesStore(practitioner: Practitioner, storeId: string): boolean {
+        const ids = practitioner.storeIds ?? [];
+        if (ids.length === 0) return true;
+        return ids.includes(storeId);
+    }
+
+    private async hydrateAssignments(practitioners: Practitioner[]): Promise<Practitioner[]> {
+        if (practitioners.length === 0) return practitioners;
+        const practitionerIds = practitioners.map((p) => p.id);
+
+        try {
+            const [storeRows, menuRows] = await Promise.all([
+                DatabaseService.query<{ practitioner_id: string; store_ids: string[] | null }>(
+                    `SELECT
+                        practitioner_id,
+                        array_agg(store_id ORDER BY store_id) AS store_ids
+                     FROM practitioner_store_assignments
+                     WHERE tenant_id = $1
+                       AND practitioner_id = ANY($2)
+                     GROUP BY practitioner_id`,
+                    [this.tenantId, practitionerIds],
+                    this.tenantId
+                ),
+                DatabaseService.query<{ practitioner_id: string; menu_ids: string[] | null }>(
+                    `SELECT
+                        practitioner_id,
+                        array_agg(menu_id ORDER BY menu_id) AS menu_ids
+                     FROM menu_practitioner_assignments
+                     WHERE tenant_id = $1
+                       AND practitioner_id = ANY($2)
+                     GROUP BY practitioner_id`,
+                    [this.tenantId, practitionerIds],
+                    this.tenantId
+                ),
+            ]);
+
+            const storeMap = new Map<string, string[]>();
+            for (const row of storeRows) {
+                storeMap.set(row.practitioner_id, row.store_ids ?? []);
+            }
+            const menuMap = new Map<string, string[]>();
+            for (const row of menuRows) {
+                menuMap.set(row.practitioner_id, row.menu_ids ?? []);
+            }
+
+            return practitioners.map((practitioner) => ({
+                ...practitioner,
+                storeIds: storeMap.has(practitioner.id)
+                    ? (storeMap.get(practitioner.id) ?? [])
+                    : (practitioner.storeIds ?? []),
+                availableMenuIds: menuMap.get(practitioner.id) ?? practitioner.availableMenuIds,
+            }));
+        } catch (error) {
+            if (isUndefinedTableError(error)) {
+                return practitioners;
+            }
+            throw error;
+        }
+    }
+
+    private async replaceStoreAssignments(
+        practitionerId: string,
+        storeIds: string[] | undefined
+    ): Promise<void> {
+        if (storeIds === undefined) return;
+        try {
+            await DatabaseService.transaction(async (client) => {
+                await client.query(
+                    `DELETE FROM practitioner_store_assignments
+                     WHERE tenant_id = $1 AND practitioner_id = $2`,
+                    [this.tenantId, practitionerId]
+                );
+                for (const storeId of storeIds) {
+                    await client.query(
+                        `INSERT INTO practitioner_store_assignments (tenant_id, practitioner_id, store_id)
+                         VALUES ($1, $2, $3)
+                         ON CONFLICT DO NOTHING`,
+                        [this.tenantId, practitionerId, storeId]
+                    );
+                }
+            }, this.tenantId);
+        } catch (error) {
+            if (isUndefinedTableError(error)) {
+                return;
+            }
+            throw error;
+        }
+    }
+
+    private async replaceMenuAssignments(
+        practitionerId: string,
+        menuIds: string[] | undefined
+    ): Promise<void> {
+        if (menuIds === undefined) return;
+        try {
+            await DatabaseService.transaction(async (client) => {
+                await client.query(
+                    `DELETE FROM menu_practitioner_assignments
+                     WHERE tenant_id = $1 AND practitioner_id = $2`,
+                    [this.tenantId, practitionerId]
+                );
+                for (const menuId of menuIds) {
+                    await client.query(
+                        `INSERT INTO menu_practitioner_assignments (tenant_id, menu_id, practitioner_id)
+                         VALUES ($1, $2, $3)
+                         ON CONFLICT DO NOTHING`,
+                        [this.tenantId, menuId, practitionerId]
+                    );
+                }
+            }, this.tenantId);
+        } catch (error) {
+            if (isUndefinedTableError(error)) {
+                return;
+            }
+            throw error;
+        }
     }
 
     async findById(id: string): Promise<Practitioner | null> {
@@ -147,7 +268,9 @@ export class PractitionerRepository {
             [id, this.tenantId],
             this.tenantId
         );
-        return row ? mapPractitioner(row as Record<string, any>) : null;
+        if (!row) return null;
+        const [practitioner] = await this.hydrateAssignments([mapPractitioner(row as Record<string, any>)]);
+        return practitioner ?? null;
     }
 
     async findByIdOrFail(id: string): Promise<Practitioner> {
@@ -162,24 +285,15 @@ export class PractitionerRepository {
             [this.tenantId],
             this.tenantId
         );
-        return rows.map(mapPractitioner);
+        return this.hydrateAssignments(rows.map(mapPractitioner));
     }
 
     async findAllActiveScoped(storeId?: string): Promise<Practitioner[]> {
         if (!storeId) {
             return this.findAllActive();
         }
-
-        const rows = await DatabaseService.query(
-            `SELECT * FROM practitioners
-             WHERE tenant_id = $1
-               AND is_active = true
-               AND ${this.storeScopeSql(2)}
-             ORDER BY display_order ASC`,
-            [this.tenantId, storeId],
-            this.tenantId
-        );
-        return rows.map(mapPractitioner);
+        const rows = await this.findAllActive();
+        return rows.filter((practitioner) => this.matchesStore(practitioner, storeId));
     }
 
     async findAll(): Promise<Practitioner[]> {
@@ -188,7 +302,7 @@ export class PractitionerRepository {
             [this.tenantId],
             this.tenantId
         );
-        return rows.map(mapPractitioner);
+        return this.hydrateAssignments(rows.map(mapPractitioner));
     }
 
     async findByRole(role: string): Promise<Practitioner[]> {
@@ -197,92 +311,79 @@ export class PractitionerRepository {
             [this.tenantId, role],
             this.tenantId
         );
-        return rows.map(mapPractitioner);
+        return this.hydrateAssignments(rows.map(mapPractitioner));
     }
 
     async findByRoleScoped(role: string, storeId?: string): Promise<Practitioner[]> {
         if (!storeId) {
             return this.findByRole(role);
         }
-
-        const rows = await DatabaseService.query(
-            `SELECT * FROM practitioners
-             WHERE tenant_id = $1
-               AND role = $2
-               AND is_active = true
-               AND ${this.storeScopeSql(3)}
-             ORDER BY display_order ASC`,
-            [this.tenantId, role, storeId],
-            this.tenantId
-        );
-        return rows.map(mapPractitioner);
+        const rows = await this.findByRole(role);
+        return rows.filter((practitioner) => this.matchesStore(practitioner, storeId));
     }
 
     async findByMenuId(menuId: string): Promise<Practitioner[]> {
-        const menuRow = await DatabaseService.queryOne(
-            'SELECT practitioner_ids FROM menus WHERE id = $1 AND tenant_id = $2',
-            [menuId, this.tenantId],
-            this.tenantId
-        );
-
-        const ids = (menuRow?.practitioner_ids as string[] | null) ?? [];
-
-        let rows: Array<Record<string, any>>;
-        if (ids.length === 0) {
-            rows = await DatabaseService.query(
-                'SELECT * FROM practitioners WHERE tenant_id = $1 AND is_active = true ORDER BY display_order ASC',
-                [this.tenantId],
+        try {
+            const assignmentRows = await DatabaseService.query<{ practitioner_id: string }>(
+                `SELECT practitioner_id
+                 FROM menu_practitioner_assignments
+                 WHERE tenant_id = $1 AND menu_id = $2`,
+                [this.tenantId, menuId],
                 this.tenantId
             );
-        } else {
-            rows = await DatabaseService.query(
-                'SELECT * FROM practitioners WHERE tenant_id = $1 AND id = ANY($2) AND is_active = true ORDER BY display_order ASC',
-                [this.tenantId, ids],
+
+            const assignedIds = assignmentRows.map((row) => row.practitioner_id);
+            if (assignedIds.length === 0) {
+                return this.findAllActive();
+            }
+
+            const rows = await DatabaseService.query(
+                `SELECT * FROM practitioners
+                 WHERE tenant_id = $1
+                   AND is_active = true
+                   AND id = ANY($2)
+                 ORDER BY display_order ASC`,
+                [this.tenantId, assignedIds],
                 this.tenantId
             );
+            return this.hydrateAssignments(rows.map(mapPractitioner));
+        } catch (error) {
+            if (!isUndefinedTableError(error)) {
+                throw error;
+            }
+            const menuRow = await DatabaseService.queryOne(
+                'SELECT practitioner_ids FROM menus WHERE id = $1 AND tenant_id = $2',
+                [menuId, this.tenantId],
+                this.tenantId
+            );
+
+            const ids = (menuRow?.practitioner_ids as string[] | null) ?? [];
+
+            let rows: Array<Record<string, any>>;
+            if (ids.length === 0) {
+                rows = await DatabaseService.query(
+                    'SELECT * FROM practitioners WHERE tenant_id = $1 AND is_active = true ORDER BY display_order ASC',
+                    [this.tenantId],
+                    this.tenantId
+                );
+            } else {
+                rows = await DatabaseService.query(
+                    'SELECT * FROM practitioners WHERE tenant_id = $1 AND id = ANY($2) AND is_active = true ORDER BY display_order ASC',
+                    [this.tenantId, ids],
+                    this.tenantId
+                );
+            }
+
+            return rows.map(mapPractitioner);
         }
-
-        return rows.map(mapPractitioner);
     }
 
     async findByMenuIdScoped(menuId: string, storeId?: string): Promise<Practitioner[]> {
         if (!storeId) {
             return this.findByMenuId(menuId);
         }
-
-        const menuRow = await DatabaseService.queryOne(
-            'SELECT practitioner_ids FROM menus WHERE id = $1 AND tenant_id = $2',
-            [menuId, this.tenantId],
-            this.tenantId
-        );
-
-        const ids = (menuRow?.practitioner_ids as string[] | null) ?? [];
-
-        let rows: Array<Record<string, any>>;
-        if (ids.length === 0) {
-            rows = await DatabaseService.query(
-                `SELECT * FROM practitioners
-                 WHERE tenant_id = $1
-                   AND is_active = true
-                   AND ${this.storeScopeSql(2)}
-                 ORDER BY display_order ASC`,
-                [this.tenantId, storeId],
-                this.tenantId
-            );
-        } else {
-            rows = await DatabaseService.query(
-                `SELECT * FROM practitioners
-                 WHERE tenant_id = $1
-                   AND id = ANY($2)
-                   AND is_active = true
-                   AND ${this.storeScopeSql(3)}
-                 ORDER BY display_order ASC`,
-                [this.tenantId, ids, storeId],
-                this.tenantId
-            );
-        }
-
-        return rows.map(mapPractitioner);
+        const rows = await this.findByMenuId(menuId);
+        return rows.filter((practitioner) => this.matchesStore(practitioner, storeId));
     }
 
     async findByWorkDay(dayOfWeek: number): Promise<Practitioner[]> {
@@ -336,7 +437,11 @@ export class PractitionerRepository {
             this.tenantId
         );
 
-        return mapPractitioner(row as Record<string, any>);
+        const created = mapPractitioner(row as Record<string, any>);
+        await this.replaceStoreAssignments(created.id, data.storeIds);
+        await this.replaceMenuAssignments(created.id, data.availableMenuIds);
+        const saved = await this.findById(created.id);
+        return saved ?? created;
     }
 
     async updatePractitioner(id: string, data: Partial<Practitioner>): Promise<Practitioner> {
@@ -401,7 +506,10 @@ export class PractitionerRepository {
         );
 
         if (!row) throw new NotFoundError('施術者', id);
-        return mapPractitioner(row as Record<string, any>);
+        await this.replaceStoreAssignments(id, data.storeIds);
+        await this.replaceMenuAssignments(id, data.availableMenuIds);
+        const saved = await this.findById(id);
+        return saved ?? mapPractitioner(row as Record<string, any>);
     }
 
     async softDelete(id: string): Promise<void> {

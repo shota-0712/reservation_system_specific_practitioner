@@ -72,6 +72,7 @@ app.use(cors({
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization', 'X-Tenant-Id', 'X-Store-Id'],
+    exposedHeaders: ['Location'],
 }));
 
 // Rate limiting — applied only to public / unauthenticated routes.

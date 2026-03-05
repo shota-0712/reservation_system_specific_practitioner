@@ -8,7 +8,7 @@ import type { ApiResponse, Option } from '../../types/index.js';
 const router = Router();
 
 const optionQuerySchema = z.object({
-    menuId: z.string().optional(),
+    menuId: z.string().uuid().optional(),
 });
 
 router.get(
@@ -16,7 +16,7 @@ router.get(
     validateQuery(optionQuerySchema),
     asyncHandler(async (req: Request, res: Response): Promise<void> => {
         const tenantId = getTenantId(req);
-        const { menuId } = req.query as { menuId?: string };
+        const { menuId } = req.query as unknown as z.infer<typeof optionQuerySchema>;
         const optionRepo = createOptionRepository(tenantId);
 
         const options = menuId

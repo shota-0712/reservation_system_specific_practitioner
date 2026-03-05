@@ -8,6 +8,7 @@ import { asyncHandler, validateBody } from '../../middleware/index.js';
 import { createBookingLinkTokenService } from '../../services/booking-link-token.service.js';
 import { createGoogleCalendarService } from '../../services/google-calendar.service.js';
 import { decodeGoogleOAuthState } from '../../services/google-oauth-state.service.js';
+import { resolveTenantIdForClaimsSync } from '../../services/admin-claims-sync.service.js';
 import { createOnboardingService } from '../../services/onboarding.service.js';
 import { getRequestMeta, writeAuditLog } from '../../services/audit-log.service.js';
 import { AuthenticationError, AuthorizationError, ConflictError, RateLimitError, ValidationError } from '../../utils/errors.js';
@@ -435,16 +436,7 @@ router.post(
         const auth = getAuthInstance();
         const decoded = await auth.verifyIdToken(token);
 
-        const row = await DatabaseService.query<{ tenant_id: string }>(
-            'SELECT tenant_id FROM admins WHERE firebase_uid = $1 AND is_active = true LIMIT 1',
-            [decoded.uid]
-        );
-
-        if (row.length === 0) {
-            throw new AuthorizationError('管理者として登録されていません');
-        }
-
-        const tenantId = row[0].tenant_id;
+        const tenantId = await resolveTenantIdForClaimsSync(decoded.uid);
         await auth.setCustomUserClaims(decoded.uid, { tenantId });
 
         const response: ApiResponse<{ tenantId: string }> = {

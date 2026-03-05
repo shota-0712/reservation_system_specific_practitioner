@@ -12,7 +12,7 @@ import type { Tenant, AuthenticatedRequest } from '../types/index.js';
 // Cache for tenant data (simple in-memory cache)
 const tenantCache = new Map<string, { tenant: Tenant; expiresAt: number }>();
 const storeCache = new Map<string, { tenant: Tenant; storeId: string; expiresAt: number }>();
-const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+const CACHE_TTL_MS = 1 * 60 * 1000; // 1 minute
 
 const UUID_V4_LIKE_REGEX =
     /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;

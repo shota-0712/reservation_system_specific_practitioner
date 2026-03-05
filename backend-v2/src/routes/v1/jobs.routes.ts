@@ -6,31 +6,42 @@
 
 import { Router, Request, Response } from 'express';
 import { asyncHandler } from '../../middleware/error-handler.js';
+import { validateBody, validateQuery } from '../../middleware/validation.js';
 import { handleDayBeforeReminderRequest, handleSameDayReminderRequest } from '../../jobs/reminder.job.js';
 import { handleDailyAnalyticsRequest } from '../../jobs/daily-analytics.job.js';
 import { getTenantId } from '../../middleware/tenant.js';
 import { createGoogleCalendarSyncQueueService } from '../../services/google-calendar-sync-queue.service.js';
 import { logger } from '../../utils/logger.js';
 import { env } from '../../config/env.js';
+import { AuthenticationError } from '../../utils/errors.js';
+import { z } from 'zod';
 
 const router = Router();
 
-// ジョブ実行用シークレット（環境変数で設定）
-// Cloud Scheduler の OIDC トークンを使用するのがベストだが、簡易化のためヘッダーチェック
-const JOB_SECRET = process.env.JOB_SECRET || 'local-dev-job-secret';
+const reminderTypeQuerySchema = z.object({
+    type: z.enum(['day-before', 'same-day']).default('same-day'),
+});
+
+const analyticsJobBodySchema = z.object({
+    date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+}).default({});
+
+const googleCalendarSyncBodySchema = z.object({
+    limit: z.coerce.number().int().min(1).max(500).optional(),
+}).default({});
 
 /**
  * ジョブ実行権限チェックミドルウェア
  */
-const requireJobSecret = (req: Request, res: Response, next: Function) => {
+const requireJobSecret = (req: Request, _res: Response, next: (error?: unknown) => void) => {
     const authHeader = req.headers['x-job-secret'];
 
     // Cloud Scheduler からの実行を想定
-    if (authHeader === JOB_SECRET || env.NODE_ENV === 'development') {
+    if (authHeader === env.JOB_SECRET || env.NODE_ENV === 'development') {
         next();
     } else {
         logger.warn('Unauthorized job execution attempt', { ip: req.ip });
-        res.status(401).json({ error: 'Unauthorized' });
+        next(new AuthenticationError('ジョブ実行シークレットが不正です'));
     }
 };
 
@@ -41,9 +52,10 @@ const requireJobSecret = (req: Request, res: Response, next: Function) => {
 router.post(
     '/reminders/day-before',
     requireJobSecret,
-    asyncHandler(async (_req: Request, res: Response): Promise<void> => {
+    asyncHandler(async (req: Request, res: Response): Promise<void> => {
+        const tenantId = getTenantId(req);
         logger.info('Received job request: day-before reminders');
-        const result = await handleDayBeforeReminderRequest();
+        const result = await handleDayBeforeReminderRequest(tenantId);
         res.json(result);
     })
 );
@@ -55,14 +67,16 @@ router.post(
 router.get(
     '/reminders',
     requireJobSecret,
+    validateQuery(reminderTypeQuerySchema),
     asyncHandler(async (req: Request, res: Response): Promise<void> => {
-        const type = (req.query.type as string) || 'same-day';
+        const tenantId = getTenantId(req);
+        const { type } = req.query as unknown as z.infer<typeof reminderTypeQuerySchema>;
         if (type === 'day-before') {
-            const result = await handleDayBeforeReminderRequest();
+            const result = await handleDayBeforeReminderRequest(tenantId);
             res.json(result);
             return;
         }
-        const result = await handleSameDayReminderRequest();
+        const result = await handleSameDayReminderRequest(tenantId);
         res.json(result);
     })
 );
@@ -74,9 +88,10 @@ router.get(
 router.post(
     '/reminders/same-day',
     requireJobSecret,
-    asyncHandler(async (_req: Request, res: Response): Promise<void> => {
+    asyncHandler(async (req: Request, res: Response): Promise<void> => {
+        const tenantId = getTenantId(req);
         logger.info('Received job request: same-day reminders');
-        const result = await handleSameDayReminderRequest();
+        const result = await handleSameDayReminderRequest(tenantId);
         res.json(result);
     })
 );
@@ -88,10 +103,12 @@ router.post(
 router.post(
     '/analytics/daily',
     requireJobSecret,
+    validateBody(analyticsJobBodySchema),
     asyncHandler(async (req: Request, res: Response): Promise<void> => {
-        const date = typeof req.body?.date === 'string' ? req.body.date : undefined;
+        const tenantId = getTenantId(req);
+        const { date } = req.body as z.infer<typeof analyticsJobBodySchema>;
         logger.info('Received job request: daily analytics', { date: date ?? 'default(yesterday)' });
-        const result = await handleDailyAnalyticsRequest(date);
+        const result = await handleDailyAnalyticsRequest(date, tenantId);
         res.json(result);
     })
 );
@@ -103,9 +120,10 @@ router.post(
 router.post(
     '/integrations/google-calendar/sync',
     requireJobSecret,
+    validateBody(googleCalendarSyncBodySchema),
     asyncHandler(async (req: Request, res: Response): Promise<void> => {
         const tenantId = getTenantId(req);
-        const limit = typeof req.body?.limit === 'number' ? req.body.limit : undefined;
+        const { limit } = req.body as z.infer<typeof googleCalendarSyncBodySchema>;
         logger.info('Received job request: google calendar sync queue', { limit: limit ?? 'default(50)' });
 
         const queue = createGoogleCalendarSyncQueueService(tenantId);

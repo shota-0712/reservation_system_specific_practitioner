@@ -14,6 +14,7 @@ type PgErrorLike = {
     code?: string;
     constraint?: string;
     detail?: string;
+    table?: string;
 };
 
 /**
@@ -83,8 +84,72 @@ export function errorHandler() {
         }
 
         // Handle unknown errors
-        // PostgreSQL exclusion constraint violation (double-booking, etc.)
         const pg = error as unknown as PgErrorLike;
+        // PostgreSQL unique constraint violation.
+        if (pg?.code === '23505') {
+            const conflict = new ConflictError('同一データが既に存在します', {
+                code: pg.code,
+                constraint: pg.constraint,
+                detail: pg.detail,
+            });
+
+            const response: ApiResponse = {
+                success: false,
+                error: {
+                    code: conflict.code,
+                    message: conflict.message,
+                    details: conflict.details,
+                },
+            };
+
+            res.status(conflict.statusCode).json(response);
+            return;
+        }
+
+        // PostgreSQL foreign key violation.
+        if (pg?.code === '23503') {
+            const validation = new ValidationError('参照先データが存在しません', {
+                code: pg.code,
+                constraint: pg.constraint,
+                detail: pg.detail,
+                table: pg.table,
+            });
+
+            const response: ApiResponse = {
+                success: false,
+                error: {
+                    code: validation.code,
+                    message: validation.message,
+                    details: validation.details,
+                },
+            };
+
+            res.status(validation.statusCode).json(response);
+            return;
+        }
+
+        // PostgreSQL check constraint violation.
+        if (pg?.code === '23514') {
+            const validation = new ValidationError('入力値が制約を満たしていません', {
+                code: pg.code,
+                constraint: pg.constraint,
+                detail: pg.detail,
+            });
+
+            const response: ApiResponse = {
+                success: false,
+                error: {
+                    code: validation.code,
+                    message: validation.message,
+                    details: validation.details,
+                },
+            };
+
+            res.status(validation.statusCode).json(response);
+            return;
+        }
+
+        // PostgreSQL exclusion constraint violation (double-booking, etc.)
         if (pg?.code === '23P01') {
             const conflict = new ConflictError('選択された時間帯はすでに予約が入っています', {
                 code: pg.code,

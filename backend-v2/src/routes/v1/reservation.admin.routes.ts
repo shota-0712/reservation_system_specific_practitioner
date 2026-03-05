@@ -15,21 +15,18 @@ import { requirePermission } from '../../middleware/auth.js';
 import {
     createReservationRepository,
     createCustomerRepository,
-    createMenuRepository,
     createPractitionerRepository,
-    createOptionRepository,
 } from '../../repositories/index.js';
 import { createServiceMessageService } from '../../services/service-message.service.js';
-import { createGoogleCalendarService } from '../../services/google-calendar.service.js';
-import { createGoogleCalendarSyncQueueService } from '../../services/google-calendar-sync-queue.service.js';
+import { createGoogleCalendarSyncService } from '../../services/google-calendar-sync.service.js';
+import { createReservationService } from '../../services/reservation.service.js';
 import {
     enforceAdvanceBookingPolicy,
     enforceCancelPolicy,
     resolveStoreContext,
 } from '../../services/reservation-policy.service.js';
 import { getRequestMeta, writeAuditLog } from '../../services/audit-log.service.js';
-import { ConflictError, ValidationError } from '../../utils/errors.js';
-import { logger } from '../../utils/logger.js';
+import { ValidationError } from '../../utils/errors.js';
 import type { ApiResponse, Reservation } from '../../types/index.js';
 
 const router = Router();
@@ -49,6 +46,9 @@ const updateReservationSchema = z.object({
     optionIds: z.array(z.string()).optional(),
     date: dateSchema.optional(),
     startTime: timeSchema.optional(),
+    startsAt: z.string().datetime().optional(),
+    endsAt: z.string().datetime().optional(),
+    timezone: z.string().max(100).optional(),
     status: z.enum(['pending', 'confirmed', 'completed', 'canceled', 'no_show']).optional(),
     isNomination: z.boolean().optional(),
     customerNote: z.string().max(500).optional(),
@@ -65,14 +65,25 @@ const createAdminReservationSchema = z.object({
     practitionerId: z.string().min(1, '施術者を選択してください'),
     menuIds: z.array(z.string()).min(1, 'メニューを選択してください'),
     optionIds: z.array(z.string()).optional().default([]),
-    date: dateSchema,
-    startTime: timeSchema,
+    date: dateSchema.optional(),
+    startTime: timeSchema.optional(),
+    startsAt: z.string().datetime().optional(),
+    endsAt: z.string().datetime().optional(),
+    timezone: z.string().max(100).optional(),
     status: z.enum(['pending', 'confirmed']).optional(),
     isNomination: z.boolean().optional(),
     customerNote: z.string().max(500).optional(),
     staffNote: z.string().max(500).optional(),
     source: z.enum(['line', 'phone', 'walk_in', 'salonboard', 'hotpepper', 'web', 'admin', 'google_calendar']).optional(),
     storeId: z.string().optional(),
+}).superRefine((value, ctx) => {
+    if (!(value.startsAt || (value.date && value.startTime))) {
+        ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: 'date/startTime または startsAt のいずれかを指定してください',
+            path: ['startsAt'],
+        });
+    }
 });
 
 const reservationFiltersSchema = paginationSchema.extend({
@@ -83,17 +94,6 @@ const reservationFiltersSchema = paginationSchema.extend({
     dateTo: dateSchema.optional(),
     date: dateSchema.optional(),
 });
-
-function practitionerMatchesStore(practitionerStoreIds: string[] | undefined, storeId?: string): boolean {
-    if (!storeId) {
-        return true;
-    }
-    const ids = practitionerStoreIds ?? [];
-    if (ids.length === 0) {
-        return true;
-    }
-    return ids.includes(storeId);
-}
 
 router.get(
     '/',
@@ -141,6 +141,8 @@ router.post(
             optionIds,
             date,
             startTime,
+            startsAt,
+            timezone,
             status,
             isNomination,
             customerNote,
@@ -150,13 +152,8 @@ router.post(
         } = req.body;
 
         const { store, policy } = await resolveStoreContext(tenantId, storeId || (req as { storeId?: string }).storeId);
-        enforceAdvanceBookingPolicy(date, policy);
 
-        const reservationRepo = createReservationRepository(tenantId);
         const customerRepo = createCustomerRepository(tenantId);
-        const menuRepo = createMenuRepository(tenantId);
-        const practitionerRepo = createPractitionerRepository(tenantId);
-        const optionRepo = createOptionRepository(tenantId);
 
         let customer = null;
         if (customerId) {
@@ -183,119 +180,51 @@ router.post(
             });
         }
 
-        const practitioner = await practitionerRepo.findByIdOrFail(practitionerId);
-        if (!practitionerMatchesStore(practitioner.storeIds, store.id)) {
-            throw new ValidationError('選択された施術者はこの店舗では利用できません');
-        }
-        const menus = await Promise.all(menuIds.map((id: string) => menuRepo.findByIdOrFail(id)));
-        const options = await Promise.all((optionIds || []).map((id: string) => optionRepo.findByIdOrFail(id)));
-
-        const menuDuration = menus.reduce((sum, m) => sum + m.duration, 0);
-        const menuPrice = menus.reduce((sum, m) => sum + m.price, 0);
-        const optionDuration = options.reduce((sum, o) => sum + o.duration, 0);
-        const optionPrice = options.reduce((sum, o) => sum + o.price, 0);
+        const svc = createReservationService(tenantId);
+        const resolvedDateTime = svc.resolveDateTimeInput(
+            { date, startTime, startsAt, timezone },
+            policy.timezone
+        );
+        enforceAdvanceBookingPolicy(resolvedDateTime.date, policy);
+        const practitioner = await svc.validatePractitioner(practitionerId, store.id);
+        const resolved = await svc.resolveMenusAndOptions(menuIds, optionIds || []);
         const nominationFee = isNomination ? (practitioner.nominationFee ?? 0) : 0;
-        const totalDuration = menuDuration + optionDuration;
-        const totalPrice = menuPrice + optionPrice + nominationFee;
+        const totalPrice = resolved.menuPrice + resolved.optionPrice + nominationFee;
+        const endTime = svc.calcEndTime(resolvedDateTime.startTime, resolved.totalDuration);
 
-        const [hours, minutes] = startTime.split(':').map(Number);
-        const endMinutes = hours * 60 + minutes + totalDuration;
-        const endTime = `${Math.floor(endMinutes / 60).toString().padStart(2, '0')}:${(endMinutes % 60)
-            .toString()
-            .padStart(2, '0')}`;
-
-        const hasConflict = await reservationRepo.hasConflict(practitionerId, date, startTime, endTime, {
-            timezone: policy.timezone,
+        await svc.assertNoConflict(practitionerId, resolvedDateTime.date, resolvedDateTime.startTime, endTime, {
+            timezone: resolvedDateTime.timezone,
         });
-        if (hasConflict) {
-            throw new ConflictError('選択された時間帯はすでに予約が入っています');
-        }
 
-        const reservation = await reservationRepo.create({
-            storeId: store.id,
-            customerId: customer.id,
-            customerName: customer.name,
-            customerPhone: customer.phone,
-            practitionerId,
-            practitionerName: practitioner.name,
-            menuIds,
-            menuNames: menus.map((m) => m.name),
-            optionIds,
-            optionNames: options.map((o) => o.name),
-            date,
-            startTime,
-            endTime,
-            duration: totalDuration,
-            totalPrice,
-            status: status ?? 'confirmed',
-            source: source ?? 'admin',
-            customerNote,
-            staffNote,
-            subtotal: menuPrice,
-            optionTotal: optionPrice,
-            nominationFee,
-            menuItems: menus.map((m, idx) => ({
-                menuId: m.id,
-                menuName: m.name,
-                menuPrice: m.price,
-                menuDuration: m.duration,
-                sortOrder: idx,
-                isMain: idx === 0,
-            })),
-            optionItems: options.map((o) => ({
-                optionId: o.id,
-                optionName: o.name,
-                optionPrice: o.price,
-                optionDuration: o.duration,
-            })),
-        } as Omit<Reservation, 'id' | 'tenantId' | 'createdAt' | 'updatedAt'>, policy.timezone);
-
-        const targetToken = customer.lineNotificationToken || customer.lineUserId;
-        if (targetToken) {
-            const messageService = createServiceMessageService(tenantId);
-            messageService.sendConfirmation(targetToken, reservation).catch((err) => {
-                logger.error('Failed to send confirmation', { reservationId: reservation.id, error: err instanceof Error ? err.message : String(err) });
-            });
-        }
-
-        if (practitioner.calendarId) {
-            const googleService = createGoogleCalendarService(tenantId);
-            googleService
-                .syncCreateEvent(practitioner.calendarId, reservation, store.timezone || 'Asia/Tokyo')
-                .then(async (eventId) => {
-                    if (!eventId) return;
-                    await reservationRepo.setGoogleCalendarRefs(reservation.id, {
-                        calendarId: practitioner.calendarId as string,
-                        eventId,
-                    });
-                })
-                .catch((error) => {
-                    logger.error('Failed to sync reservation to Google Calendar', { reservationId: reservation.id, error: error instanceof Error ? error.message : String(error) });
-                    const queue = createGoogleCalendarSyncQueueService(tenantId);
-                    queue
-                        .enqueue({
-                            reservationId: reservation.id,
-                            action: 'create',
-                            calendarId: practitioner.calendarId,
-                        })
-                        .catch((enqueueErr) => {
-                            logger.warn('Failed to enqueue Google Calendar sync task', { reservationId: reservation.id, action: 'create', error: enqueueErr instanceof Error ? enqueueErr.message : String(enqueueErr) });
-                        });
-                });
-        }
-
-        const meta = getRequestMeta(req);
-        await writeAuditLog({
-            tenantId,
-            action: 'CREATE',
-            entityType: 'reservation',
-            entityId: reservation.id,
-            actorType: 'admin',
-            actorId: (req as any).user?.uid,
-            actorName: (req as any).user?.name,
-            newValues: reservation as unknown as Record<string, unknown>,
-            ...meta,
-        });
+        const reservation = await svc.persistCreate(
+            {
+                storeId: store.id,
+                customerId: customer.id,
+                customerName: customer.name,
+                customerPhone: customer.phone,
+                practitionerId,
+                practitionerName: practitioner.name,
+                menus: resolved.menus,
+                options: resolved.options,
+                date: resolvedDateTime.date,
+                startTime: resolvedDateTime.startTime,
+                endTime,
+                totalDuration: resolved.totalDuration,
+                totalPrice,
+                menuPrice: resolved.menuPrice,
+                optionPrice: resolved.optionPrice,
+                nominationFee,
+                status: status ?? 'confirmed',
+                source: source ?? 'admin',
+                customerNote,
+                staffNote,
+            },
+            { actorType: 'admin', actorId: (req as any).user?.uid, actorName: (req as any).user?.name },
+            practitioner,
+            customer,
+            resolvedDateTime.timezone,
+            req
+        );
 
         const response: ApiResponse<Reservation> = { success: true, data: reservation };
         res.status(201).json(response);
@@ -323,6 +252,8 @@ router.put(
             optionIds,
             date,
             startTime,
+            startsAt,
+            timezone,
             status,
             isNomination,
             customerNote,
@@ -333,18 +264,11 @@ router.put(
 
         const reservationRepo = createReservationRepository(tenantId);
         const customerRepo = createCustomerRepository(tenantId);
-        const menuRepo = createMenuRepository(tenantId);
-        const practitionerRepo = createPractitionerRepository(tenantId);
-        const optionRepo = createOptionRepository(tenantId);
 
         const existing = await reservationRepo.findByIdOrFail(id);
 
         const targetStoreId = storeId ?? existing.storeId ?? (req as { storeId?: string }).storeId;
         const { store, policy } = await resolveStoreContext(tenantId, targetStoreId);
-        if (date) {
-            enforceAdvanceBookingPolicy(date, policy);
-        }
-
         const targetCustomerId = customerId ?? existing.customerId;
         const customer = await customerRepo.findByIdOrFail(targetCustomerId);
         if (customerName || customerPhone || customerEmail) {
@@ -363,217 +287,92 @@ router.put(
             throw new ValidationError('メニューを選択してください');
         }
 
-        const practitioner = await practitionerRepo.findByIdOrFail(newPractitionerId);
-        if (!practitionerMatchesStore(practitioner.storeIds, store.id)) {
-            throw new ValidationError('選択された施術者はこの店舗では利用できません');
-        }
-        const menus = await Promise.all(newMenuIds.map((menuId: string) => menuRepo.findByIdOrFail(menuId)));
-        const options = await Promise.all((newOptionIds || []).map((optionId: string) => optionRepo.findByIdOrFail(optionId)));
-
-        const menuDuration = menus.reduce((sum, m) => sum + m.duration, 0);
-        const menuPrice = menus.reduce((sum, m) => sum + m.price, 0);
-        const optionDuration = options.reduce((sum, o) => sum + o.duration, 0);
-        const optionPrice = options.reduce((sum, o) => sum + o.price, 0);
+        const svc = createReservationService(tenantId);
+        const practitioner = await svc.validatePractitioner(newPractitionerId, store.id);
+        const resolved = await svc.resolveMenusAndOptions(newMenuIds, newOptionIds);
 
         const applyNomination = isNomination ?? ((existing.nominationFee ?? 0) > 0);
         const nominationFee = applyNomination ? (practitioner.nominationFee ?? 0) : 0;
+        const totalPrice = resolved.menuPrice + resolved.optionPrice + nominationFee;
 
-        const totalDuration = menuDuration + optionDuration;
-        const totalPrice = menuPrice + optionPrice + nominationFee;
+        const resolvedDateTime = startsAt || date || startTime || timezone
+            ? svc.resolveDateTimeInput(
+                {
+                    date: date ?? existing.date,
+                    startTime: startTime ?? existing.startTime,
+                    startsAt,
+                    timezone,
+                },
+                policy.timezone
+            )
+            : {
+                date: existing.date,
+                startTime: existing.startTime,
+                timezone: policy.timezone,
+            };
+        const newDate = resolvedDateTime.date;
+        const newStartTime = resolvedDateTime.startTime;
+        const scheduleChanged = existing.date !== newDate || existing.startTime !== newStartTime;
+        if (scheduleChanged) {
+            enforceAdvanceBookingPolicy(newDate, policy);
+        }
+        const endTime = svc.calcEndTime(newStartTime, resolved.totalDuration);
 
-        const newDate = date ?? existing.date;
-        const newStartTime = startTime ?? existing.startTime;
-        const [hours, minutes] = newStartTime.split(':').map(Number);
-        const endMinutes = hours * 60 + minutes + totalDuration;
-        const endTime = `${Math.floor(endMinutes / 60).toString().padStart(2, '0')}:${(endMinutes % 60)
-            .toString()
-            .padStart(2, '0')}`;
-
-        const hasConflict = await reservationRepo.hasConflict(newPractitionerId, newDate, newStartTime, endTime, {
+        await svc.assertNoConflict(newPractitionerId, newDate, newStartTime, endTime, {
             excludeReservationId: id,
-            timezone: policy.timezone,
+            timezone: resolvedDateTime.timezone,
         });
-        if (hasConflict) {
-            throw new ConflictError('選択された時間帯はすでに予約が入っています');
-        }
 
-        const updated = await reservationRepo.updateWithItems(id, {
-            storeId: store.id,
-            customerId: customer.id,
-            customerName: customerName || existing.customerName || customer.name,
-            customerPhone: customerPhone || existing.customerPhone || customer.phone,
-            practitionerId: newPractitionerId,
-            practitionerName: practitioner.name,
-            menuIds: newMenuIds,
-            menuNames: menus.map((m) => m.name),
-            optionIds: newOptionIds,
-            optionNames: options.map((o) => o.name),
-            date: newDate,
-            startTime: newStartTime,
-            endTime,
-            duration: totalDuration,
-            totalPrice,
-            status: status ?? existing.status,
-            source: source ?? existing.source,
-            customerNote: customerNote ?? existing.customerNote,
-            staffNote: staffNote ?? existing.staffNote,
-            subtotal: menuPrice,
-            optionTotal: optionPrice,
-            nominationFee,
-            menuItems: menus.map((m, idx) => ({
-                menuId: m.id,
-                menuName: m.name,
-                menuPrice: m.price,
-                menuDuration: m.duration,
-                sortOrder: idx,
-                isMain: idx === 0,
-            })),
-            optionItems: options.map((o) => ({
-                optionId: o.id,
-                optionName: o.name,
-                optionPrice: o.price,
-                optionDuration: o.duration,
-            })),
-            googleCalendarId: existing.googleCalendarId,
-            googleCalendarEventId: existing.googleCalendarEventId,
-        } as Omit<Reservation, 'id' | 'tenantId' | 'createdAt' | 'updatedAt'>, policy.timezone);
-
-        // Notify customer about reservation changes (best-effort).
-        // Status changes are handled by PATCH /:id/status, so we skip if status is explicitly changed here.
+        // Build change notification (skip if status is explicitly changed — handled by PATCH /:id/status)
+        let notifyChange: { changeType: string; oldValue: string; newValue: string } | undefined;
         if (!status || status === existing.status) {
-            const targetToken = customer.lineNotificationToken || customer.lineUserId;
-            if (targetToken) {
-                let changeType = '予約内容変更';
-                let oldValue = `${existing.date} ${existing.startTime}`;
-                let newValue = `${updated.date} ${updated.startTime}`;
-
-                if (existing.date !== updated.date || existing.startTime !== updated.startTime) {
-                    changeType = '日時変更';
-                } else if (JSON.stringify(existing.menuIds || []) !== JSON.stringify(updated.menuIds || [])) {
-                    changeType = 'メニュー変更';
-                    oldValue = (existing.menuNames || []).join('、');
-                    newValue = (updated.menuNames || []).join('、');
-                }
-
-                const messageService = createServiceMessageService(tenantId);
-                messageService.sendModificationNotice(targetToken, updated, changeType, oldValue, newValue).catch(() => undefined);
+            let changeType = '予約内容変更';
+            let oldValue = `${existing.date} ${existing.startTime}`;
+            let newValue = `${newDate} ${newStartTime}`;
+            if (scheduleChanged) {
+                changeType = '日時変更';
+            } else if (JSON.stringify(existing.menuIds || []) !== JSON.stringify(newMenuIds)) {
+                changeType = 'メニュー変更';
+                oldValue = (existing.menuNames || []).join('、');
+                newValue = resolved.menus.map((m) => m.name).join('、');
             }
+            notifyChange = { changeType, oldValue, newValue };
         }
 
-        // Google Calendar sync (best-effort).
-        // When the practitioner changes, delete the old event and create a new one
-        // on the new practitioner's calendar. Otherwise just update in place.
-        const oldPractitioner = existing.practitionerId === newPractitionerId
-            ? practitioner
-            : await practitionerRepo.findById(existing.practitionerId);
-
-        if (oldPractitioner?.calendarId || practitioner.calendarId) {
-            const googleService = createGoogleCalendarService(tenantId);
-            const queue = createGoogleCalendarSyncQueueService(tenantId);
-
-            if (
-                existing.googleCalendarEventId &&
-                oldPractitioner?.calendarId &&
-                oldPractitioner.calendarId !== practitioner.calendarId
-            ) {
-                // Practitioner changed: delete from old calendar, create on new
-                googleService
-                    .syncDeleteEvent(oldPractitioner.calendarId, existing.googleCalendarEventId)
-                    .then(() => reservationRepo.clearGoogleCalendarRefs(updated.id))
-                    .catch((error) => {
-                        logger.error('Failed to delete Google Calendar event', { reservationId: updated.id, error: error instanceof Error ? error.message : String(error) });
-                        queue
-                            .enqueue({
-                                reservationId: updated.id,
-                                action: 'delete',
-                                calendarId: oldPractitioner.calendarId,
-                                eventId: existing.googleCalendarEventId,
-                            })
-                            .catch((enqueueErr) => {
-                                logger.warn('Failed to enqueue Google Calendar sync task', { reservationId: updated.id, action: 'delete', error: enqueueErr instanceof Error ? enqueueErr.message : String(enqueueErr) });
-                            });
-                    });
-
-                if (practitioner.calendarId) {
-                    googleService
-                        .syncCreateEvent(practitioner.calendarId, updated, store.timezone || 'Asia/Tokyo')
-                        .then(async (eventId) => {
-                            if (!eventId) return;
-                            await reservationRepo.setGoogleCalendarRefs(updated.id, {
-                                calendarId: practitioner.calendarId as string,
-                                eventId,
-                            });
-                        })
-                        .catch((error) => {
-                            logger.error('Failed to create Google Calendar event', { reservationId: updated.id, error: error instanceof Error ? error.message : String(error) });
-                            queue
-                                .enqueue({
-                                    reservationId: updated.id,
-                                    action: 'create',
-                                    calendarId: practitioner.calendarId,
-                                })
-                                .catch((enqueueErr) => {
-                                    logger.warn('Failed to enqueue Google Calendar sync task', { reservationId: updated.id, action: 'create', error: enqueueErr instanceof Error ? enqueueErr.message : String(enqueueErr) });
-                                });
-                        });
-                }
-            } else if (existing.googleCalendarEventId && practitioner.calendarId) {
-                // Same practitioner: update existing event
-                const calendarId = updated.googleCalendarId || practitioner.calendarId;
-                googleService
-                    .syncUpdateEvent(calendarId, existing.googleCalendarEventId, updated, store.timezone || 'Asia/Tokyo')
-                    .catch((error) => {
-                        logger.error('Failed to update Google Calendar event', { reservationId: updated.id, error: error instanceof Error ? error.message : String(error) });
-                        queue
-                            .enqueue({
-                                reservationId: updated.id,
-                                action: 'update',
-                                calendarId,
-                                eventId: existing.googleCalendarEventId,
-                            })
-                            .catch((enqueueErr) => {
-                                logger.warn('Failed to enqueue Google Calendar sync task', { reservationId: updated.id, action: 'update', error: enqueueErr instanceof Error ? enqueueErr.message : String(enqueueErr) });
-                            });
-                    });
-            } else if (!existing.googleCalendarEventId && practitioner.calendarId) {
-                // No existing event yet: create new
-                googleService
-                    .syncCreateEvent(practitioner.calendarId, updated, store.timezone || 'Asia/Tokyo')
-                    .then(async (eventId) => {
-                        if (!eventId) return;
-                        await reservationRepo.setGoogleCalendarRefs(updated.id, {
-                            calendarId: practitioner.calendarId as string,
-                            eventId,
-                        });
-                    })
-                    .catch((error) => {
-                        logger.error('Failed to create Google Calendar event', { reservationId: updated.id, error: error instanceof Error ? error.message : String(error) });
-                        queue
-                            .enqueue({
-                                reservationId: updated.id,
-                                action: 'create',
-                                calendarId: practitioner.calendarId,
-                            })
-                            .catch((enqueueErr) => {
-                                logger.warn('Failed to enqueue Google Calendar sync task', { reservationId: updated.id, action: 'create', error: enqueueErr instanceof Error ? enqueueErr.message : String(enqueueErr) });
-                            });
-                    });
-            }
-        }
-
-        const meta = getRequestMeta(req);
-        await writeAuditLog({
-            tenantId,
-            action: 'UPDATE',
-            entityType: 'reservation',
-            entityId: updated.id,
-            actorType: 'admin',
-            actorId: (req as any).user?.uid,
-            actorName: (req as any).user?.name,
-            oldValues: existing as unknown as Record<string, unknown>,
-            newValues: updated as unknown as Record<string, unknown>,
-            ...meta,
-        });
+        const updated = await svc.persistUpdate(
+            id,
+            {
+                storeId: store.id,
+                customerId: customer.id,
+                customerName: customerName || existing.customerName || customer.name,
+                customerPhone: customerPhone || existing.customerPhone || customer.phone,
+                practitionerId: newPractitionerId,
+                practitionerName: practitioner.name,
+                menus: resolved.menus,
+                options: resolved.options,
+                date: newDate,
+                startTime: newStartTime,
+                endTime,
+                totalDuration: resolved.totalDuration,
+                totalPrice,
+                menuPrice: resolved.menuPrice,
+                optionPrice: resolved.optionPrice,
+                nominationFee,
+                status: status ?? existing.status,
+                source: source ?? existing.source,
+                customerNote: customerNote ?? existing.customerNote,
+                staffNote: staffNote ?? existing.staffNote,
+                existingGoogleCalendarId: existing.googleCalendarId,
+                existingGoogleCalendarEventId: existing.googleCalendarEventId,
+            },
+            existing,
+            { actorType: 'admin', actorId: (req as any).user?.uid, actorName: (req as any).user?.name },
+            practitioner,
+            customer,
+            resolvedDateTime.timezone,
+            req,
+            notifyChange
+        );
 
         const response: ApiResponse<Reservation> = { success: true, data: updated };
         res.json(response);
@@ -677,29 +476,9 @@ router.patch(
             await customerRepo.incrementCancel(reservation.customerId);
         }
 
-        if ((status === 'canceled' || status === 'no_show') && reservation.googleCalendarEventId) {
+        if (status === 'canceled' || status === 'no_show') {
             const practitioner = await practitionerRepo.findById(reservation.practitionerId);
-            if (practitioner?.calendarId) {
-                const googleService = createGoogleCalendarService(tenantId);
-                const calendarId = reservation.googleCalendarId || practitioner.calendarId;
-                googleService
-                    .syncDeleteEvent(calendarId, reservation.googleCalendarEventId)
-                    .then(() => reservationRepo.clearGoogleCalendarRefs(reservation.id))
-                    .catch((error) => {
-                        logger.error('Failed to delete Google Calendar event', { reservationId: reservation.id, error: error instanceof Error ? error.message : String(error) });
-                        const queue = createGoogleCalendarSyncQueueService(tenantId);
-                        queue
-                            .enqueue({
-                                reservationId: reservation.id,
-                                action: 'delete',
-                                calendarId,
-                                eventId: reservation.googleCalendarEventId,
-                            })
-                            .catch((enqueueErr) => {
-                                logger.warn('Failed to enqueue Google Calendar sync task', { reservationId: reservation.id, action: 'delete', error: enqueueErr instanceof Error ? enqueueErr.message : String(enqueueErr) });
-                            });
-                    });
-            }
+            createGoogleCalendarSyncService(tenantId).syncReservationDeletion(reservation, practitioner ?? null);
         }
 
         const customer = await customerRepo.findById(reservation.customerId);

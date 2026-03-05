@@ -52,6 +52,15 @@ interface EnvConfig {
     DB_USER: string;
     DB_PASSWORD: string;
     DB_NAME: string;
+    JOB_SECRET: string;
+
+    // Export/Analytics
+    EXPORT_GCS_BUCKET?: string;
+    EXPORT_GCS_PREFIX: string;
+    EXPORT_SIGNED_URL_TTL_MINUTES: number;
+    ANALYTICS_EXPORT_SOURCE: 'cloudsql' | 'bigquery';
+    BIGQUERY_PROJECT_ID?: string;
+    BIGQUERY_MART_DATASET?: string;
 }
 
 function getEnvString(key: string, defaultValue?: string): string {
@@ -103,6 +112,10 @@ function validateConfig(): EnvConfig {
     }
 
     const isProduction = nodeEnv === 'production';
+    const analyticsExportSourceRaw = getEnvString('ANALYTICS_EXPORT_SOURCE', 'cloudsql');
+    if (!['cloudsql', 'bigquery'].includes(analyticsExportSourceRaw)) {
+        throw new Error('ANALYTICS_EXPORT_SOURCE must be cloudsql or bigquery');
+    }
 
     const firebaseServiceAccount = process.env.FIREBASE_SERVICE_ACCOUNT;
     let firebaseProjectIdDefault: string | undefined;
@@ -134,6 +147,10 @@ function validateConfig(): EnvConfig {
     const dbPassword = isProduction
         ? getEnvString('DB_PASSWORD') // Required - no default
         : getEnvString('DB_PASSWORD', 'change_me');
+
+    const jobSecret = isProduction
+        ? getEnvString('JOB_SECRET') // Required in production
+        : getEnvString('JOB_SECRET', 'local-dev-job-secret');
 
     // Warn about default values in development
     if (!isProduction) {
@@ -203,6 +220,15 @@ function validateConfig(): EnvConfig {
         DB_USER: getEnvString('DB_USER', 'app_user'),
         DB_PASSWORD: dbPassword,
         DB_NAME: getEnvString('DB_NAME', 'reservation_system'),
+        JOB_SECRET: jobSecret,
+
+        // Export/Analytics
+        EXPORT_GCS_BUCKET: process.env.EXPORT_GCS_BUCKET,
+        EXPORT_GCS_PREFIX: getEnvString('EXPORT_GCS_PREFIX', 'exports'),
+        EXPORT_SIGNED_URL_TTL_MINUTES: getEnvNumber('EXPORT_SIGNED_URL_TTL_MINUTES', 30),
+        ANALYTICS_EXPORT_SOURCE: analyticsExportSourceRaw as EnvConfig['ANALYTICS_EXPORT_SOURCE'],
+        BIGQUERY_PROJECT_ID: process.env.BIGQUERY_PROJECT_ID,
+        BIGQUERY_MART_DATASET: process.env.BIGQUERY_MART_DATASET,
     };
 }
 
@@ -219,4 +245,6 @@ export function logConfig(): void {
     console.log(`   Readiness Require LINE: ${env.READINESS_REQUIRE_LINE}`);
     console.log(`   Readiness Require Google OAuth: ${env.READINESS_REQUIRE_GOOGLE_OAUTH}`);
     console.log(`   Public Onboarding Enabled: ${env.PUBLIC_ONBOARDING_ENABLED}`);
+    console.log(`   Analytics Export Source: ${env.ANALYTICS_EXPORT_SOURCE}`);
+    console.log(`   Export GCS Bucket: ${env.EXPORT_GCS_BUCKET ?? '(inline)'}`);
 }

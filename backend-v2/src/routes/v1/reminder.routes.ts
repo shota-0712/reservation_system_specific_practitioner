@@ -7,11 +7,23 @@ import { Router, Request, Response } from 'express';
 import { requireFirebaseAuth, requireRole } from '../../middleware/auth.js';
 import { getTenant } from '../../middleware/tenant.js';
 import { asyncHandler } from '../../middleware/error-handler.js';
+import { validateBody, validateQuery } from '../../middleware/validation.js';
 import { createServiceMessageService } from '../../services/service-message.service.js';
 import { createReservationRepository, createCustomerRepository } from '../../repositories/index.js';
 import { DatabaseService } from '../../config/database.js';
+import { z } from 'zod';
+import { ExternalServiceError, NotFoundError, ValidationError } from '../../utils/errors.js';
 
 const router = Router();
+
+const sendSingleReminderBodySchema = z.object({
+    reservationId: z.string().uuid(),
+    type: z.enum(['reminder_day_before', 'reminder_same_day']),
+});
+
+const reminderLogsQuerySchema = z.object({
+    limit: z.coerce.number().int().min(1).max(100).default(20),
+});
 
 /**
  * リマインダー手動送信（個別予約）
@@ -22,34 +34,22 @@ router.post(
     '/send-single',
     requireFirebaseAuth(),
     requireRole('manager', 'owner'),
+    validateBody(sendSingleReminderBodySchema),
     asyncHandler(async (req: Request, res: Response): Promise<void> => {
         const tenant = getTenant(req);
-        const { reservationId, type } = req.body;
-
-        if (!reservationId || !type) {
-            res.status(400).json({ success: false, error: 'Missing reservationId or type' });
-            return;
-        }
-
-        const validTypes = ['reminder_day_before', 'reminder_same_day'];
-        if (!validTypes.includes(type)) {
-            res.status(400).json({ success: false, error: 'Invalid reminder type' });
-            return;
-        }
+        const { reservationId, type } = req.body as z.infer<typeof sendSingleReminderBodySchema>;
 
         const reservationRepo = createReservationRepository(tenant.id);
         const customerRepo = createCustomerRepository(tenant.id);
 
         const reservation = await reservationRepo.findById(reservationId);
         if (!reservation) {
-            res.status(404).json({ success: false, error: 'Reservation not found' });
-            return;
+            throw new NotFoundError('予約', reservationId);
         }
 
         const customer = await customerRepo.findById(reservation.customerId);
         if (!customer) {
-            res.status(404).json({ success: false, error: 'Customer not found' });
-            return;
+            throw new NotFoundError('顧客', reservation.customerId);
         }
 
         const notificationToken = customer.lineNotificationToken
@@ -57,8 +57,7 @@ router.post(
             || customer.notificationToken;
 
         if (!notificationToken) {
-            res.status(400).json({ success: false, error: 'Customer has no notification token' });
-            return;
+            throw new ValidationError('顧客に通知トークンが設定されていません');
         }
 
         const messageService = createServiceMessageService(tenant.id);
@@ -73,7 +72,7 @@ router.post(
         if (result.success) {
             res.json({ success: true, message: 'Reminder sent successfully' });
         } else {
-            res.status(500).json({ success: false, error: result.error });
+            throw new ExternalServiceError('LINE', new Error(result.error || 'reminder send failed'));
         }
     })
 );
@@ -87,9 +86,10 @@ router.get(
     '/logs',
     requireFirebaseAuth(),
     requireRole('manager', 'owner'),
+    validateQuery(reminderLogsQuerySchema),
     asyncHandler(async (req: Request, res: Response): Promise<void> => {
         const tenant = getTenant(req);
-        const limit = parseInt(req.query.limit as string) || 20;
+        const { limit } = req.query as unknown as z.infer<typeof reminderLogsQuerySchema>;
 
         const logs = await DatabaseService.query(
             `SELECT id, reservation_id, message_type, status, error, sent_at

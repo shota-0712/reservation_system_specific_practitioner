@@ -27,8 +27,9 @@ router.post(
     '/reminders/day-before',
     requireFirebaseAuth(),
     requireRole('manager', 'owner'),
-    asyncHandler(async (_req: Request, res: Response): Promise<void> => {
-        const result = await handleDayBeforeReminderRequest();
+    asyncHandler(async (req: Request, res: Response): Promise<void> => {
+        const tenantId = getTenantId(req);
+        const result = await handleDayBeforeReminderRequest(tenantId);
         res.json(result);
     })
 );
@@ -41,8 +42,9 @@ router.post(
     '/reminders/same-day',
     requireFirebaseAuth(),
     requireRole('manager', 'owner'),
-    asyncHandler(async (_req: Request, res: Response): Promise<void> => {
-        const result = await handleSameDayReminderRequest();
+    asyncHandler(async (req: Request, res: Response): Promise<void> => {
+        const tenantId = getTenantId(req);
+        const result = await handleSameDayReminderRequest(tenantId);
         res.json(result);
     })
 );
@@ -56,8 +58,9 @@ router.post(
     requireFirebaseAuth(),
     requireRole('manager', 'owner'),
     asyncHandler(async (req: Request, res: Response): Promise<void> => {
+        const tenantId = getTenantId(req);
         const date = typeof req.body?.date === 'string' ? req.body.date : undefined;
-        const result = await handleDailyAnalyticsRequest(date);
+        const result = await handleDailyAnalyticsRequest(date, tenantId);
         res.json(result);
     })
 );
