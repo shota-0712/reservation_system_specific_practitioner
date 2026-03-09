@@ -277,6 +277,51 @@ export interface Reservation extends BaseEntity {
 }
 
 // ============================================
+// RFM
+// ============================================
+
+/** セグメント名（新体系）。旧: vip→champion, dormant→atRisk, lost→hibernating */
+export type RfmSegment = 'champion' | 'loyal' | 'new' | 'atRisk' | 'hibernating';
+
+/** テナントごとのRFM閾値設定。未保存時はサービス層のデフォルト値を使用。 */
+export interface RfmThresholds {
+    recency: {
+        score5: number;  // ≤ days → score 5（最高）
+        score4: number;
+        score3: number;
+        score2: number;
+    };
+    frequency: {
+        score5: number;  // ≥ visits → score 5
+        score4: number;
+        score3: number;
+        score2: number;
+    };
+    monetary: {
+        score5: number;  // ≥ yen → score 5
+        score4: number;
+        score3: number;
+        score2: number;
+    };
+    updatedAt?: Timestamp;
+    updatedBy?: string;
+}
+
+/** テナント単位の通知設定（管理画面: settings/notifications）。 */
+export interface TenantNotificationSettings {
+    emailNewReservation: boolean;
+    emailCancellation: boolean;
+    emailDailyReport: boolean;
+    lineReminder: boolean;
+    lineConfirmation: boolean;
+    lineReview: boolean;
+    pushNewReservation: boolean;
+    pushCancellation: boolean;
+    updatedAt?: Timestamp;
+    updatedBy?: string;
+}
+
+// ============================================
 // Customer (顧客)
 // ============================================
 

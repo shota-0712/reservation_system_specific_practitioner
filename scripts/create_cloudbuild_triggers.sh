@@ -30,13 +30,27 @@ WRITE_FREEZE_MODE="${WRITE_FREEZE_MODE:-false}"
 READINESS_REQUIRE_LINE="${READINESS_REQUIRE_LINE:-false}"
 READINESS_REQUIRE_GOOGLE_OAUTH="${READINESS_REQUIRE_GOOGLE_OAUTH:-true}"
 PUBLIC_ONBOARDING_ENABLED="${PUBLIC_ONBOARDING_ENABLED:-true}"
+BACKEND_INGRESS="${BACKEND_INGRESS:-all}"
+ADMIN_INGRESS="${ADMIN_INGRESS:-all}"
+CUSTOMER_INGRESS="${CUSTOMER_INGRESS:-all}"
+LANDING_INGRESS="${LANDING_INGRESS:-all}"
+BACKEND_SERVICE_ACCOUNT="${BACKEND_SERVICE_ACCOUNT:-}"
+ADMIN_SERVICE_ACCOUNT="${ADMIN_SERVICE_ACCOUNT:-}"
+CUSTOMER_SERVICE_ACCOUNT="${CUSTOMER_SERVICE_ACCOUNT:-}"
+LANDING_SERVICE_ACCOUNT="${LANDING_SERVICE_ACCOUNT:-}"
 FORCE_RECREATE="${FORCE_RECREATE:-false}"
 AUTO_RECREATE_ON_UPDATE_CONFLICT="${AUTO_RECREATE_ON_UPDATE_CONFLICT:-true}"
+# TRIGGER_UPDATE_STRATEGY: auto|update|import (default: auto)
+#   auto   - try `update github --update-substitutions`; on INVALID_ARGUMENT fall back to `import`
+#   update - use `update github --update-substitutions` only; no fallback
+#   import - skip update attempt; go directly to `describe -> patch -> import`
+TRIGGER_UPDATE_STRATEGY="${TRIGGER_UPDATE_STRATEGY:-auto}"
 
 CLOUDSQL_CONNECTION="${CLOUDSQL_CONNECTION:-}"
 CLOUDSQL_INSTANCE="${CLOUDSQL_INSTANCE:-}"
-DB_USER="${DB_USER:-app_user}"
+DB_USER="${DB_USER:-migration_user}"  # migration専用ユーザー。アプリ実行ユーザー(app_user)とは分離
 DB_NAME="${DB_NAME:-reservation_system}"
+DB_PASSWORD_SECRET="${DB_PASSWORD_SECRET:-db-password-migration}"  # migration専用 secret。runtime は db-password を使用
 GOOGLE_OAUTH_CLIENT_ID="${GOOGLE_OAUTH_CLIENT_ID:-}"
 GOOGLE_OAUTH_REDIRECT_URI="${GOOGLE_OAUTH_REDIRECT_URI:-}"
 
@@ -65,6 +79,21 @@ if [ "${READINESS_REQUIRE_GOOGLE_OAUTH}" = "true" ] && { [ -z "${GOOGLE_OAUTH_CL
   echo "ERROR: READINESS_REQUIRE_GOOGLE_OAUTH=true requires GOOGLE_OAUTH_CLIENT_ID and GOOGLE_OAUTH_REDIRECT_URI."
   exit 1
 fi
+
+validate_ingress_mode() {
+  case "$1" in
+    all|internal|internal-and-cloud-load-balancing) ;;
+    *)
+      echo "ERROR: invalid ingress mode '$1'. expected one of all|internal|internal-and-cloud-load-balancing."
+      exit 1
+      ;;
+  esac
+}
+
+validate_ingress_mode "${BACKEND_INGRESS}"
+validate_ingress_mode "${ADMIN_INGRESS}"
+validate_ingress_mode "${CUSTOMER_INGRESS}"
+validate_ingress_mode "${LANDING_INGRESS}"
 
 if [ -n "${TRIGGER_SERVICE_ACCOUNT}" ] && [[ "${TRIGGER_SERVICE_ACCOUNT}" =~ @cloudbuild\.gserviceaccount\.com$ ]]; then
   echo "ERROR: TRIGGER_SERVICE_ACCOUNT points to a Cloud Build-managed service account (${TRIGGER_SERVICE_ACCOUNT})."
@@ -215,7 +244,76 @@ update_trigger() {
     return 20
   fi
 
+  if echo "${output}" | grep -q "INVALID_ARGUMENT"; then
+    echo "WARN: update INVALID_ARGUMENT for ${trigger_name} (--update-substitutions rejected by API)."
+    return 21
+  fi
+
   echo "${output}" >&2
+  return 1
+}
+
+import_trigger_with_substitutions() {
+  local trigger_name="$1"
+  local trigger_id="$2"
+  local included_files="$3"
+  local substitutions="$4"
+
+  local tmp_json
+  tmp_json="$(mktemp /tmp/cb-trigger-XXXXXX.json)"
+
+  # Fetch current trigger definition
+  if ! gcloud builds triggers describe "${trigger_id}" \
+       --project="${PROJECT_ID}" \
+       --region="${CB_REGION}" \
+       --format=json > "${tmp_json}" 2>&1; then
+    echo "FAIL: could not describe trigger ${trigger_name} (${trigger_id})" >&2
+    rm -f "${tmp_json}"
+    return 1
+  fi
+
+  # Patch substitutions, includedFiles, and branch pattern via Python
+  python3 - "${tmp_json}" "${substitutions}" "${included_files}" "${BRANCH_PATTERN}" <<'PYEOF'
+import sys, json
+
+path, subs_str, files_str, branch = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
+
+with open(path) as f:
+    obj = json.load(f)
+
+# Update substitutions (key=value,... format)
+subs = {}
+for pair in subs_str.split(','):
+    k, _, v = pair.partition('=')
+    if k:
+        subs[k] = v
+obj['substitutions'] = subs
+
+# Update includedFiles
+obj['includedFiles'] = [f.strip() for f in files_str.split(',') if f.strip()]
+
+# Update branch pattern in repositoryEventConfig.push.branch
+rec = obj.setdefault('repositoryEventConfig', {})
+push = rec.setdefault('push', {})
+push['branch'] = branch
+
+with open(path, 'w') as f:
+    json.dump(obj, f, indent=2)
+PYEOF
+
+  local import_output=""
+  if import_output="$(gcloud builds triggers import \
+       --source="${tmp_json}" \
+       --project="${PROJECT_ID}" \
+       --region="${CB_REGION}" 2>&1)"; then
+    echo "IMPORTED: ${trigger_name}"
+    rm -f "${tmp_json}"
+    return 0
+  fi
+
+  echo "FAIL: import failed for ${trigger_name}" >&2
+  echo "${import_output}" >&2
+  rm -f "${tmp_json}"
   return 1
 }
 
@@ -260,6 +358,15 @@ EOF
     return
   fi
 
+  # TRIGGER_UPDATE_STRATEGY=import: skip update, go directly to describe→patch→import
+  if [ "${TRIGGER_UPDATE_STRATEGY}" = "import" ]; then
+    echo "INFO: TRIGGER_UPDATE_STRATEGY=import, skipping update for ${trigger_name}"
+    if ! import_trigger_with_substitutions "${trigger_name}" "${existing_id}" "${included_files}" "${substitutions}"; then
+      exit 1
+    fi
+    return
+  fi
+
   set +e
   update_trigger "${trigger_name}" "${existing_id}" "${included_files}" "${substitutions}"
   update_status=$?
@@ -286,10 +393,23 @@ EOF
     return
   fi
 
+  if [ "${update_status}" -eq 21 ]; then
+    if [ "${TRIGGER_UPDATE_STRATEGY}" = "auto" ]; then
+      echo "INFO: INVALID_ARGUMENT fallback → import for ${trigger_name}"
+      if ! import_trigger_with_substitutions "${trigger_name}" "${existing_id}" "${included_files}" "${substitutions}"; then
+        exit 1
+      fi
+      return
+    fi
+    # strategy=update: no fallback allowed
+    echo "FAIL: update rejected with INVALID_ARGUMENT for ${trigger_name}. Set TRIGGER_UPDATE_STRATEGY=auto or import." >&2
+    exit 21
+  fi
+
   exit "${update_status}"
 }
 
-backend_substitutions="_DEPLOY_TARGET=backend,_RUN_INTEGRATION=${RUN_INTEGRATION},_RUN_MIGRATIONS=${RUN_MIGRATIONS},_WRITE_FREEZE_MODE=${WRITE_FREEZE_MODE},_CLOUDSQL_CONNECTION=${CLOUDSQL_CONNECTION},_DB_USER=${DB_USER},_DB_NAME=${DB_NAME},_NEXT_PUBLIC_FIREBASE_PROJECT_ID=${NEXT_PUBLIC_FIREBASE_PROJECT_ID},_READINESS_REQUIRE_LINE=${READINESS_REQUIRE_LINE},_READINESS_REQUIRE_GOOGLE_OAUTH=${READINESS_REQUIRE_GOOGLE_OAUTH},_PUBLIC_ONBOARDING_ENABLED=${PUBLIC_ONBOARDING_ENABLED}"
+backend_substitutions="_DEPLOY_TARGET=backend,_RUN_INTEGRATION=${RUN_INTEGRATION},_RUN_MIGRATIONS=${RUN_MIGRATIONS},_WRITE_FREEZE_MODE=${WRITE_FREEZE_MODE},_CLOUDSQL_CONNECTION=${CLOUDSQL_CONNECTION},_DB_USER=${DB_USER},_DB_NAME=${DB_NAME},_DB_PASSWORD_SECRET=${DB_PASSWORD_SECRET},_NEXT_PUBLIC_FIREBASE_PROJECT_ID=${NEXT_PUBLIC_FIREBASE_PROJECT_ID},_READINESS_REQUIRE_LINE=${READINESS_REQUIRE_LINE},_READINESS_REQUIRE_GOOGLE_OAUTH=${READINESS_REQUIRE_GOOGLE_OAUTH},_PUBLIC_ONBOARDING_ENABLED=${PUBLIC_ONBOARDING_ENABLED},_BACKEND_INGRESS=${BACKEND_INGRESS},_BACKEND_SERVICE_ACCOUNT=${BACKEND_SERVICE_ACCOUNT}"
 if [ -n "${CLOUDSQL_INSTANCE}" ]; then
   backend_substitutions="${backend_substitutions},_CLOUDSQL_INSTANCE=${CLOUDSQL_INSTANCE}"
 fi
@@ -297,9 +417,9 @@ if [ -n "${GOOGLE_OAUTH_CLIENT_ID}" ]; then
   backend_substitutions="${backend_substitutions},_GOOGLE_OAUTH_CLIENT_ID=${GOOGLE_OAUTH_CLIENT_ID},_GOOGLE_OAUTH_REDIRECT_URI=${GOOGLE_OAUTH_REDIRECT_URI}"
 fi
 
-admin_substitutions="_DEPLOY_TARGET=admin,_NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL},_NEXT_PUBLIC_CUSTOMER_URL=${NEXT_PUBLIC_CUSTOMER_URL},_NEXT_PUBLIC_TENANT_ID=${NEXT_PUBLIC_TENANT_ID},_NEXT_PUBLIC_FIREBASE_API_KEY=${NEXT_PUBLIC_FIREBASE_API_KEY},_NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=${NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN},_NEXT_PUBLIC_FIREBASE_PROJECT_ID=${NEXT_PUBLIC_FIREBASE_PROJECT_ID},_NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET=${NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET},_NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=${NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID},_NEXT_PUBLIC_FIREBASE_APP_ID=${NEXT_PUBLIC_FIREBASE_APP_ID}"
-customer_substitutions="_DEPLOY_TARGET=customer,_CUSTOMER_API_URL=${CUSTOMER_API_URL},_CUSTOMER_TENANT_KEY=${CUSTOMER_TENANT_KEY}"
-landing_substitutions="_DEPLOY_TARGET=landing,_NEXT_PUBLIC_ADMIN_URL=${NEXT_PUBLIC_ADMIN_URL}"
+admin_substitutions="_DEPLOY_TARGET=admin,_NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL},_NEXT_PUBLIC_CUSTOMER_URL=${NEXT_PUBLIC_CUSTOMER_URL},_NEXT_PUBLIC_TENANT_ID=${NEXT_PUBLIC_TENANT_ID},_NEXT_PUBLIC_FIREBASE_API_KEY=${NEXT_PUBLIC_FIREBASE_API_KEY},_NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=${NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN},_NEXT_PUBLIC_FIREBASE_PROJECT_ID=${NEXT_PUBLIC_FIREBASE_PROJECT_ID},_NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET=${NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET},_NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=${NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID},_NEXT_PUBLIC_FIREBASE_APP_ID=${NEXT_PUBLIC_FIREBASE_APP_ID},_ADMIN_INGRESS=${ADMIN_INGRESS},_ADMIN_SERVICE_ACCOUNT=${ADMIN_SERVICE_ACCOUNT}"
+customer_substitutions="_DEPLOY_TARGET=customer,_CUSTOMER_API_URL=${CUSTOMER_API_URL},_CUSTOMER_TENANT_KEY=${CUSTOMER_TENANT_KEY},_CUSTOMER_INGRESS=${CUSTOMER_INGRESS},_CUSTOMER_SERVICE_ACCOUNT=${CUSTOMER_SERVICE_ACCOUNT}"
+landing_substitutions="_DEPLOY_TARGET=landing,_NEXT_PUBLIC_ADMIN_URL=${NEXT_PUBLIC_ADMIN_URL},_LANDING_INGRESS=${LANDING_INGRESS},_LANDING_SERVICE_ACCOUNT=${LANDING_SERVICE_ACCOUNT}"
 
 ensure_trigger \
   "${TRIGGER_PREFIX}-backend" \

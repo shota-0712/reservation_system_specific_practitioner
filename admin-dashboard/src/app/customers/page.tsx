@@ -7,6 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 import { customersApi } from "@/lib/api";
 import { logger } from "@/lib/logger";
+import { getRfmSegmentDisplay } from "@/lib/rfm";
 
 interface Customer {
     id: string;
@@ -31,15 +32,6 @@ interface PaginationInfo {
     hasPrev: boolean;
 }
 
-const rfmSegmentLabels: Record<string, { label: string; color: string }> = {
-    champion: { label: "チャンピオン", color: "bg-emerald-100 text-emerald-700" },
-    loyal: { label: "ロイヤル", color: "bg-blue-100 text-blue-700" },
-    potential: { label: "ポテンシャル", color: "bg-amber-100 text-amber-700" },
-    promising: { label: "有望", color: "bg-purple-100 text-purple-700" },
-    needsAttention: { label: "要注意", color: "bg-orange-100 text-orange-700" },
-    atRisk: { label: "リスク", color: "bg-red-100 text-red-700" },
-    inactive: { label: "休眠", color: "bg-gray-100 text-gray-600" },
-};
 
 export default function CustomersPage() {
     const [customers, setCustomers] = useState<Customer[]>([]);
@@ -178,7 +170,7 @@ export default function CustomersPage() {
                             </thead>
                             <tbody>
                                 {filteredCustomers.map((customer) => {
-                                    const segment = customer.rfmSegment ? rfmSegmentLabels[customer.rfmSegment] : null;
+                                    const segment = getRfmSegmentDisplay(customer.rfmSegment);
                                     return (
                                         <tr key={customer.id} className="border-b last:border-b-0 hover:bg-gray-50">
                                             <td className="p-4">
@@ -217,10 +209,12 @@ export default function CustomersPage() {
                                                 ¥{(customer.totalSpend || 0).toLocaleString()}
                                             </td>
                                             <td className="p-4">
-                                                {segment && (
+                                                {segment ? (
                                                     <span className={cn("rounded-full px-2 py-1 text-xs font-medium", segment.color)}>
                                                         {segment.label}
                                                     </span>
+                                                ) : (
+                                                    <span className="text-xs text-muted-foreground">-</span>
                                                 )}
                                             </td>
                                             <td className="p-4">

@@ -16,11 +16,21 @@ CPU="${CPU:-1}"
 MIN_INSTANCES="${MIN_INSTANCES:-0}"
 MAX_INSTANCES="${MAX_INSTANCES:-3}"
 CONCURRENCY="${CONCURRENCY:-80}"
+INGRESS="${INGRESS:-all}"
+SERVICE_ACCOUNT="${SERVICE_ACCOUNT:-}"
 
 if [ -z "${PROJECT_ID}" ]; then
   echo "PROJECT_ID is required"
   exit 1
 fi
+
+case "${INGRESS}" in
+  all|internal|internal-and-cloud-load-balancing) ;;
+  *)
+    echo "INGRESS must be one of: all, internal, internal-and-cloud-load-balancing"
+    exit 1
+    ;;
+esac
 
 IMAGE="gcr.io/${PROJECT_ID}/${IMAGE_NAME}:${TAG}"
 
@@ -38,11 +48,13 @@ ENV_FLAGS=()
 SECRET_FLAGS=()
 CLOUDSQL_FLAGS=()
 VPC_FLAGS=()
+SERVICE_ACCOUNT_FLAGS=()
 
 if [ -n "${ENV_VARS}" ]; then ENV_FLAGS=(--set-env-vars="${ENV_VARS}"); fi
 if [ -n "${SECRETS}" ]; then SECRET_FLAGS=(--set-secrets="${SECRETS}"); fi
 if [ -n "${CLOUDSQL_CONNECTION}" ]; then CLOUDSQL_FLAGS=(--add-cloudsql-instances="${CLOUDSQL_CONNECTION}"); fi
 if [ -n "${VPC_CONNECTOR}" ]; then VPC_FLAGS=(--vpc-connector="${VPC_CONNECTOR}"); fi
+if [ -n "${SERVICE_ACCOUNT}" ]; then SERVICE_ACCOUNT_FLAGS=(--service-account="${SERVICE_ACCOUNT}"); fi
 
 echo "Deploying to Cloud Run: ${SERVICE_NAME}"
 gcloud run deploy "${SERVICE_NAME}" \
@@ -50,6 +62,7 @@ gcloud run deploy "${SERVICE_NAME}" \
   --region "${REGION}" \
   --platform managed \
   --allow-unauthenticated \
+  --ingress "${INGRESS}" \
   --memory "${MEMORY}" \
   --cpu "${CPU}" \
   --min-instances "${MIN_INSTANCES}" \
@@ -58,6 +71,7 @@ gcloud run deploy "${SERVICE_NAME}" \
   "${ENV_FLAGS[@]}" \
   "${SECRET_FLAGS[@]}" \
   "${CLOUDSQL_FLAGS[@]}" \
-  "${VPC_FLAGS[@]}"
+  "${VPC_FLAGS[@]}" \
+  "${SERVICE_ACCOUNT_FLAGS[@]}"
 
 echo "Done."

@@ -8,6 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { customersApi } from "@/lib/api";
 import { cn } from "@/lib/utils";
+import { getRfmSegmentDisplay } from "@/lib/rfm";
 
 interface Customer {
     id: string;
@@ -30,6 +31,7 @@ interface Reservation {
     practitionerName?: string;
     status: string;
 }
+
 
 export default function CustomerDetailPage() {
     const router = useRouter();
@@ -81,6 +83,8 @@ export default function CustomerDetailPage() {
         return <div className="p-8">Customer not found</div>;
     }
 
+    const segment = getRfmSegmentDisplay(customer.rfmSegment);
+
     return (
         <div className="space-y-6">
             {/* Header */}
@@ -120,7 +124,13 @@ export default function CustomerDetailPage() {
                                     <User className="h-5 w-5" />
                                 </div>
                                 <div>
-                                    <div className="font-medium">{customer.rfmSegment || "-"}</div>
+                                    {segment ? (
+                                        <span className={cn("inline-flex rounded-full px-2 py-1 text-xs font-medium", segment.color)}>
+                                            {segment.label}
+                                        </span>
+                                    ) : (
+                                        <div className="font-medium">-</div>
+                                    )}
                                     <div className="text-xs text-muted-foreground">ランク</div>
                                 </div>
                             </div>

@@ -12,6 +12,7 @@ import { asyncHandler } from '../../middleware/error-handler.js';
 import { handleDayBeforeReminderRequest, handleSameDayReminderRequest } from '../../jobs/reminder.job.js';
 import { handleDailyAnalyticsRequest } from '../../jobs/daily-analytics.job.js';
 import { createGoogleCalendarSyncQueueService } from '../../services/google-calendar-sync-queue.service.js';
+import { recalculateRfmForTenant } from '../../services/rfm-thresholds.service.js';
 
 const router = Router();
 const retryGoogleSyncSchema = z.object({
@@ -21,7 +22,7 @@ const retryGoogleSyncSchema = z.object({
 
 /**
  * 前日リマインダー手動実行
- * POST /api/v1/:tenantKey/admin/jobs/reminders/day-before
+ * POST /api/v1/admin/jobs/reminders/day-before
  */
 router.post(
     '/reminders/day-before',
@@ -36,7 +37,7 @@ router.post(
 
 /**
  * 当日リマインダー手動実行
- * POST /api/v1/:tenantKey/admin/jobs/reminders/same-day
+ * POST /api/v1/admin/jobs/reminders/same-day
  */
 router.post(
     '/reminders/same-day',
@@ -51,7 +52,7 @@ router.post(
 
 /**
  * 日次集計手動実行
- * POST /api/v1/:tenantKey/admin/jobs/analytics/daily
+ * POST /api/v1/admin/jobs/analytics/daily
  */
 router.post(
     '/analytics/daily',
@@ -67,7 +68,7 @@ router.post(
 
 /**
  * Google Calendar sync queue processing (manual)
- * POST /api/v1/:tenantKey/admin/jobs/integrations/google-calendar/sync
+ * POST /api/v1/admin/jobs/integrations/google-calendar/sync
  */
 router.post(
     '/integrations/google-calendar/sync',
@@ -85,7 +86,7 @@ router.post(
 
 /**
  * Google Calendar dead/failed queue retry (manual)
- * POST /api/v1/:tenantKey/admin/jobs/integrations/google-calendar/retry
+ * POST /api/v1/admin/jobs/integrations/google-calendar/retry
  */
 router.post(
     '/integrations/google-calendar/retry',
@@ -100,6 +101,21 @@ router.post(
         const queue = createGoogleCalendarSyncQueueService(tenantId);
         const stats = await queue.retryDeadTasks({ limit, includeFailed });
         res.json({ success: true, stats });
+    })
+);
+
+/**
+ * CRM-BE-003: RFMセグメント一括再計算
+ * POST /api/v1/admin/jobs/customers/rfm/recalculate
+ */
+router.post(
+    '/customers/rfm/recalculate',
+    requireFirebaseAuth(),
+    requireRole('manager', 'owner'),
+    asyncHandler(async (req: Request, res: Response): Promise<void> => {
+        const tenantId = getTenantId(req);
+        const result = await recalculateRfmForTenant(tenantId);
+        res.json({ success: true, data: result });
     })
 );
 

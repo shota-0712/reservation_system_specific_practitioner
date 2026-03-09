@@ -5,12 +5,13 @@
 
 import { Router, Request, Response } from 'express';
 import { requireFirebaseAuth, requireRole } from '../../middleware/auth.js';
-import { getTenant } from '../../middleware/tenant.js';
+import { getTenantId } from '../../middleware/tenant.js';
 import { asyncHandler } from '../../middleware/error-handler.js';
 import { validateQuery } from '../../middleware/validation.js';
 import { DatabaseService } from '../../config/database.js';
 import { createReservationRepository, createPractitionerRepository } from '../../repositories/index.js';
 import type { Reservation, Practitioner } from '../../types/index.js';
+import { getDashboardActivity } from '../../services/dashboard-activity.service.js';
 import { z } from 'zod';
 
 const router = Router();
@@ -37,7 +38,7 @@ router.get(
     requireFirebaseAuth(),
     requireRole('staff', 'manager', 'owner'),
     asyncHandler(async (req: Request, res: Response): Promise<void> => {
-        const tenant = getTenant(req);
+        const tenantId = getTenantId(req);
 
         const today = new Date();
         const todayStr = formatDate(today);
@@ -54,8 +55,8 @@ router.get(
                     COUNT(*) FILTER (WHERE status = 'completed') as completed_count
                  FROM reservations
                  WHERE tenant_id = $1 AND date = $2`,
-                [tenant.id, todayStr],
-                tenant.id
+                [tenantId, todayStr],
+                tenantId
             ),
             DatabaseService.queryOne(
                 `SELECT
@@ -64,8 +65,8 @@ router.get(
                     COUNT(*) FILTER (WHERE status = 'completed') as completed_count
                  FROM reservations
                  WHERE tenant_id = $1 AND date = $2`,
-                [tenant.id, yesterdayStr],
-                tenant.id
+                [tenantId, yesterdayStr],
+                tenantId
             ),
         ]);
 
@@ -87,15 +88,15 @@ router.get(
                 `SELECT COUNT(*) as count
                  FROM customers
                  WHERE tenant_id = $1 AND created_at >= $2 AND created_at < $3`,
-                [tenant.id, todayStart, tomorrowStart],
-                tenant.id
+                [tenantId, todayStart, tomorrowStart],
+                tenantId
             ),
             DatabaseService.queryOne(
                 `SELECT COUNT(*) as count
                  FROM customers
                  WHERE tenant_id = $1 AND created_at >= $2 AND created_at < $3`,
-                [tenant.id, yesterdayStart, todayStart],
-                tenant.id
+                [tenantId, yesterdayStart, todayStart],
+                tenantId
             ),
         ]);
 
@@ -150,10 +151,10 @@ router.get(
     requireFirebaseAuth(),
     requireRole('staff', 'manager', 'owner'),
     asyncHandler(async (req: Request, res: Response): Promise<void> => {
-        const tenant = getTenant(req);
+        const tenantId = getTenantId(req);
         const todayStr = formatDate(new Date());
 
-        const reservationRepo = createReservationRepository(tenant.id);
+        const reservationRepo = createReservationRepository(tenantId);
         const reservations = await reservationRepo.findByDate(todayStr);
 
         const data = reservations
@@ -187,11 +188,11 @@ router.get(
     requireFirebaseAuth(),
     requireRole('manager', 'owner'),
     asyncHandler(async (req: Request, res: Response): Promise<void> => {
-        const tenant = getTenant(req);
+        const tenantId = getTenantId(req);
         const todayStr = formatDate(new Date());
 
-        const practitionerRepo = createPractitionerRepository(tenant.id);
-        const reservationRepo = createReservationRepository(tenant.id);
+        const practitionerRepo = createPractitionerRepository(tenantId);
+        const reservationRepo = createReservationRepository(tenantId);
 
         const practitioners = await practitionerRepo.findAllActive();
         const reservations = await reservationRepo.findByDate(todayStr);
@@ -243,7 +244,7 @@ router.get(
     requireFirebaseAuth(),
     requireRole('staff', 'manager', 'owner'),
     asyncHandler(async (req: Request, res: Response): Promise<void> => {
-        const tenant = getTenant(req);
+        const tenantId = getTenantId(req);
 
         const today = new Date();
         const startDate = new Date(today);
@@ -261,8 +262,8 @@ router.get(
                AND date <= $3
              GROUP BY date
              ORDER BY date ASC`,
-            [tenant.id, formatDate(startDate), formatDate(today)],
-            tenant.id
+            [tenantId, formatDate(startDate), formatDate(today)],
+            tenantId
         );
 
         const rowsByDate = new Map<string, Record<string, unknown>>();
@@ -303,28 +304,9 @@ router.get(
     requireRole('staff', 'manager', 'owner'),
     validateQuery(dashboardActivityQuerySchema),
     asyncHandler(async (req: Request, res: Response): Promise<void> => {
-        const tenant = getTenant(req);
+        const tenantId = getTenantId(req);
         const { limit } = req.query as unknown as z.infer<typeof dashboardActivityQuerySchema>;
-
-        const rows = await DatabaseService.query(
-            `SELECT action, entity_type, entity_id, actor_type, actor_id, actor_name, created_at
-             FROM audit_logs
-             WHERE tenant_id = $1
-             ORDER BY created_at DESC
-             LIMIT $2`,
-            [tenant.id, limit],
-            tenant.id
-        );
-
-        const data = rows.map((row) => ({
-            action: row.action,
-            entityType: row.entity_type,
-            entityId: row.entity_id,
-            actorType: row.actor_type,
-            actorId: row.actor_id,
-            actorName: row.actor_name,
-            createdAt: row.created_at,
-        }));
+        const data = await getDashboardActivity(tenantId, limit);
 
         res.json({ success: true, data });
     })

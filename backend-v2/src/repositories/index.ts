@@ -13,6 +13,11 @@ export { OptionRepository, createOptionRepository } from './option.repository.js
 export { ReservationRepository, createReservationRepository, type ReservationFilters } from './reservation.repository.js';
 export { CustomerRepository, createCustomerRepository, type CustomerFilters } from './customer.repository.js';
 export {
+    TenantNotificationSettingsRepository,
+    createTenantNotificationSettingsRepository,
+    DEFAULT_TENANT_NOTIFICATION_SETTINGS,
+} from './tenant-notification-settings.repository.js';
+export {
     KarteRepository,
     KarteTemplateRepository,
     createKarteRepository,

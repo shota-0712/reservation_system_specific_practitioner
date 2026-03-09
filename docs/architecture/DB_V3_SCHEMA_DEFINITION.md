@@ -1,10 +1,14 @@
 # DB V3 スキーマ定義（Cloud SQL / PostgreSQL）
 
-更新日時: 2026-03-05 JST  
+更新日時: 2026-03-06 JST
 対象 migration:
 
 - `database/migrations/20260306_v3_core_normalization_and_exports.sql`
 - `database/migrations/20260307_export_jobs_gcs_storage.sql`
+- `database/migrations/20260305_rfm_thresholds.sql`（CRM拡張: tenant_rfm_settings）
+- `database/migrations/20260309_tenant_notification_settings.sql`（CRM拡張: tenant_notification_settings）
+- `database/migrations/20260310_booking_link_resolve_function.sql`（resolve_booking_link_token 関数）
+- `database/migrations/20260311_mt_wave1_rls_hardening.sql`（FORCE RLS + resolve_active_store_context 関数）
 
 ## 1. 目的
 
@@ -151,9 +155,40 @@ RLS 対象:
 - 予約作成/更新は `starts_at/ends_at` を正本として更新
 - 予約重複の競合判定は DB の exclusion 制約（`23P01`）と API 409 変換で整合
 
-## 6. 監査参照
+## 6. CRM 拡張テーブル（Wave-B / MT-Wave-1）
+
+正本は migration ファイル。以下は概要のみ。
+
+### 6.1 tenant_rfm_settings
+
+- migration: `20260305_rfm_thresholds.sql` + `20260311_mt_wave1_rls_hardening.sql`
+- RLS: `ENABLE + FORCE ROW LEVEL SECURITY`
+- 主要カラム: `tenant_id UUID UNIQUE FK`, recency/frequency/monetary スコア閾値 × 4段階
+
+### 6.2 tenant_notification_settings
+
+- migration: `20260309_tenant_notification_settings.sql` + `20260311_mt_wave1_rls_hardening.sql`
+- RLS: `ENABLE + FORCE ROW LEVEL SECURITY`
+- 主要カラム: `tenant_id UUID UNIQUE FK`, email/line/push フラグ × 各種
+
+### 6.3 SECURITY DEFINER 関数
+
+| 関数名 | migration | 用途 |
+|---|---|---|
+| `resolve_booking_link_token(text)` | `20260310_booking_link_resolve_function.sql` | booking-link token → tenant_id/store_id 解決（token-only 公開フロー） |
+| `resolve_active_store_context(text)` | `20260311_mt_wave1_rls_hardening.sql` | store_code → tenant_id/store_id 解決（テナント解決ミドルウェア bootstrap フロー） |
+
+両関数とも `REVOKE ALL FROM PUBLIC` + `GRANT EXECUTE TO app_user` で権限制御。
+
+## 7. migration 実行ユーザー
+
+- migration は `migration_user`（DDL権限保有）で実行。
+- アプリ実行は `app_user`（`BYPASSRLS` 禁止）で実行。
+- `app_user` に `BYPASSRLS` が残っている場合は migration を失敗させる（要 `ALTER ROLE app_user NOBYPASSRLS`）。
+
+## 8. 監査参照
 
 - Phase A 監査:
   - `docs/runbooks/DB_V3_PHASE_A_AUDIT.md`
-- Phase B 実行ログ:
+- Phase B 実行ログ（MT Wave-1 §11 含む）:
   - `docs/runbooks/DB_V3_PHASE_B_EXECUTION_LOG.md`

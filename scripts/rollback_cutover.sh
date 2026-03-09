@@ -103,15 +103,20 @@ detect_previous_revision() {
       --format="value(status.latestReadyRevisionName)"
   )"
 
-  mapfile -t revisions < <(
-    gcloud run revisions list \
-      --project "${PROJECT_ID}" \
-      --region "${REGION}" \
-      --service "${service}" \
-      --sort-by="~createTime" \
-      --limit=10 \
-      --format="value(metadata.name)"
-  )
+  revisions=()
+  while IFS= read -r revision; do
+    if [ -n "${revision}" ]; then
+      revisions+=("${revision}")
+    fi
+  done <<EOF
+$(gcloud run revisions list \
+  --project "${PROJECT_ID}" \
+  --region "${REGION}" \
+  --service "${service}" \
+  --sort-by="~createTime" \
+  --limit=10 \
+  --format="value(metadata.name)")
+EOF
 
   target=""
   for revision in "${revisions[@]}"; do

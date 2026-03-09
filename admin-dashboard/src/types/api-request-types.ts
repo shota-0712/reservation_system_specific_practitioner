@@ -212,3 +212,14 @@ export interface UpdateLineRequest {
     liffId?: string | null;
     mode?: 'tenant' | 'store' | 'practitioner' | string | null;
 }
+
+export interface UpdateNotificationSettingsRequest {
+    emailNewReservation?: boolean;
+    emailCancellation?: boolean;
+    emailDailyReport?: boolean;
+    lineReminder?: boolean;
+    lineConfirmation?: boolean;
+    lineReview?: boolean;
+    pushNewReservation?: boolean;
+    pushCancellation?: boolean;
+}

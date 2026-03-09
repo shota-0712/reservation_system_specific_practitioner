@@ -6,6 +6,7 @@
 import { DatabaseService } from '../config/database.js';
 import { NotFoundError } from '../utils/errors.js';
 import type { Reservation, ReservationStatus, PaginationParams } from '../types/index.js';
+import { buildReservationFilterSql, type ReservationFilters } from './reservation-filters.js';
 
 const DEFAULT_TIMEZONE = 'Asia/Tokyo';
 
@@ -28,15 +29,6 @@ function buildPeriodRangeSql(
         ($${dateIdx}::date || ' ' || $${endTimeIdx} || ':00')::timestamp AT TIME ZONE $${timezoneIdx},
         '[)'
     )`;
-}
-
-export interface ReservationFilters {
-    status?: ReservationStatus | ReservationStatus[];
-    practitionerId?: string;
-    customerId?: string;
-    dateFrom?: string;
-    dateTo?: string;
-    date?: string;
 }
 
 interface ReservationMenuRow {
@@ -72,6 +64,8 @@ export interface ReservationItemInput {
         optionDuration: number;
     }>;
 }
+
+export type { ReservationFilters } from './reservation-filters.js';
 
 function mapReservation(row: Record<string, any>): Reservation {
     return {
@@ -200,6 +194,80 @@ export class ReservationRepository {
         });
     }
 
+    private async insertReservationItems(
+        client: { query: (sql: string, params?: unknown[]) => Promise<unknown> },
+        reservationId: string,
+        data: ReservationItemInput
+    ): Promise<void> {
+        if (data.menuItems && data.menuItems.length > 0) {
+            for (const item of data.menuItems) {
+                await client.query(
+                    `INSERT INTO reservation_menus (
+                        tenant_id, reservation_id, menu_id,
+                        menu_name, menu_price, menu_duration,
+                        sort_order, is_main, quantity
+                    ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+                    [
+                        this.tenantId,
+                        reservationId,
+                        item.menuId,
+                        item.menuName,
+                        item.menuPrice,
+                        item.menuDuration,
+                        item.sortOrder,
+                        item.isMain,
+                        1,
+                    ]
+                );
+            }
+        }
+
+        if (data.optionItems && data.optionItems.length > 0) {
+            for (const item of data.optionItems) {
+                await client.query(
+                    `INSERT INTO reservation_options (
+                        tenant_id, reservation_id, option_id,
+                        option_name, option_price, option_duration
+                    ) VALUES ($1,$2,$3,$4,$5,$6)`,
+                    [
+                        this.tenantId,
+                        reservationId,
+                        item.optionId,
+                        item.optionName,
+                        item.optionPrice,
+                        item.optionDuration,
+                    ]
+                );
+            }
+        }
+    }
+
+    private async replaceReservationItems(
+        client: { query: (sql: string, params?: unknown[]) => Promise<unknown> },
+        reservationId: string,
+        data: ReservationItemInput
+    ): Promise<void> {
+        await client.query(
+            'DELETE FROM reservation_menus WHERE tenant_id = $1 AND reservation_id = $2',
+            [this.tenantId, reservationId]
+        );
+        await client.query(
+            'DELETE FROM reservation_options WHERE tenant_id = $1 AND reservation_id = $2',
+            [this.tenantId, reservationId]
+        );
+
+        await this.insertReservationItems(client, reservationId, data);
+    }
+
+    private buildReservationItemSnapshot(data: ReservationItemInput) {
+        return {
+            menuIds: data.menuItems?.map((item) => item.menuId) ?? [],
+            menuNames: data.menuItems?.map((item) => item.menuName) ?? [],
+            optionIds: data.optionItems?.map((item) => item.optionId) ?? [],
+            optionNames: data.optionItems?.map((item) => item.optionName) ?? [],
+        };
+    }
+
     /**
      * Find reservation by ID
      */
@@ -230,50 +298,11 @@ export class ReservationRepository {
      */
     async findWithFilters(filters: ReservationFilters): Promise<Reservation[]> {
         let sql = 'SELECT * FROM reservations WHERE tenant_id = $1';
-        const params: any[] = [this.tenantId];
-        let paramIndex = 2;
+        const params: unknown[] = [this.tenantId];
+        const filterSql = buildReservationFilterSql(filters, 2);
 
-        if (filters.status) {
-            if (Array.isArray(filters.status)) {
-                sql += ` AND status = ANY($${paramIndex})`;
-                params.push(filters.status);
-            } else {
-                sql += ` AND status = $${paramIndex}`;
-                params.push(filters.status);
-            }
-            paramIndex++;
-        }
-
-        if (filters.practitionerId) {
-            sql += ` AND practitioner_id = $${paramIndex}`;
-            params.push(filters.practitionerId);
-            paramIndex++;
-        }
-
-        if (filters.customerId) {
-            sql += ` AND customer_id = $${paramIndex}`;
-            params.push(filters.customerId);
-            paramIndex++;
-        }
-
-        if (filters.date) {
-            sql += ` AND date = $${paramIndex}`;
-            params.push(filters.date);
-            paramIndex++;
-        }
-
-        if (filters.dateFrom) {
-            sql += ` AND date >= $${paramIndex}`;
-            params.push(filters.dateFrom);
-            paramIndex++;
-        }
-
-        if (filters.dateTo) {
-            sql += ` AND date <= $${paramIndex}`;
-            params.push(filters.dateTo);
-            paramIndex++;
-        }
-
+        sql += filterSql.sql;
+        params.push(...filterSql.params);
         sql += ' ORDER BY date ASC, start_time ASC';
 
         const rows = await DatabaseService.query(sql, params, this.tenantId);
@@ -303,55 +332,12 @@ export class ReservationRepository {
         // Count query
         let countSql = 'SELECT COUNT(*) as count FROM reservations WHERE tenant_id = $1';
         let sql = 'SELECT * FROM reservations WHERE tenant_id = $1';
-        const params: any[] = [this.tenantId];
-        let paramIndex = 2;
+        const params: unknown[] = [this.tenantId];
+        const filterSql = buildReservationFilterSql(filters, 2);
 
-        if (filters.status) {
-            if (Array.isArray(filters.status)) {
-                const clause = ` AND status = ANY($${paramIndex})`;
-                countSql += clause;
-                sql += clause;
-                params.push(filters.status);
-            } else {
-                const clause = ` AND status = $${paramIndex}`;
-                countSql += clause;
-                sql += clause;
-                params.push(filters.status);
-            }
-            paramIndex++;
-        }
-
-        if (filters.practitionerId) {
-            const clause = ` AND practitioner_id = $${paramIndex}`;
-            countSql += clause;
-            sql += clause;
-            params.push(filters.practitionerId);
-            paramIndex++;
-        }
-
-        if (filters.customerId) {
-            const clause = ` AND customer_id = $${paramIndex}`;
-            countSql += clause;
-            sql += clause;
-            params.push(filters.customerId);
-            paramIndex++;
-        }
-
-        if (filters.dateFrom) {
-            const clause = ` AND date >= $${paramIndex}`;
-            countSql += clause;
-            sql += clause;
-            params.push(filters.dateFrom);
-            paramIndex++;
-        }
-
-        if (filters.dateTo) {
-            const clause = ` AND date <= $${paramIndex}`;
-            countSql += clause;
-            sql += clause;
-            params.push(filters.dateTo);
-            paramIndex++;
-        }
+        countSql += filterSql.sql;
+        sql += filterSql.sql;
+        params.push(...filterSql.params);
 
         // Get total count
         const countRow = await DatabaseService.queryOne(countSql, params, this.tenantId);
@@ -361,7 +347,7 @@ export class ReservationRepository {
         const sortField = pagination.sortBy === 'date' ? 'date' : 'created_at';
         const sortOrder = pagination.sortOrder === 'asc' ? 'ASC' : 'DESC';
         sql += ` ORDER BY ${sortField} ${sortOrder}, start_time ${sortOrder}`;
-        sql += ` LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`;
+        sql += ` LIMIT $${filterSql.nextParamIndex} OFFSET $${filterSql.nextParamIndex + 1}`;
         params.push(limit, offset);
 
         const rows = await DatabaseService.query(sql, params, this.tenantId);
@@ -536,60 +522,13 @@ export class ReservationRepository {
 
             const reservationId = inserted.id as string;
 
-            if (data.menuItems && data.menuItems.length > 0) {
-                for (const item of data.menuItems) {
-                    await client.query(
-                        `INSERT INTO reservation_menus (
-                            tenant_id, reservation_id, menu_id,
-                            menu_name, menu_price, menu_duration,
-                            sort_order, is_main, quantity
-                        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
-                        [
-                            this.tenantId,
-                            reservationId,
-                            item.menuId,
-                            item.menuName,
-                            item.menuPrice,
-                            item.menuDuration,
-                            item.sortOrder,
-                            item.isMain,
-                            1,
-                        ]
-                    );
-                }
-            }
-
-            if (data.optionItems && data.optionItems.length > 0) {
-                for (const item of data.optionItems) {
-                    await client.query(
-                        `INSERT INTO reservation_options (
-                            tenant_id, reservation_id, option_id,
-                            option_name, option_price, option_duration
-                        ) VALUES ($1,$2,$3,$4,$5,$6)`,
-                        [
-                            this.tenantId,
-                            reservationId,
-                            item.optionId,
-                            item.optionName,
-                            item.optionPrice,
-                            item.optionDuration,
-                        ]
-                    );
-                }
-            }
+            await this.insertReservationItems(client, reservationId, data);
 
             const reservation = mapReservation(inserted as Record<string, any>);
-            const menuIds = data.menuItems?.map(m => m.menuId) ?? [];
-            const menuNames = data.menuItems?.map(m => m.menuName) ?? [];
-            const optionIds = data.optionItems?.map(o => o.optionId) ?? [];
-            const optionNames = data.optionItems?.map(o => o.optionName) ?? [];
 
             return {
                 ...reservation,
-                menuIds,
-                menuNames,
-                optionIds,
-                optionNames,
+                ...this.buildReservationItemSnapshot(data),
             };
         }, this.tenantId);
     }
@@ -748,56 +687,7 @@ export class ReservationRepository {
                 throw new NotFoundError('予約', id);
             }
 
-            await client.query(
-                'DELETE FROM reservation_menus WHERE tenant_id = $1 AND reservation_id = $2',
-                [this.tenantId, id]
-            );
-            await client.query(
-                'DELETE FROM reservation_options WHERE tenant_id = $1 AND reservation_id = $2',
-                [this.tenantId, id]
-            );
-
-            if (data.menuItems && data.menuItems.length > 0) {
-                for (const item of data.menuItems) {
-                    await client.query(
-                        `INSERT INTO reservation_menus (
-                            tenant_id, reservation_id, menu_id,
-                            menu_name, menu_price, menu_duration,
-                            sort_order, is_main, quantity
-                        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
-                        [
-                            this.tenantId,
-                            id,
-                            item.menuId,
-                            item.menuName,
-                            item.menuPrice,
-                            item.menuDuration,
-                            item.sortOrder,
-                            item.isMain,
-                            1,
-                        ]
-                    );
-                }
-            }
-
-            if (data.optionItems && data.optionItems.length > 0) {
-                for (const item of data.optionItems) {
-                    await client.query(
-                        `INSERT INTO reservation_options (
-                            tenant_id, reservation_id, option_id,
-                            option_name, option_price, option_duration
-                        ) VALUES ($1,$2,$3,$4,$5,$6)`,
-                        [
-                            this.tenantId,
-                            id,
-                            item.optionId,
-                            item.optionName,
-                            item.optionPrice,
-                            item.optionDuration,
-                        ]
-                    );
-                }
-            }
+            await this.replaceReservationItems(client, id, data);
 
             const reservation = mapReservation(updated as Record<string, any>);
             const [withItems] = await this.attachItems([reservation]);

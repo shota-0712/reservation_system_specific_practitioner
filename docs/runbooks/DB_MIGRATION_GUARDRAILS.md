@@ -45,3 +45,26 @@ Rollback is mandatory when any of the following is true:
 - Run migrations only through `scripts/run_migrations_cloudbuild.sh`.
 - No ad-hoc `psql -f` direct production runs.
 - Production cutover must use the same command path validated in rehearsal.
+
+## 7. Rehearsal Record Requirements (OPS-003)
+- Every rehearsal must leave evidence in `docs/runbooks/DB_V3_PHASE_B_EXECUTION_LOG.md`.
+- Minimum required fields:
+  - Executed date/time (JST), operator, target revisions (`reserve-api` / `reserve-admin` / `reserve-customer`)
+  - Total rehearsal duration and each stage duration (preflight / smoke / rollback dry-run)
+  - API request window definition (for example: last 60 minutes)
+  - P95 latency and error rate values with command source
+  - Rollback dry-run result (`can rollback` / `cannot rollback`) and reason
+  - Final decision (`Go` / `No-Go`)
+
+Reference command (Cloud Logging sample):
+
+```bash
+START="$(date -u -v-60M '+%Y-%m-%dT%H:%M:%SZ')"
+gcloud logging read \
+  "resource.type=\"cloud_run_revision\" AND resource.labels.service_name=\"reserve-api\" AND logName=\"projects/${PROJECT_ID}/logs/run.googleapis.com%2Frequests\" AND timestamp>=\"${START}\" AND httpRequest.requestUrl:\"/api/v1/\"" \
+  --project "${PROJECT_ID}" --limit 2000 --format=json
+```
+
+## 8. Decision Rule
+- `Go`: §3 SLO と §4 rollback 条件をすべて満たす。
+- `No-Go`: 1つでも超過/未充足があれば切替を停止し、修正タスクを先に完了する。

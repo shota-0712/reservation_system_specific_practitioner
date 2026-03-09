@@ -134,8 +134,8 @@ Tenant（企業）
 
 1. 管理者が Firebase Auth でログイン
 2. APIは JWT から管理者権限を取得
-3. ルート ` /api/v1/{tenantKey}/admin/... ` でテナントを決定
-   - tenantKey = `tenant_id` or `tenant_slug`
+3. ルート `/api/v1/admin/...` でテナントを決定（`:tenantKey` はURLに含まない）
+   - テナントはFirebase JWT Custom Claims（`tenantId`）から解決する
 4. 店舗単位操作は `store_id` を指定（ヘッダー or クエリ）
 
 ---

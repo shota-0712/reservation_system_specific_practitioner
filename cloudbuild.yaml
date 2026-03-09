@@ -17,8 +17,9 @@ substitutions:
   _RUN_INTEGRATION: "false"
   _WRITE_FREEZE_MODE: "false"
   _CLOUDSQL_INSTANCE: ""
-  _DB_USER: "app_user"
+  _DB_USER: "migration_user"  # migration専用ユーザー。アプリ実行は app_user を使用
   _DB_NAME: "reservation_system"
+  _DB_PASSWORD_SECRET: "db-password-migration"  # migration専用 secret。runtime は db-password を使用
 
   # Backend settings
   _BACKEND_SERVICE: reserve-api
@@ -26,6 +27,8 @@ substitutions:
   _BACKEND_CPU: "1"
   _BACKEND_MIN_INSTANCES: "0"
   _BACKEND_MAX_INSTANCES: "10"
+  _BACKEND_INGRESS: "all"
+  _BACKEND_SERVICE_ACCOUNT: ""
   _CLOUDSQL_CONNECTION: ""
 
   # Admin Dashboard settings
@@ -34,6 +37,8 @@ substitutions:
   _ADMIN_CPU: "1"
   _ADMIN_MIN_INSTANCES: "0"
   _ADMIN_MAX_INSTANCES: "5"
+  _ADMIN_INGRESS: "all"
+  _ADMIN_SERVICE_ACCOUNT: ""
 
   # Customer App settings
   _CUSTOMER_SERVICE: reserve-customer
@@ -41,6 +46,8 @@ substitutions:
   _CUSTOMER_CPU: "1"
   _CUSTOMER_MIN_INSTANCES: "0"
   _CUSTOMER_MAX_INSTANCES: "5"
+  _CUSTOMER_INGRESS: "all"
+  _CUSTOMER_SERVICE_ACCOUNT: ""
   _CUSTOMER_TENANT_KEY: "default"
   _NEXT_PUBLIC_TENANT_ID: "default"
 
@@ -50,6 +57,8 @@ substitutions:
   _LANDING_CPU: "1"
   _LANDING_MIN_INSTANCES: "0"
   _LANDING_MAX_INSTANCES: "3"
+  _LANDING_INGRESS: "all"
+  _LANDING_SERVICE_ACCOUNT: ""
 
   # Build-time environment variables
   _NEXT_PUBLIC_API_URL: ""
@@ -87,6 +96,21 @@ steps:
             exit 1
             ;;
         esac
+
+        validate_ingress() {
+          case "$1" in
+            all|internal|internal-and-cloud-load-balancing) ;;
+            *)
+              echo "ERROR: invalid ingress mode '$1'. expected one of all|internal|internal-and-cloud-load-balancing"
+              exit 1
+              ;;
+          esac
+        }
+
+        validate_ingress "${_BACKEND_INGRESS}"
+        validate_ingress "${_ADMIN_INGRESS}"
+        validate_ingress "${_CUSTOMER_INGRESS}"
+        validate_ingress "${_LANDING_INGRESS}"
     waitFor: ['-']
 
   # ============================================================
@@ -176,6 +200,7 @@ steps:
       - CLOUDSQL_INSTANCE=${_CLOUDSQL_INSTANCE}
       - DB_USER=${_DB_USER}
       - DB_NAME=${_DB_NAME}
+      - DB_PASSWORD_SECRET=${_DB_PASSWORD_SECRET}
     args:
       - -c
       - |
@@ -287,18 +312,25 @@ steps:
           SECRETS="$$SECRETS,GOOGLE_OAUTH_CLIENT_SECRET=google-oauth-client-secret:latest"
         fi
 
+        BACKEND_SERVICE_ACCOUNT_FLAG=""
+        if [ -n "${_BACKEND_SERVICE_ACCOUNT}" ]; then
+          BACKEND_SERVICE_ACCOUNT_FLAG="--service-account=${_BACKEND_SERVICE_ACCOUNT}"
+        fi
+
         gcloud run deploy ${_BACKEND_SERVICE} \
           --image gcr.io/$PROJECT_ID/${_BACKEND_SERVICE}:$BUILD_ID \
           --region ${_REGION} \
           --platform managed \
           --allow-unauthenticated \
+          --ingress ${_BACKEND_INGRESS} \
           --memory ${_BACKEND_MEMORY} \
           --cpu ${_BACKEND_CPU} \
           --min-instances ${_BACKEND_MIN_INSTANCES} \
           --max-instances ${_BACKEND_MAX_INSTANCES} \
           --env-vars-file="$$ENV_VARS_FILE" \
           --set-secrets="$$SECRETS" \
-          $$CLOUDSQL_FLAGS
+          $$CLOUDSQL_FLAGS \
+          $$BACKEND_SERVICE_ACCOUNT_FLAG
     waitFor: ['backend-push']
 
   # ============================================================
@@ -356,15 +388,22 @@ steps:
           exit 0
         fi
 
+        ADMIN_SERVICE_ACCOUNT_FLAG=""
+        if [ -n "${_ADMIN_SERVICE_ACCOUNT}" ]; then
+          ADMIN_SERVICE_ACCOUNT_FLAG="--service-account=${_ADMIN_SERVICE_ACCOUNT}"
+        fi
+
         gcloud run deploy ${_ADMIN_SERVICE} \
           --image gcr.io/$PROJECT_ID/${_ADMIN_SERVICE}:$BUILD_ID \
           --region ${_REGION} \
           --platform managed \
           --allow-unauthenticated \
+          --ingress ${_ADMIN_INGRESS} \
           --memory ${_ADMIN_MEMORY} \
           --cpu ${_ADMIN_CPU} \
           --min-instances ${_ADMIN_MIN_INSTANCES} \
-          --max-instances ${_ADMIN_MAX_INSTANCES}
+          --max-instances ${_ADMIN_MAX_INSTANCES} \
+          $$ADMIN_SERVICE_ACCOUNT_FLAG
     waitFor: ['admin-push', 'backend-deploy']
 
   # ============================================================
@@ -422,16 +461,23 @@ steps:
           exit 1
         fi
 
+        CUSTOMER_SERVICE_ACCOUNT_FLAG=""
+        if [ -n "${_CUSTOMER_SERVICE_ACCOUNT}" ]; then
+          CUSTOMER_SERVICE_ACCOUNT_FLAG="--service-account=${_CUSTOMER_SERVICE_ACCOUNT}"
+        fi
+
         gcloud run deploy ${_CUSTOMER_SERVICE} \
           --image gcr.io/$PROJECT_ID/${_CUSTOMER_SERVICE}:$BUILD_ID \
           --region ${_REGION} \
           --platform managed \
           --allow-unauthenticated \
+          --ingress ${_CUSTOMER_INGRESS} \
           --memory ${_CUSTOMER_MEMORY} \
           --cpu ${_CUSTOMER_CPU} \
           --min-instances ${_CUSTOMER_MIN_INSTANCES} \
           --max-instances ${_CUSTOMER_MAX_INSTANCES} \
-          --set-env-vars=RESERVATION_API_URL=$$API_URL,RESERVATION_TENANT_KEY=${_CUSTOMER_TENANT_KEY},RESERVATION_ENABLE_MOCK=false,RESERVATION_BYPASS_LIFF=false
+          --set-env-vars=RESERVATION_API_URL=$$API_URL,RESERVATION_TENANT_KEY=${_CUSTOMER_TENANT_KEY},RESERVATION_ENABLE_MOCK=false,RESERVATION_BYPASS_LIFF=false \
+          $$CUSTOMER_SERVICE_ACCOUNT_FLAG
     waitFor: ['customer-push', 'admin-deploy']
 
   - id: "customer-smoke"
@@ -545,15 +591,22 @@ steps:
           exit 0
         fi
 
+        LANDING_SERVICE_ACCOUNT_FLAG=""
+        if [ -n "${_LANDING_SERVICE_ACCOUNT}" ]; then
+          LANDING_SERVICE_ACCOUNT_FLAG="--service-account=${_LANDING_SERVICE_ACCOUNT}"
+        fi
+
         gcloud run deploy ${_LANDING_SERVICE} \
           --image gcr.io/$PROJECT_ID/${_LANDING_SERVICE}:$BUILD_ID \
           --region ${_REGION} \
           --platform managed \
           --allow-unauthenticated \
+          --ingress ${_LANDING_INGRESS} \
           --memory ${_LANDING_MEMORY} \
           --cpu ${_LANDING_CPU} \
           --min-instances ${_LANDING_MIN_INSTANCES} \
-          --max-instances ${_LANDING_MAX_INSTANCES}
+          --max-instances ${_LANDING_MAX_INSTANCES} \
+          $$LANDING_SERVICE_ACCOUNT_FLAG
     waitFor: ['landing-push']
 
 timeout: 1800s  # 30 minutes

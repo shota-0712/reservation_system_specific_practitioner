@@ -117,8 +117,14 @@ firebase_signup_payload="$(jq -cn \
 
 firebase_signup_response="$(api_request POST "https://identitytoolkit.googleapis.com/v1/accounts:signUp?key=${FIREBASE_API_KEY}" "${firebase_signup_payload}")"
 id_token="$(echo "${firebase_signup_response}" | jq -r '.idToken')"
+refresh_token="$(echo "${firebase_signup_response}" | jq -r '.refreshToken')"
 if [ -z "${id_token}" ] || [ "${id_token}" = "null" ]; then
   echo "ERROR: failed to obtain Firebase ID token"
+  echo "${firebase_signup_response}"
+  exit 1
+fi
+if [ -z "${refresh_token}" ] || [ "${refresh_token}" = "null" ]; then
+  echo "ERROR: failed to obtain Firebase refresh token"
   echo "${firebase_signup_response}"
   exit 1
 fi
@@ -152,12 +158,48 @@ echo "== 4) tenant public auth config check =="
 auth_config="$(api_request GET "${API_URL}/api/v1/${tenant_key}/auth/config")"
 expect_success "${auth_config}" "auth/config"
 
-echo "== 5) onboarding status update (pending -> in_progress -> completed) =="
-status_before="$(api_request GET "${API_URL}/api/v1/${tenant_key}/admin/onboarding/status" "" "${id_token}")"
+echo "== 5) sync admin claims and refresh token =="
+claims_sync_response="$(api_request POST "${API_URL}/api/platform/v1/admin/claims/sync" "" "${id_token}")"
+expect_success "${claims_sync_response}" "admin/claims/sync"
+
+refresh_response_file="$(mktemp)"
+tmp_files+=("${refresh_response_file}")
+refresh_token_encoded="$(jq -rn --arg value "${refresh_token}" '$value|@uri')"
+refresh_payload="grant_type=refresh_token&refresh_token=${refresh_token_encoded}"
+refresh_status="$(
+  curl \
+    --silent \
+    --show-error \
+    --output "${refresh_response_file}" \
+    --write-out "%{http_code}" \
+    --request POST \
+    --header "Content-Type: application/x-www-form-urlencoded" \
+    --data "${refresh_payload}" \
+    "https://securetoken.googleapis.com/v1/token?key=${FIREBASE_API_KEY}"
+)"
+
+if [ "${refresh_status}" -lt 200 ] || [ "${refresh_status}" -ge 300 ]; then
+  echo "ERROR: token refresh failed with status ${refresh_status}"
+  cat "${refresh_response_file}"
+  echo
+  exit 1
+fi
+
+id_token="$(jq -r '.id_token' "${refresh_response_file}")"
+refresh_token="$(jq -r '.refresh_token' "${refresh_response_file}")"
+if [ -z "${id_token}" ] || [ "${id_token}" = "null" ]; then
+  echo "ERROR: refreshed ID token is missing"
+  cat "${refresh_response_file}"
+  echo
+  exit 1
+fi
+
+echo "== 6) onboarding status update (pending -> in_progress -> completed) =="
+status_before="$(api_request GET "${API_URL}/api/v1/admin/onboarding/status" "" "${id_token}")"
 expect_success "${status_before}" "onboarding/status(before)"
 
 update_in_progress_payload='{"status":"in_progress","onboardingPayload":{"source":"smoke-script","step":"in_progress"}}'
-status_in_progress="$(api_request PATCH "${API_URL}/api/v1/${tenant_key}/admin/onboarding/status" "${update_in_progress_payload}" "${id_token}")"
+status_in_progress="$(api_request PATCH "${API_URL}/api/v1/admin/onboarding/status" "${update_in_progress_payload}" "${id_token}")"
 expect_success "${status_in_progress}" "onboarding/status(in_progress)"
 
 update_completed_payload="$(jq -cn \
@@ -170,7 +212,7 @@ update_completed_payload="$(jq -cn \
     }
   }')"
 
-status_completed="$(api_request PATCH "${API_URL}/api/v1/${tenant_key}/admin/onboarding/status" "${update_completed_payload}" "${id_token}")"
+status_completed="$(api_request PATCH "${API_URL}/api/v1/admin/onboarding/status" "${update_completed_payload}" "${id_token}")"
 expect_success "${status_completed}" "onboarding/status(completed)"
 if [ "$(echo "${status_completed}" | jq -r '.data.completed')" != "true" ]; then
   echo "ERROR: onboarding status did not transition to completed"
@@ -181,9 +223,9 @@ fi
 reservation_id=""
 booking_link_token=""
 if [ "${RUN_RESERVATION_TEST}" = "true" ]; then
-  echo "== 6) admin reservation flow smoke =="
+  echo "== 7) admin reservation flow smoke =="
   menu_payload='{"name":"スモークカット","category":"カット","duration":60,"price":5500,"description":"smoke test menu"}'
-  menu_response="$(api_request POST "${API_URL}/api/v1/${tenant_key}/admin/menus" "${menu_payload}" "${id_token}")"
+  menu_response="$(api_request POST "${API_URL}/api/v1/admin/menus" "${menu_payload}" "${id_token}")"
   expect_success "${menu_response}" "admin/menus(create)"
   menu_id="$(echo "${menu_response}" | jq -r '.data.id')"
 
@@ -200,13 +242,13 @@ if [ "${RUN_RESERVATION_TEST}" = "true" ]; then
       availableMenuIds:[$menuId]
     }')"
 
-  practitioner_response="$(api_request POST "${API_URL}/api/v1/${tenant_key}/admin/practitioners" "${practitioner_payload}" "${id_token}")"
+  practitioner_response="$(api_request POST "${API_URL}/api/v1/admin/practitioners" "${practitioner_payload}" "${id_token}")"
   expect_success "${practitioner_response}" "admin/practitioners(create)"
   practitioner_id="$(echo "${practitioner_response}" | jq -r '.data.id')"
 
-  echo "== 7) booking link token create/resolve =="
+  echo "== 8) booking link token create/resolve =="
   booking_link_payload="$(jq -cn --arg practitionerId "${practitioner_id}" '{practitionerId:$practitionerId,reissue:true}')"
-  booking_link_response="$(api_request POST "${API_URL}/api/v1/${tenant_key}/admin/booking-links" "${booking_link_payload}" "${id_token}")"
+  booking_link_response="$(api_request POST "${API_URL}/api/v1/admin/booking-links" "${booking_link_payload}" "${id_token}")"
   expect_success "${booking_link_response}" "admin/booking-links(create)"
   booking_link_token="$(echo "${booking_link_response}" | jq -r '.data.token')"
   if [ -z "${booking_link_token}" ] || [ "${booking_link_token}" = "null" ]; then
@@ -215,7 +257,7 @@ if [ "${RUN_RESERVATION_TEST}" = "true" ]; then
     exit 1
   fi
 
-  booking_link_resolve="$(api_request GET "${API_URL}/api/platform/v1/booking-links/resolve?token=${booking_link_token}")"
+  booking_link_resolve="$(api_request GET "${API_URL}/api/platform/v1/booking-links/resolve?token=${booking_link_token}&tenantKey=${tenant_key}")"
   expect_success "${booking_link_resolve}" "platform/booking-links/resolve"
   resolved_tenant_key="$(echo "${booking_link_resolve}" | jq -r '.data.tenantKey')"
   resolved_practitioner_id="$(echo "${booking_link_resolve}" | jq -r '.data.practitionerId')"
@@ -251,7 +293,7 @@ PY
       source:"admin"
     }')"
 
-  reservation_response="$(api_request POST "${API_URL}/api/v1/${tenant_key}/admin/reservations" "${reservation_payload}" "${id_token}")"
+  reservation_response="$(api_request POST "${API_URL}/api/v1/admin/reservations" "${reservation_payload}" "${id_token}")"
   expect_success "${reservation_response}" "admin/reservations(create)"
   reservation_id="$(echo "${reservation_response}" | jq -r '.data.id')"
 

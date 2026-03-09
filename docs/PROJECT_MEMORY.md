@@ -1,42 +1,105 @@
 # プロジェクトメモ（正本）
 
-**最終更新日**: 2026-03-04
+**最終更新日**: 2026-03-07（CRM-BE-001 gate pass + Cutover runbook 作成）
 **更新者**: Codex
 
 ## 1. このプロジェクトでやりたいこと
-- 施術者向けのマルチテナント予約SaaSを構築し、運用可能な品質で提供する。
-- 管理画面、顧客向けLINEミニアプリ、バックエンドAPIを一貫したデータモデルで接続する。
+- 施術者向けマルチテナント予約SaaSを、本番運用可能な品質で提供する。
+- 管理画面 / 顧客アプリ / backend API / runbook を同一運用フローで管理する。
 
-## 2. 現在の実装状況（把握できている範囲）
-### backend-v2
-- TypeScript + Express ベースのAPI実装は存在。
-- Cloud SQL (PostgreSQL) + RLS への移行計画ドキュメントあり（`docs/BACKEND_IMPLEMENTATION_PLAN.md`）。
+## 2. 現在の実装状況（2026-03-07 時点）
+
+### backend-v2（Cloud SQL + RLS）
+- Phase A/B + P0 + OPS-001: **完了**。
+- Wave-B:
+  - `CRM-BE-001`: **完了**（RFM 閾値モデル: migration + service + routes + tests）
+    - `database/migrations/20260305_rfm_thresholds.sql`: `tenant_rfm_settings` テーブル + RLS
+    - `database/migrations/20260305_rfm_segment_normalize.sql`: 旧セグメント値を新体系へ正規化
+    - `src/services/rfm-thresholds.service.ts`: GET/upsert/validate/calcScore/calcSegment/recalculate
+    - `src/routes/v1/rfm-settings.admin.routes.ts`: `GET/PUT /api/v1/admin/settings/rfm-thresholds`
+    - `tests/unit/rfm-thresholds.service.test.ts`: 純粋関数・バリデーション・テナント分離
+  - `CRM-BE-006`: **完了**（`tenant_notification_settings` migration + repository + type）
+  - `CRM-BE-007`: **完了**（`GET/PUT /api/v1/admin/settings/notifications`）
+- **MT Wave-1（DB厳格マルチテナント是正）**: **ローカル完了 / staging SQL検証ペンディング**
+  - `MT-A1`: `20260311_mt_wave1_rls_hardening.sql`（FORCE RLS + resolve_active_store_context）
+  - `MT-A2`: `tenant.ts` の store_code 解決を関数経由に変更（FROM stores 直参照廃止）
+  - `MT-A3`: テスト 7件（Fail-fast 42883含む）
+  - `MT-A4`: migration既定ユーザー `migration_user` に統一（4ファイル）
+  - `MT-A5`: 管理API経路 `/api/v1/admin` をドキュメント正本化（4ファイル）
+  - 残件: staging migration適用後に §11.6 SQL検証（T1/T2）を実行して `Go` 確定
+- ローカル検証（2026-03-07 CRM-BE-001 gate）:
+  - `npm --prefix backend-v2 run lint`: 成功
+  - `npm --prefix backend-v2 run typecheck`: 成功
+  - `npm --prefix backend-v2 run test:ci -- tests/unit`: 成功（**96 tests**）
+  - `npm --prefix backend-v2 run build`: 成功
 
 ### admin-dashboard
-- Next.js ベースの管理画面プロジェクトは存在。
-- KPI / 予約 / 顧客 / メニュー / スタッフ / レポート / 設定の機能カテゴリがREADMEに定義済み。
+- Wave-A（`CRM-FE-001`〜`004`）: **完了**。
+- Wave-B:
+  - `CRM-FE-005`: **完了**（通知タブ API 永続化、成功/失敗表示、テスト追加）
+  - `admin-dashboard/src/lib/rfm.ts`: **完了**（`CanonicalRfmSegment` 型 + `getRfmSegmentDisplay` ヘルパー）
+- ローカル検証（2026-03-07 CRM-BE-001 gate）:
+  - `npm --prefix admin-dashboard run lint`: 成功
+  - `npm --prefix admin-dashboard test`: 成功（**21 tests**）
+  - `npm --prefix admin-dashboard run build`: 成功
 
 ### customer-app
-- LINEミニアプリ（静的アプリ）として実装ディレクトリあり。
+- `APP-001`: **完了**（本番でモック経路へ自動フォールバックしない制御）
 
-### 運用基盤
-- Cloud Build、Firestore、切替/切戻し系スクリプトが配置済み。
+### 運用/runbook
+- `QA-001`: **完了**（Wave-A 統合スモーク標準化）
+- `QA-002`: **完了**（通知設定の read/write 回帰ケース + 切り分け手順を追記）
+- `OPS-002`: **完了**（staging E2E のトークン運用 / preflight / postflight / 再実行条件を `DEPLOYMENT.md` に固定）
+- `OPS-003`: **完了（記録作成済み）**
+  - 再実施まで含む実測値（所要時間/p95/error率/rollback dry-run）を runbook へ記録
+  - 最新判定: **Go（staging rehearsal）**（5xx 率 `0.00%`）
+- `DOC-001`: **完了**（`DB_V3_HANDOFF_PLAN.md` を最新状態へ更新）
+- `DOC-002`: **完了**（`docs/runbooks/CUTOVER_EXECUTION_PLAN.md` 作成）
+  - T-1 チェックリスト / T0 タイムライン / 当日コマンド / ロールバック手順 / 記録フォーマット を固定
 
 ## 3. 直近で完了したこと（セッションログ）
-- 2026-03-04: プロジェクトの目的・進捗・残タスクを継続管理するためのメモ運用を導入。
-- 2026-03-04: LINEミニアプリ開始前チェック（仕様/デザイン/審査）とチャネル作成手順を `docs/LINE_MINI_APP_SETUP.md` に再整理。
+- 2026-03-07: `CRM-BE-001` gate pass（backend lint/typecheck/96 tests/build + admin lint/21 tests/build）。
+- 2026-03-07: `DOC-002` として `docs/runbooks/CUTOVER_EXECUTION_PLAN.md` を作成。T-1/T0 手順・ロールバック・記録フォーマットを固定。
+- 2026-03-06: `CRM-BE-006/007` を実装し backend gate を通過。
+- 2026-03-06: `CRM-FE-005` を実装し通知設定 API 永続化 + 単体テストを追加、admin gate を通過。
+- 2026-03-06: `QA-002` を runbook に反映（通知設定 read/write 回帰手順・切り分け）。
+- 2026-03-06: `OPS-002` を `docs/DEPLOYMENT.md` に反映（staging E2E 運用手順）。
+- 2026-03-06: `OPS-003` rehearsal を実施し、Guardrails判定を **No-Go** と記録。
+- 2026-03-06: `DOC-001` として handoff plan を更新し、次アクションを固定。
+- 2026-03-06: `dashboard/activity` 5xx・tenant解決・onboarding smoke の連鎖不具合を修正し、`reserve-api-00042-99d` で smoke 完走を確認。
+- 2026-03-06: `OPS-003` を再実施し、`count=31 / p95=300ms / 5xx=0` で **Go（staging rehearsal）** に更新。
+- 2026-03-06: `reserve-customer-00010-4sx` へ `tenantKey` ヒント付き booking-link resolve 呼び出しを反映し、Cloud Build `customer-smoke` 成功を確認。
+- 2026-03-06: MT Wave-1（DB厳格マルチテナント是正）をローカルで完了（lint/typecheck/test 94/build 全Pass）。
+  - FORCE RLS、resolve_active_store_context、Fail-fast固定（42883）、migration_user統一、docs正本化。
+  - staging SQL検証（T1/T2）は §11.6 コマンド確定済み・実施ペンディング。
+- 2026-03-06: MU-A2 本番 trigger 更新・本番反映完了。
+  - `reserve-backend` trigger: `_DB_USER=migration_user` / `_DB_PASSWORD_SECRET=db-password-migration` に更新。
+  - 本番 Build ID: `de8581ef-b19c-47ad-9f19-10a4e1af5081`（SUCCESS、所要 ~3分）。
+  - `/health` / `/ready` 正常確認済み。判定: **Go（20:30 JST）**。
+- 2026-03-06: trigger 更新標準手順化（`TRIGGER_UPDATE_STRATEGY`）完了。
+  - `create_cloudbuild_triggers.sh` に `TRIGGER_UPDATE_STRATEGY=auto|update|import` を追加（default: `auto`）。
+  - `INVALID_ARGUMENT` 失敗（exit 21）を自動検出し `import` フォールバックを実行。手作業 Python 編集は不要。
+  - `DEPLOYMENT.md` / `DB_V3_PHASE_B_EXECUTION_LOG.md §13` に標準手順を記載。
 
 ## 4. これからやること（優先順）
-1. 現在の実装を実コードベースで棚卸しし、各コンポーネントの「完了/未完」を具体化する。
-2. バックエンド移行計画（RLS・Repository移行）の進捗を最新化する。
-3. 管理画面・顧客アプリ・バックエンド間の未接続ポイントを洗い出す。
-4. 次スプリントでやるタスクを3〜5件に絞ってここへ反映する。
-5. LINEミニアプリチャネル作成時の入力値（地域、説明、プライバシーポリシーURL）を運用テンプレート化する。
+1. cutover 実施日の体制（担当/時刻/ロールバック責任者）を確定し、`CUTOVER_EXECUTION_PLAN.md` の体制欄に記入する。
+2. `generate_cutover_commands.sh` を実際の PROJECT_ID / Firebase / CloudSQL 値で実行して `CUTOVER_COMMANDS.generated.md` を生成する（T-1 チェックリスト #4）。
+3. 本番切替（WRITE_FREEZE + デプロイ + smoke）を実行し、24h 監視ログを残す。
+4. `booking-links/resolve` の token-only 経路（tenantKey なし）の恒久対応方針を決定する。
 
 ## 5. ブロッカー / 保留中の意思決定
-- 未記入（必要になったら追記）
+- staging rehearsal 判定は **Go**（2026-03-06 JST 更新）。
+- MT Wave-1: ローカル **Go**、staging SQL検証（T1/T2）ペンディング。SQL検証コマンドは §11.6 に確定済み。
+- 保留事項: strict RLS 下での `booking-links/resolve` token-only 経路は `tenantKey` ヒントなしだと `404` になり得る。
 
 ## 6. 毎回の更新ルール
-1. 作業開始前に `docs/PROJECT_MEMORY.md` を読んで認識をそろえる。
-2. 作業終了時に `2. 現在の実装状況` `3. 直近で完了したこと` `4. これからやること` を更新する。
-3. 更新後に `npm run sync:agent-context` を実行して `CLAUDE.md` / `CODEX.md` へ同期する。
+1. 作業開始前に `docs/PROJECT_MEMORY.md` を読む。
+2. 作業終了時に `2.現在の実装状況` `3.直近で完了したこと` `4.これからやること` を更新する。
+3. 更新後に `npm run sync:agent-context` を実行して `CLAUDE.md` / `CODEX.md` を同期する。
+
+## 7. 再発防止ルール
+
+### Cloud Build trigger 更新
+- `gcloud builds triggers update github --update-substitutions` が `INVALID_ARGUMENT` で失敗した場合は **手作業不要**。
+- `TRIGGER_UPDATE_STRATEGY=auto`（default）で `create_cloudbuild_triggers.sh` を実行すると `describe → JSON補正 → import` が自動実行される。
+- 強制 import が必要な場合は `TRIGGER_UPDATE_STRATEGY=import` を指定する。

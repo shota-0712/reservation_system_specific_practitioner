@@ -21,6 +21,14 @@ function isUuidLike(value: string): boolean {
     return UUID_V4_LIKE_REGEX.test(value);
 }
 
+function isRecoverableTenantLookupError(error: unknown): boolean {
+    const pg = error as { code?: string };
+    return pg?.code === '22P02' // invalid_text_representation
+        || pg?.code === '42P01' // undefined_table
+        || pg?.code === '42703' // undefined_column
+        || pg?.code === '42501'; // insufficient_privilege
+}
+
 function mapTenantRow(row: Record<string, any>): Tenant {
     return {
         id: row.id,
@@ -60,7 +68,8 @@ async function getTenantById(tenantId: string): Promise<Tenant | null> {
 
     const row = await DatabaseService.queryOne(
         'SELECT * FROM tenants WHERE id = $1',
-        [tenantId]
+        [tenantId],
+        tenantId
     );
 
     if (!row) {
@@ -90,22 +99,36 @@ async function getTenantByStoreCode(storeCode: string): Promise<{ tenant: Tenant
         return { tenant: cached.tenant, storeId: cached.storeId };
     }
 
-    const row = await DatabaseService.queryOne(
-        `SELECT t.*, s.id AS store_id
-         FROM stores s
-         JOIN tenants t ON t.id = s.tenant_id
-         WHERE s.store_code = $1
-           AND s.status = 'active'
-         LIMIT 1`,
-        [storeCode]
-    );
+    // Use SECURITY DEFINER function to resolve store without requiring tenant context.
+    // Direct `FROM stores` access is omitted here because stores is FORCE RLS protected
+    // and the caller does not yet have a tenant context set.
+    let contextRow: Record<string, any> | null = null;
+    try {
+        contextRow = await DatabaseService.queryOne(
+            'SELECT tenant_id, store_id FROM resolve_active_store_context($1)',
+            [storeCode]
+        );
+    } catch (error) {
+        if (isRecoverableTenantLookupError(error)) {
+            const pg = error as { code?: string; message?: string };
+            logger.warn('Tenant lookup by store code fallback: resolve function unavailable', {
+                storeCode,
+                code: pg.code,
+                message: pg.message,
+            });
+            return null;
+        }
+        throw error;
+    }
 
-    if (!row) return null;
+    if (!contextRow) return null;
 
-    const tenant = mapTenantRow(row as Record<string, any>);
-    const storeId = (row as Record<string, any>).store_id as string;
+    const tenantId = (contextRow as Record<string, any>).tenant_id as string;
+    const storeId  = (contextRow as Record<string, any>).store_id  as string;
 
-    tenantCache.set(tenant.id, { tenant, expiresAt: Date.now() + CACHE_TTL_MS });
+    const tenant = await getTenantById(tenantId);
+    if (!tenant) return null;
+
     storeCache.set(storeCode, { tenant, storeId, expiresAt: Date.now() + CACHE_TTL_MS });
 
     return { tenant, storeId };
@@ -261,6 +284,5 @@ export function getTenant(req: Request): Tenant {
     if (cached && cached.expiresAt > Date.now()) {
         return cached.tenant;
     }
-
     throw new TenantNotFoundError(tenantId);
 }

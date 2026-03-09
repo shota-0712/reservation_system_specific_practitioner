@@ -2,6 +2,8 @@
 
 本ドキュメントでは、予約システムをGoogle Cloud Platform (GCP) にデプロイする手順を説明します。
 
+セキュリティ基準は `docs/architecture/GCP_SECURITY_BASELINE.md`（Sysdig 24項目ベース）を参照してください。
+
 ## 前提条件
 
 - Google Cloud アカウント
@@ -35,7 +37,37 @@ gcloud services enable \
   cloudscheduler.googleapis.com \
   sqladmin.googleapis.com \
   secretmanager.googleapis.com \
+  artifactregistry.googleapis.com \
+  cloudasset.googleapis.com \
+  iam.googleapis.com \
   containerregistry.googleapis.com
+```
+
+### 1.3 セキュリティ初期設定（推奨）
+
+`Cloud Run` はデフォルトの Compute Engine サービスアカウントではなく、専用ランタイムSAを使う。
+
+```bash
+# 専用 runtime service account を作成
+gcloud iam service-accounts create reserve-api-sa \
+  --display-name="Reserve API Runtime SA"
+
+# 最小権限の付与（必要に応じて追加）
+gcloud projects add-iam-policy-binding YOUR_PROJECT_ID \
+  --member="serviceAccount:reserve-api-sa@YOUR_PROJECT_ID.iam.gserviceaccount.com" \
+  --role="roles/secretmanager.secretAccessor"
+gcloud projects add-iam-policy-binding YOUR_PROJECT_ID \
+  --member="serviceAccount:reserve-api-sa@YOUR_PROJECT_ID.iam.gserviceaccount.com" \
+  --role="roles/cloudsql.client"
+gcloud projects add-iam-policy-binding YOUR_PROJECT_ID \
+  --member="serviceAccount:reserve-api-sa@YOUR_PROJECT_ID.iam.gserviceaccount.com" \
+  --role="roles/logging.logWriter"
+
+# Cloud Build trigger SA に runtime SA への impersonation 権限を付与
+gcloud iam service-accounts add-iam-policy-binding \
+  reserve-api-sa@YOUR_PROJECT_ID.iam.gserviceaccount.com \
+  --member="serviceAccount:YOUR_PROJECT_NUMBER@cloudbuild.gserviceaccount.com" \
+  --role="roles/iam.serviceAccountUser"
 ```
 
 ---
@@ -68,14 +100,14 @@ gcloud sql users create app_user \
 # Cloud SQL Proxy経由で接続（ローカル）
 ./cloud_sql_proxy -instances=YOUR_PROJECT_ID:asia-northeast1:reservation-system-db=tcp:5432 &
 
-# スキーマ適用
-psql -h 127.0.0.1 -U app_user -d reservation_system -f database/schema/001_initial_schema.sql
+# スキーマ適用（migration専用ユーザー migration_user を使用。app_user はアプリ実行専用）
+psql -h 127.0.0.1 -U migration_user -d reservation_system -f database/schema/001_initial_schema.sql
 
 # 既存環境の差分適用（必要なものを順に実行）
-psql -h 127.0.0.1 -U app_user -d reservation_system -f database/migrations/20260131_schema_update_v2_1.sql
-psql -h 127.0.0.1 -U app_user -d reservation_system -f database/migrations/20260202_options_and_service_message_logs.sql
-psql -h 127.0.0.1 -U app_user -d reservation_system -f database/migrations/20260209_unification_core.sql
-psql -h 127.0.0.1 -U app_user -d reservation_system -f database/migrations/20260209_daily_analytics_breakdowns.sql
+psql -h 127.0.0.1 -U migration_user -d reservation_system -f database/migrations/20260131_schema_update_v2_1.sql
+psql -h 127.0.0.1 -U migration_user -d reservation_system -f database/migrations/20260202_options_and_service_message_logs.sql
+psql -h 127.0.0.1 -U migration_user -d reservation_system -f database/migrations/20260209_unification_core.sql
+psql -h 127.0.0.1 -U migration_user -d reservation_system -f database/migrations/20260209_daily_analytics_breakdowns.sql
 ```
 
 ---
@@ -83,8 +115,17 @@ psql -h 127.0.0.1 -U app_user -d reservation_system -f database/migrations/20260
 ## 3. Secret Manager 設定
 
 ```bash
-# データベースパスワード
+# データベースパスワード（アプリ runtime 用）
 echo -n "YOUR_DB_PASSWORD" | gcloud secrets create db-password --data-file=-
+
+# migration専用パスワード（migration_user 用・db-password とは分離）
+printf %s "YOUR_MIGRATION_DB_PASSWORD" | gcloud secrets create db-password-migration --data-file=- \
+  --replication-policy=automatic
+
+# Cloud Build SA に migration secret の accessor 権限を付与
+gcloud secrets add-iam-policy-binding db-password-migration \
+  --member="serviceAccount:YOUR_PROJECT_NUMBER@cloudbuild.gserviceaccount.com" \
+  --role="roles/secretmanager.secretAccessor"
 
 # データベースホスト（Cloud SQL接続）
 echo -n "/cloudsql/YOUR_PROJECT_ID:asia-northeast1:reservation-system-db" | \
@@ -106,7 +147,7 @@ Firebase Admin SDK について:
 ```bash
 # Cloud Runサービスアカウントに権限付与
 gcloud secrets add-iam-policy-binding db-password \
-  --member="serviceAccount:YOUR_PROJECT_NUMBER-compute@developer.gserviceaccount.com" \
+  --member="serviceAccount:reserve-api-sa@YOUR_PROJECT_ID.iam.gserviceaccount.com" \
   --role="roles/secretmanager.secretAccessor"
 # 他のシークレットにも同様に設定
 
@@ -135,7 +176,7 @@ _RUN_MIGRATIONS=false,\
 _RUN_INTEGRATION=false,\
 _WRITE_FREEZE_MODE=false,\
 _CLOUDSQL_CONNECTION=YOUR_PROJECT_ID:asia-northeast1:reservation-system-db,\
-_DB_USER=app_user,\
+_DB_USER=migration_user,\
 _DB_NAME=reservation_system,\
 _NEXT_PUBLIC_FIREBASE_PROJECT_ID=YOUR_PROJECT_ID,\
 _GOOGLE_OAUTH_CLIENT_ID=YOUR_CLIENT_ID,\
@@ -215,6 +256,8 @@ substitutions:
   _NEXT_PUBLIC_FIREBASE_API_KEY: YOUR_FIREBASE_API_KEY
   _NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN: YOUR_PROJECT_ID.firebaseapp.com
   _NEXT_PUBLIC_FIREBASE_PROJECT_ID: YOUR_PROJECT_ID
+  _BACKEND_SERVICE_ACCOUNT: reserve-api-sa@YOUR_PROJECT_ID.iam.gserviceaccount.com
+  _BACKEND_INGRESS: all
   _CLOUDSQL_CONNECTION: YOUR_PROJECT_ID:asia-northeast1:reservation-system-db
 EOF
 ```
@@ -246,6 +289,8 @@ _NEXT_PUBLIC_ADMIN_URL=https://reserve-admin-xxxxx.run.app,\
 _NEXT_PUBLIC_FIREBASE_API_KEY=YOUR_API_KEY,\
 _NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=YOUR_PROJECT_ID.firebaseapp.com,\
 _NEXT_PUBLIC_FIREBASE_PROJECT_ID=YOUR_PROJECT_ID,\
+_BACKEND_SERVICE_ACCOUNT=reserve-api-sa@YOUR_PROJECT_ID.iam.gserviceaccount.com,\
+_BACKEND_INGRESS=all,\
 _WRITE_FREEZE_MODE=false,\
 _CLOUDSQL_CONNECTION=YOUR_PROJECT_ID:asia-northeast1:reservation-system-db
 
@@ -256,9 +301,12 @@ _RUN_INTEGRATION=true,\
 _RUN_MIGRATIONS=true,\
 _WRITE_FREEZE_MODE=false,\
 _CLOUDSQL_INSTANCE=reservation-system-db,\
-_DB_USER=app_user,\
+_DB_USER=migration_user,\
 _DB_NAME=reservation_system,\
+_DB_PASSWORD_SECRET=db-password-migration,\
 _NEXT_PUBLIC_FIREBASE_PROJECT_ID=YOUR_PROJECT_ID,\
+_BACKEND_SERVICE_ACCOUNT=reserve-api-sa@YOUR_PROJECT_ID.iam.gserviceaccount.com,\
+_BACKEND_INGRESS=all,\
 _CLOUDSQL_CONNECTION=YOUR_PROJECT_ID:asia-northeast1:reservation-system-db
 
 # 管理画面のみデプロイ
@@ -268,13 +316,15 @@ _NEXT_PUBLIC_API_URL=https://reserve-api-xxxxx.run.app,\
 _NEXT_PUBLIC_TENANT_ID=demo-salon,\
 _NEXT_PUBLIC_FIREBASE_API_KEY=YOUR_API_KEY,\
 _NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=YOUR_PROJECT_ID.firebaseapp.com,\
-_NEXT_PUBLIC_FIREBASE_PROJECT_ID=YOUR_PROJECT_ID
+_NEXT_PUBLIC_FIREBASE_PROJECT_ID=YOUR_PROJECT_ID,\
+_ADMIN_INGRESS=all
 
 # 顧客アプリのみデプロイ
 gcloud builds submit . --config=cloudbuild.yaml \
   --substitutions=_DEPLOY_TARGET=customer,\
 _CUSTOMER_API_URL=https://reserve-api-xxxxx.run.app,\
-_CUSTOMER_TENANT_KEY=demo-salon
+_CUSTOMER_TENANT_KEY=demo-salon,\
+_CUSTOMER_INGRESS=all
 
 # DB migration を同時実行する場合
 gcloud builds submit . --config=cloudbuild.yaml \
@@ -286,18 +336,22 @@ _NEXT_PUBLIC_ADMIN_URL=https://reserve-admin-xxxxx.run.app,\
 _NEXT_PUBLIC_FIREBASE_API_KEY=YOUR_API_KEY,\
 _NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=YOUR_PROJECT_ID.firebaseapp.com,\
 _NEXT_PUBLIC_FIREBASE_PROJECT_ID=YOUR_PROJECT_ID,\
+_BACKEND_SERVICE_ACCOUNT=reserve-api-sa@YOUR_PROJECT_ID.iam.gserviceaccount.com,\
+_BACKEND_INGRESS=all,\
 _CLOUDSQL_CONNECTION=YOUR_PROJECT_ID:asia-northeast1:reservation-system-db,\
 _RUN_INTEGRATION=true,\
 _RUN_MIGRATIONS=true,\
 _WRITE_FREEZE_MODE=false,\
 _CLOUDSQL_INSTANCE=reservation-system-db,\
-_DB_USER=app_user,\
-_DB_NAME=reservation_system
+_DB_USER=migration_user,\
+_DB_NAME=reservation_system,\
+_DB_PASSWORD_SECRET=db-password-migration
 
 # ランディングページのみデプロイ
 gcloud builds submit . --config=cloudbuild.yaml \
   --substitutions=_DEPLOY_TARGET=landing,\
-_NEXT_PUBLIC_ADMIN_URL=https://reserve-admin-xxxxx.run.app
+_NEXT_PUBLIC_ADMIN_URL=https://reserve-admin-xxxxx.run.app,\
+_LANDING_INGRESS=all
 ```
 
 `_RUN_MIGRATIONS=true` の場合:
@@ -321,10 +375,10 @@ _NEXT_PUBLIC_ADMIN_URL=https://reserve-admin-xxxxx.run.app
 - 施術者別予約URLは `?t=<token>` を正式形式とする。
 - 予約URLトークン解決 API:
   - `GET /api/platform/v1/booking-links/resolve?token=...`
-- 管理API:
-  - `POST /api/v1/:tenantKey/admin/booking-links`
-  - `GET /api/v1/:tenantKey/admin/booking-links`
-  - `DELETE /api/v1/:tenantKey/admin/booking-links/:id`
+- 管理API（テナントはJWT Custom Claims解決、`:tenantKey` はURLに含まない）:
+  - `POST /api/v1/admin/booking-links`
+  - `GET /api/v1/admin/booking-links`
+  - `DELETE /api/v1/admin/booking-links/:id`
 
 ### 6.3 品質ゲート（ローカル実行）
 
@@ -362,6 +416,68 @@ CUSTOMER_URL="https://reserve-customer-xxxxx.run.app" \
   - onboarding status 更新
   - 管理予約作成
   - 予約URLトークン発行/解決（`?t=` 導線）
+
+### 6.3.2 staging E2E 運用（OPS-002）
+
+対象:
+- Wave-B 以降の毎タスク統合（`main` マージ後）
+- 担当者交代時の再現確認
+
+#### トークン運用ルール（固定）
+
+1. E2E は一時的な smoke 用アカウントで実施し、恒久アカウントを使わない。
+2. Firebase ID token / refresh token は環境変数でのみ保持し、リポジトリや runbook に保存しない。
+3. 実行ログには token を出力しない（`set -x` 禁止）。
+4. E2E 実行後はシェル履歴から機微な export 行を削除する。
+
+#### preflight（実行前）
+
+```bash
+export PROJECT_ID=keyexpress-reserve
+export REGION=asia-northeast1
+export CB_REGION=asia-northeast1
+export BACKEND_TRIGGER_NAME=reserve-backend
+export API_SERVICE=reserve-api
+
+export API_URL="$(gcloud run services describe reserve-api --project "$PROJECT_ID" --region "$REGION" --format='value(status.url)')"
+export ADMIN_URL="$(gcloud run services describe reserve-admin --project "$PROJECT_ID" --region "$REGION" --format='value(status.url)')"
+export CUSTOMER_URL="$(gcloud run services describe reserve-customer --project "$PROJECT_ID" --region "$REGION" --format='value(status.url)')"
+
+curl -sS "$API_URL/health"
+curl -sS "$API_URL/ready"
+curl -sS "$API_URL/api/platform/v1/onboarding/registration-config"
+
+PROJECT_ID="$PROJECT_ID" REGION="$REGION" BACKEND_TRIGGER_NAME="$BACKEND_TRIGGER_NAME" API_SERVICE="$API_SERVICE" ./scripts/check_backend_deploy_iam.sh
+PROJECT_ID="$PROJECT_ID" CB_REGION="$CB_REGION" ./scripts/check_cloudbuild_triggers.sh
+PROJECT_ID="$PROJECT_ID" REGION="$REGION" STRICT_NON_DEFAULT_SERVICE_ACCOUNT=true ./scripts/check_cloud_run_security.sh
+```
+
+`/ready` で `data.ready=true` かつ `checks.database=true` `checks.firebase=true` `checks.googleOauthConfigured=true` を満たさない場合は E2E を開始しない。
+
+#### E2E 実行（標準）
+
+```bash
+export FIREBASE_API_KEY="<FIREBASE_WEB_API_KEY>"
+
+API_URL="$API_URL" \
+FIREBASE_API_KEY="$FIREBASE_API_KEY" \
+CUSTOMER_URL="$CUSTOMER_URL" \
+RUN_RESERVATION_TEST=true \
+./scripts/smoke_public_onboarding.sh | tee "/tmp/staging_e2e_$(date +%Y%m%d_%H%M%S).log"
+```
+
+#### postflight 判定（実行後）
+
+1. ログ末尾に `Smoke test completed.` があること。
+2. 出力された `tenantKey` / `tenantId` / `customerTokenUrl` が空でないこと。
+3. `ERROR:` 行が 0 件であること。
+4. 直後の疎通確認で `curl -sS "$API_URL/ready"` が `ready=true` を維持していること。
+
+#### 再実行条件（固定）
+
+1. `curl` の通信失敗・5xx 一過性エラーのみ、5分以上空けて 1 回まで再実行可。
+2. preflight fail（`/ready=false` や IAM/trigger fail）は修復完了まで再実行禁止。
+3. 同一失敗が 2 回連続した場合は `No-Go` とし、`docs/runbooks/DB_V3_PHASE_B_EXECUTION_LOG.md` へ切り分け結果を記録する。
 
 ### 6.4 Cloud Scheduler設定（リマインダー）
 
@@ -409,11 +525,11 @@ gcloud scheduler jobs create http google-calendar-sync \
 - `daily-analytics`: 毎日 `00:30` (Asia/Tokyo)
 - `google-calendar-sync`: `5分ごと` (Asia/Tokyo)
 
-手動実行 API（管理画面と同等、Manager/Owner 認証必須）:
-- `POST /api/v1/{tenantKey}/admin/jobs/reminders/day-before`
-- `POST /api/v1/{tenantKey}/admin/jobs/reminders/same-day`
-- `POST /api/v1/{tenantKey}/admin/jobs/analytics/daily`（`{ "date": "YYYY-MM-DD" }` 任意）
-- `POST /api/v1/{tenantKey}/admin/jobs/integrations/google-calendar/sync`（`{ "limit": 50 }` 任意）
+手動実行 API（管理画面と同等、Manager/Owner 認証必須、テナントはJWT解決）:
+- `POST /api/v1/admin/jobs/reminders/day-before`
+- `POST /api/v1/admin/jobs/reminders/same-day`
+- `POST /api/v1/admin/jobs/analytics/daily`（`{ "date": "YYYY-MM-DD" }` 任意）
+- `POST /api/v1/admin/jobs/integrations/google-calendar/sync`（`{ "limit": 50 }` 任意）
 
 ### 6.5 Cloud Build Trigger分割（backend/admin/customer/landing）
 
@@ -428,6 +544,11 @@ NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=YOUR_PROJECT_ID.firebaseapp.com \
 NEXT_PUBLIC_FIREBASE_PROJECT_ID=YOUR_PROJECT_ID \
 CLOUDSQL_CONNECTION=YOUR_PROJECT_ID:asia-northeast1:reservation-system-db \
 CLOUDSQL_INSTANCE=reservation-system-db \
+BACKEND_SERVICE_ACCOUNT=reserve-api-sa@YOUR_PROJECT_ID.iam.gserviceaccount.com \
+BACKEND_INGRESS=all \
+ADMIN_INGRESS=all \
+CUSTOMER_INGRESS=all \
+LANDING_INGRESS=all \
 CUSTOMER_TENANT_KEY=demo-salon \
 NEXT_PUBLIC_TENANT_ID=demo-salon \
 RUN_INTEGRATION=true \
@@ -436,6 +557,7 @@ WRITE_FREEZE_MODE=false \
 READINESS_REQUIRE_LINE=false \
 READINESS_REQUIRE_GOOGLE_OAUTH=true \
 PUBLIC_ONBOARDING_ENABLED=true \
+DB_PASSWORD_SECRET=db-password-migration \
 ./scripts/create_cloudbuild_triggers.sh
 ```
 
@@ -448,12 +570,38 @@ PUBLIC_ONBOARDING_ENABLED=true \
 注記:
 - `scripts/create_cloudbuild_triggers.sh` は update-or-create 動作。既存 trigger は更新される
 - service account 不整合（run時エラー原因）は自動検出される
+- `TRIGGER_UPDATE_STRATEGY` で trigger 更新方式を制御できる（default: `auto`）
+
+| 値 | 動作 |
+|----|------|
+| `auto` | `update github --update-substitutions` を試み、`INVALID_ARGUMENT` 失敗なら `describe → JSON補正 → import` に自動フォールバック |
+| `update` | `update github --update-substitutions` のみ。失敗時はエラー終了（フォールバックなし） |
+| `import` | update を試さず、即 `describe → JSON補正 → import` 経由で反映 |
+
+ログ出力キーワード: `UPDATED` / `IMPORTED` / `RECREATED` / `WARN` / `FAIL`
+
+MU-A2 で確認された `INVALID_ARGUMENT` （`--update-substitutions` が 2nd gen trigger に非対応の場合）は `auto` モードで自動吸収される。手作業の Python 編集は不要。
+- backend deploy の `iam.serviceaccounts.actAs` を事前検査:
+
+```bash
+PROJECT_ID=YOUR_PROJECT_ID \
+REGION=asia-northeast1 \
+BACKEND_TRIGGER_NAME=reserve-backend \
+API_SERVICE=reserve-api \
+./scripts/check_backend_deploy_iam.sh
+```
+
 - 健全性チェック:
 
 ```bash
 PROJECT_ID=YOUR_PROJECT_ID \
 CB_REGION=asia-northeast1 \
 ./scripts/check_cloudbuild_triggers.sh
+
+PROJECT_ID=YOUR_PROJECT_ID \
+REGION=asia-northeast1 \
+STRICT_NON_DEFAULT_SERVICE_ACCOUNT=true \
+./scripts/check_cloud_run_security.sh
 ```
 
 - PRラベル初期化（任意・`gh` CLI）:

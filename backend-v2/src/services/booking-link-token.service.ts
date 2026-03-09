@@ -50,7 +50,39 @@ interface BookingLinkTokenRow {
     created_by_email?: string | null;
 }
 
+interface BookingLinkResolveRow {
+    id: string;
+    tenant_id: string;
+    store_id: string | null;
+    practitioner_id: string;
+}
+
 const TOKEN_ALPHABET_REGEX = /^[A-Za-z0-9_-]{16,128}$/;
+const POSTGRES_UNDEFINED_FUNCTION = '42883';
+const POSTGRES_INVALID_TEXT_REPRESENTATION = '22P02';
+const POSTGRES_UNDEFINED_TABLE = '42P01';
+const POSTGRES_UNDEFINED_COLUMN = '42703';
+const POSTGRES_INSUFFICIENT_PRIVILEGE = '42501';
+
+function getPostgresErrorCode(error: unknown): string | undefined {
+    if (!error || typeof error !== 'object') {
+        return undefined;
+    }
+    const maybeCode = (error as { code?: unknown }).code;
+    return typeof maybeCode === 'string' ? maybeCode : undefined;
+}
+
+function isMissingResolveFunctionError(error: unknown): boolean {
+    return getPostgresErrorCode(error) === POSTGRES_UNDEFINED_FUNCTION;
+}
+
+function isRecoverableResolveLookupError(error: unknown): boolean {
+    const code = getPostgresErrorCode(error);
+    return code === POSTGRES_INVALID_TEXT_REPRESENTATION
+        || code === POSTGRES_UNDEFINED_TABLE
+        || code === POSTGRES_UNDEFINED_COLUMN
+        || code === POSTGRES_INSUFFICIENT_PRIVILEGE;
+}
 
 function mapTokenRow(row: BookingLinkTokenRow): BookingLinkToken {
     return {
@@ -236,15 +268,9 @@ export class BookingLinkTokenService {
             return null;
         }
 
-        const row = await DatabaseService.queryOne<BookingLinkTokenRow>(
-            `SELECT *
-             FROM booking_link_tokens
-             WHERE token = $1
-               AND status = 'active'
-               AND (expires_at IS NULL OR expires_at > NOW())
-             LIMIT 1`,
-            [normalizedToken]
-        );
+        const row = this.tenantId
+            ? await this.lookupResolvableTokenRowForTenant(normalizedToken, this.tenantId)
+            : await this.lookupResolvableTokenRow(normalizedToken);
         if (!row) return null;
 
         const tenantRepo = createTenantRepository();
@@ -272,8 +298,9 @@ export class BookingLinkTokenService {
         const resolvedLine = resolveLineConfigForTenant(tenant as Tenant, store, practitioner);
 
         await DatabaseService.query(
-            'UPDATE booking_link_tokens SET last_used_at = NOW() WHERE id = $1',
-            [row.id]
+            'UPDATE booking_link_tokens SET last_used_at = NOW() WHERE id = $1 AND tenant_id = $2',
+            [row.id, row.tenant_id],
+            row.tenant_id
         );
 
         return {
@@ -284,6 +311,70 @@ export class BookingLinkTokenService {
             lineMode: resolvedLine.mode,
             lineConfigSource: resolvedLine.source,
         };
+    }
+
+    private async lookupResolvableTokenRow(token: string): Promise<BookingLinkResolveRow | null> {
+        try {
+            const viaFunction = await DatabaseService.queryOne<BookingLinkResolveRow>(
+                `SELECT id, tenant_id, store_id, practitioner_id
+                 FROM resolve_booking_link_token($1)`,
+                [token]
+            );
+            if (viaFunction) {
+                return viaFunction;
+            }
+            return null;
+        } catch (error) {
+            if (isRecoverableResolveLookupError(error)) {
+                return null;
+            }
+            if (!isMissingResolveFunctionError(error)) {
+                throw error;
+            }
+        }
+
+        try {
+            const viaLegacyQuery = await DatabaseService.queryOne<BookingLinkResolveRow>(
+                `SELECT id, tenant_id, store_id, practitioner_id
+                 FROM booking_link_tokens
+                 WHERE token = $1
+                   AND status = 'active'
+                   AND (expires_at IS NULL OR expires_at > NOW())
+                 LIMIT 1`,
+                [token]
+            );
+            return viaLegacyQuery ?? null;
+        } catch (error) {
+            if (isRecoverableResolveLookupError(error)) {
+                return null;
+            }
+            throw error;
+        }
+    }
+
+    private async lookupResolvableTokenRowForTenant(
+        token: string,
+        tenantId: string
+    ): Promise<BookingLinkResolveRow | null> {
+        try {
+            const row = await DatabaseService.queryOne<BookingLinkResolveRow>(
+                `SELECT id, tenant_id, store_id, practitioner_id
+                 FROM booking_link_tokens
+                 WHERE tenant_id = $1
+                   AND token = $2
+                   AND status = 'active'
+                   AND (expires_at IS NULL OR expires_at > NOW())
+                 LIMIT 1`,
+                [tenantId, token],
+                tenantId
+            );
+            return row ?? null;
+        } catch (error) {
+            if (isRecoverableResolveLookupError(error)) {
+                return null;
+            }
+            throw error;
+        }
     }
 
     async ensureActivePractitioner(practitionerId: string): Promise<void> {

@@ -77,7 +77,7 @@ describe('booking-link-token.service', () => {
 
     it('resolves token and returns practitioner-source line config metadata', async () => {
         vi.spyOn(DatabaseService, 'queryOne').mockImplementation(async (sql) => {
-            if (sql.includes('FROM booking_link_tokens')) {
+            if (sql.includes('resolve_booking_link_token')) {
                 return {
                     id: 'id-1',
                     tenant_id: 'tenant-1',
@@ -93,7 +93,7 @@ describe('booking-link-token.service', () => {
             }
             return null;
         });
-        vi.spyOn(DatabaseService, 'query').mockResolvedValue([]);
+        const querySpy = vi.spyOn(DatabaseService, 'query').mockResolvedValue([]);
 
         vi.spyOn(repositories, 'createTenantRepository').mockReturnValue({
             findById: vi.fn().mockResolvedValue({
@@ -157,6 +157,65 @@ describe('booking-link-token.service', () => {
             practitionerId: '9f7dbab5-f815-4b8e-a00b-552b62993c62',
             lineMode: 'practitioner',
             lineConfigSource: 'practitioner',
+        });
+        expect(querySpy).toHaveBeenCalledWith(
+            expect.stringContaining('UPDATE booking_link_tokens SET last_used_at = NOW()'),
+            ['id-1', 'tenant-1'],
+            'tenant-1'
+        );
+    });
+
+    it('falls back to legacy token lookup when resolve function is unavailable', async () => {
+        const undefinedFunctionError = Object.assign(new Error('function resolve_booking_link_token does not exist'), {
+            code: '42883',
+        });
+
+        vi.spyOn(DatabaseService, 'queryOne').mockImplementation(async (sql) => {
+            if (sql.includes('resolve_booking_link_token')) {
+                throw undefinedFunctionError;
+            }
+            if (sql.includes('FROM booking_link_tokens')) {
+                return {
+                    id: 'id-2',
+                    tenant_id: 'tenant-1',
+                    store_id: null,
+                    practitioner_id: '9f7dbab5-f815-4b8e-a00b-552b62993c62',
+                };
+            }
+            return null;
+        });
+        vi.spyOn(DatabaseService, 'query').mockResolvedValue([]);
+
+        vi.spyOn(repositories, 'createTenantRepository').mockReturnValue({
+            findById: vi.fn().mockResolvedValue({
+                id: 'tenant-1',
+                slug: 'default',
+                status: 'active',
+                lineConfig: {
+                    mode: 'tenant',
+                    liffId: 'tenant-liff',
+                    channelId: 'tenant-channel',
+                },
+            }),
+        } as any);
+        vi.spyOn(repositories, 'createStoreRepository').mockReturnValue({
+            findById: vi.fn().mockResolvedValue(null),
+        } as any);
+        vi.spyOn(repositories, 'createPractitionerRepository').mockReturnValue({
+            findById: vi.fn().mockResolvedValue({
+                id: '9f7dbab5-f815-4b8e-a00b-552b62993c62',
+                tenantId: 'tenant-1',
+                isActive: true,
+            }),
+        } as any);
+
+        const service = createBookingLinkTokenService();
+        const resolved = await service.resolve('A23456789012345678901234567890');
+
+        expect(resolved).toMatchObject({
+            tenantId: 'tenant-1',
+            tenantKey: 'default',
+            practitionerId: '9f7dbab5-f815-4b8e-a00b-552b62993c62',
         });
     });
 

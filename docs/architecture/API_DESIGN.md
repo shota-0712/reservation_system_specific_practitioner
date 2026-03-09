@@ -149,12 +149,14 @@ Authorization: Bearer {firebase_id_token}
 - `PATCH /{tenantKey}/reservations/:id/status` - ステータス更新
 
 ### 4.4 管理画面
-- `GET  /{tenantKey}/admin/dashboard/kpi`
-- `GET  /{tenantKey}/admin/dashboard/today`
-- `GET  /{tenantKey}/admin/customers`
-- `GET  /{tenantKey}/admin/settings`
-- `PUT  /{tenantKey}/admin/settings/profile`
-- `GET  /{tenantKey}/admin/reports/summary`
+管理APIは `/api/v1/admin/...` にマウントされている（`:tenantKey` はURLに含まない）。
+テナントはFirebase JWT Custom Claimsから解決する。
+- `GET  /api/v1/admin/dashboard/kpi`
+- `GET  /api/v1/admin/dashboard/today`
+- `GET  /api/v1/admin/customers`
+- `GET  /api/v1/admin/settings`
+- `PUT  /api/v1/admin/settings/profile`
+- `GET  /api/v1/admin/reports/summary`
 
 ---
 
@@ -187,7 +189,7 @@ PostgreSQL の排他制約により **二重予約** を防止。
 例:
 ```
 GET /{tenantKey}/reservations?date=2026-01-31&storeId=...&status=confirmed
-GET /{tenantKey}/admin/customers?search=山田&tag=VIP
+GET /api/v1/admin/customers?search=山田&tag=VIP
 ```
 
 ---

@@ -1,9 +1,13 @@
 # DB V3 ER図（Cloud SQL OLTP）
 
-`Cloud SQL(PostgreSQL)` 側の正規化スキーマ（V3）の中核だけを示した ER 図です。  
+`Cloud SQL(PostgreSQL)` 側の正規化スキーマ（V3）の中核だけを示した ER 図です。
 分析系は `BigQuery raw/mart` に分離し、この図には含めません。
 
-詳細なスキーマ定義（制約/RLS/FK 方針）は以下を参照:
+**注記**: CRM拡張テーブル（`tenant_rfm_settings`, `tenant_notification_settings`）と
+SECURITY DEFINER 関数（`resolve_active_store_context`, `resolve_booking_link_token`）は
+この図に含めていません。正本は migration ファイルを参照してください。
+
+詳細なスキーマ定義（制約/RLS/FK 方針 / CRM拡張）は以下を参照:
 
 - `docs/architecture/DB_V3_SCHEMA_DEFINITION.md`
 

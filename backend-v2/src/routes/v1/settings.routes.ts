@@ -9,7 +9,7 @@ import { getStoreId, getTenant, getTenantId } from '../../middleware/tenant.js';
 import { asyncHandler } from '../../middleware/error-handler.js';
 import { validateBody, validateQuery } from '../../middleware/validation.js';
 import { TenantRepository, createStoreRepository } from '../../repositories/tenant.repository.js';
-import { createPractitionerRepository } from '../../repositories/index.js';
+import { createPractitionerRepository, createTenantNotificationSettingsRepository } from '../../repositories/index.js';
 import { resolveLineConfigForTenant } from '../../services/line-config.service.js';
 import { sanitizeStoreForResponse } from '../../services/store-response.service.js';
 import { z } from 'zod';
@@ -51,6 +51,19 @@ const lineResolvePreviewQuerySchema = z.object({
 const updateBrandingSchema = z.object({
     primaryColor: z.string().regex(/^#[0-9A-Fa-f]{6}$/).optional(),
     logoUrl: z.string().url().optional().nullable(),
+});
+
+const updateNotificationSettingsSchema = z.object({
+    emailNewReservation: z.boolean().optional(),
+    emailCancellation: z.boolean().optional(),
+    emailDailyReport: z.boolean().optional(),
+    lineReminder: z.boolean().optional(),
+    lineConfirmation: z.boolean().optional(),
+    lineReview: z.boolean().optional(),
+    pushNewReservation: z.boolean().optional(),
+    pushCancellation: z.boolean().optional(),
+}).refine((v) => Object.keys(v).length > 0, {
+    message: '更新する通知設定を1つ以上指定してください',
 });
 
 async function resolveScopedStore(req: Request, tenantId: string) {
@@ -109,6 +122,51 @@ router.get(
                 tenant: safeTenant,
                 store: store ? sanitizeStoreForResponse(store) : null,
             },
+        });
+    })
+);
+
+/**
+ * 通知設定を取得
+ * @route GET /v1/:storeCode/admin/settings/notifications
+ * @access Manager+
+ */
+router.get(
+    '/notifications',
+    requireFirebaseAuth(),
+    requireRole('manager', 'owner'),
+    asyncHandler(async (req: Request, res: Response): Promise<void> => {
+        const tenantId = getTenantId(req);
+        const repository = createTenantNotificationSettingsRepository(tenantId);
+        const settings = await repository.get();
+        res.json({
+            success: true,
+            data: settings,
+        });
+    })
+);
+
+/**
+ * 通知設定を更新
+ * @route PUT /v1/:storeCode/admin/settings/notifications
+ * @access Manager+
+ */
+router.put(
+    '/notifications',
+    requireFirebaseAuth(),
+    requireRole('manager', 'owner'),
+    validateBody(updateNotificationSettingsSchema),
+    asyncHandler(async (req: Request, res: Response): Promise<void> => {
+        const tenantId = getTenantId(req);
+        const repository = createTenantNotificationSettingsRepository(tenantId);
+        const updated = await repository.upsert(
+            req.body as z.infer<typeof updateNotificationSettingsSchema>,
+            (req as any).user?.uid ?? 'unknown'
+        );
+
+        res.json({
+            success: true,
+            data: updated,
         });
     })
 );

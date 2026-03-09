@@ -5,6 +5,7 @@ import { DatabaseService } from '../../config/database.js';
 import { getAuthInstance } from '../../config/firebase.js';
 import { env } from '../../config/env.js';
 import { asyncHandler, validateBody } from '../../middleware/index.js';
+import { createTenantRepository } from '../../repositories/index.js';
 import { createBookingLinkTokenService } from '../../services/booking-link-token.service.js';
 import { createGoogleCalendarService } from '../../services/google-calendar.service.js';
 import { decodeGoogleOAuthState } from '../../services/google-oauth-state.service.js';
@@ -60,6 +61,7 @@ const registrationSchema = z.object({
 });
 const bookingLinkResolveSchema = z.object({
     token: z.string().trim().min(16).max(128),
+    tenantKey: z.string().trim().toLowerCase().regex(/^[a-z0-9](?:[a-z0-9-]{1,38}[a-z0-9])?$/).optional(),
 });
 const adminContextQuerySchema = z.object({
     tenantKey: z.string().trim().toLowerCase().regex(/^[a-z0-9](?:[a-z0-9-]{1,38}[a-z0-9])?$/).optional(),
@@ -206,7 +208,22 @@ router.get(
             throw new ValidationError('token が不正です');
         }
 
-        const service = createBookingLinkTokenService();
+        let service = createBookingLinkTokenService();
+        if (parsed.data.tenantKey) {
+            const tenant = await createTenantRepository().findBySlug(parsed.data.tenantKey);
+            if (!tenant || !['active', 'trial'].includes(tenant.status)) {
+                res.status(404).json({
+                    success: false,
+                    error: {
+                        code: 'NOT_FOUND',
+                        message: '予約URLが見つかりません',
+                    },
+                });
+                return;
+            }
+            service = createBookingLinkTokenService(tenant.id);
+        }
+
         const resolved = await service.resolve(parsed.data.token);
         if (!resolved) {
             res.status(404).json({
