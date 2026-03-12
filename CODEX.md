@@ -2,7 +2,7 @@
 
 # プロジェクトメモ（正本）
 
-**最終更新日**: 2026-03-07（CRM-BE-001 gate pass + Cutover runbook 作成）
+**最終更新日**: 2026-03-12（v3 fresh-DB foundation/UI local integration）
 **更新者**: Codex
 
 ## 1. このプロジェクトでやりたいこと
@@ -77,6 +77,9 @@
 
 ### customer-app
 - `APP-001`: **完了**（本番でモック経路へ自動フォールバックしない制御）
+- 2026-03-12:
+  - 予約 create/update payload を `startsAt` / `timezone` ベースへ移行。
+  - 予約一覧の read 側も `startsAt` / `endsAt` / `timezone` 表示へ移行。
 
 ### 運用/runbook
 - `QA-001`: **完了**（Wave-A 統合スモーク標準化）
@@ -89,7 +92,22 @@
 - `DOC-002`: **完了**（`docs/runbooks/CUTOVER_EXECUTION_PLAN.md` 作成）
   - T-1 チェックリスト / T0 タイムライン / 当日コマンド / ロールバック手順 / 記録フォーマット を固定
 
+### v3 + Wave-1 fresh DB cycle（2026-03-12）
+- Foundation:
+  - export / reports / dashboard / daily analytics の reservation 参照を `date` / `start_time` / `end_time` 依存から `starts_at` / `ends_at` / `timezone` ベースへ更新。
+  - `backend-v2` gate: `npm run test:ci`, `npm run build` 成功。
+- UI:
+  - `admin-dashboard` の staff/options で legacy compatibility field 依存をやめ、assignment API ベースへ移行。
+  - `admin-dashboard` gate: `npm test`, `npm run build` 成功。
+- Remote:
+  - `reserve-api-dev-v3` / `reserve-customer-dev-v3` と fresh Cloud SQL は未作成。
+  - owner register / login / claims sync / onboarding / seed / LIFF 実認証 smoke は未着手。
+
 ## 5. 直近で完了したこと（セッションログ）
+- 2026-03-12: dirty worktree から `codex/v3-wave1-baseline` baseline snapshot commit を作成し、Codex 専用 worktree (`codex/v3-foundation`, `codex/v3-ui`) を切り出し。
+- 2026-03-12: Foundation merge を取り込み、fresh v3 schema で壊れる backend fallback SQL を `starts_at` / `timezone` ベースへ統一。
+- 2026-03-12: UI merge を取り込み、customer-app の reservation 契約を `startsAt` / `timezone` へ移行し、admin-dashboard の assignment 依存を API 正本へ寄せた。
+- 2026-03-12: baseline 統合後の gate を再実行し、`backend-v2` test/build と `admin-dashboard` test/build がすべて成功。
 - 2026-03-07: `CRM-BE-001` gate pass（backend lint/typecheck/96 tests/build + admin lint/21 tests/build）。
 - 2026-03-07: `DOC-002` として `docs/runbooks/CUTOVER_EXECUTION_PLAN.md` を作成。T-1/T0 手順・ロールバック・記録フォーマットを固定。
 - 2026-03-06: `CRM-BE-006/007` を実装し backend gate を通過。
@@ -114,15 +132,18 @@
   - `DEPLOYMENT.md` / `DB_V3_PHASE_B_EXECUTION_LOG.md §13` に標準手順を記載。
 
 ## 6. これからやること（優先順）
-1. cutover 実施日の体制（担当/時刻/ロールバック責任者）を確定し、`CUTOVER_EXECUTION_PLAN.md` の体制欄に記入する。
-2. `generate_cutover_commands.sh` を実際の PROJECT_ID / Firebase / CloudSQL 値で実行して `CUTOVER_COMMANDS.generated.md` を生成する（T-1 チェックリスト #4）。
-3. 本番切替（WRITE_FREEZE + デプロイ + smoke）を実行し、24h 監視ログを残す。
+1. `keyexpress-reserve` / `asia-northeast1` に fresh v3 専用の Cloud SQL instance/database/users/secrets を作成し、既存 `reservation-system-db` と完全分離する。
+2. `reserve-api-dev-v3` / `reserve-customer-dev-v3` を新 DB に向けて deploy し、owner register -> login -> claims sync -> onboarding -> seed を通す。
+3. admin/customer の実認証 smoke を行い、major screens と LIFF 予約 create/cancel を `/tmp/reserve-v3-findings.md` に記録しながら潰す。
 4. `booking-links/resolve` の token-only 経路（tenantKey なし）の恒久対応方針を決定する。
 
 ## 7. ブロッカー / 保留中の意思決定
 - staging rehearsal 判定は **Go**（2026-03-06 JST 更新）。
 - MT Wave-1: ローカル **Go**、staging SQL検証（T1/T2）ペンディング。SQL検証コマンドは §11.6 に確定済み。
 - 保留事項: strict RLS 下での `booking-links/resolve` token-only 経路は `tenantKey` ヒントなしだと `404` になり得る。
+- 2026-03-12 時点の fresh-DB blocker:
+  - local contract/gate は解消済み。
+  - remote blocker は fresh Cloud SQL と `reserve-api-dev-v3` / `reserve-customer-dev-v3` の未作成、および owner/tenant/LIFF 実運用情報の未払い出し。
 
 ## 8. 毎回の更新ルール
 1. 作業開始前に `docs/PROJECT_MEMORY.md` を読む。
