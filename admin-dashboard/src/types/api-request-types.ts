@@ -62,7 +62,6 @@ export interface CreatePractitionerRequest {
     title?: string | null;
     description?: string | null;
     nominationFee?: number | null;
-    storeIds?: string[] | null;
     schedule?: PractitionerSchedule | null;
     displayOrder?: number;
     isActive?: boolean;
@@ -81,7 +80,6 @@ export interface CreateMenuRequest {
     duration: number;
     price: number;
     imageUrl?: string | null;
-    availablePractitionerIds?: string[] | null;
     displayOrder?: number | null;
     isActive?: boolean | null;
 }
@@ -97,7 +95,6 @@ export interface CreateOptionRequest {
     description?: string | null;
     duration: number;
     price: number;
-    applicableMenuIds?: string[] | null;
     displayOrder?: number | null;
     isActive?: boolean | null;
 }
