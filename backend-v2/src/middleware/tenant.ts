@@ -82,6 +82,10 @@ async function getTenantById(tenantId: string): Promise<Tenant | null> {
     return tenant;
 }
 
+export async function primeTenantCache(tenantId: string): Promise<Tenant | null> {
+    return getTenantById(tenantId);
+}
+
 async function getTenantBySlug(slug: string): Promise<Tenant | null> {
     const row = await DatabaseService.queryOne(
         'SELECT * FROM tenants WHERE slug = $1',

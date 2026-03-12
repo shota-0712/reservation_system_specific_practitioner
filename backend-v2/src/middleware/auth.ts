@@ -7,6 +7,7 @@ import { Request, Response, NextFunction } from 'express';
 import { createHmac } from 'crypto';
 import { getAuthInstance } from '../config/firebase.js';
 import { DatabaseService } from '../config/database.js';
+import { primeTenantCache } from './tenant.js';
 import { decrypt } from '../utils/crypto.js';
 import { AuthenticationError, AuthorizationError } from '../utils/errors.js';
 import { logger } from '../utils/logger.js';
@@ -175,6 +176,9 @@ export function requireJwtTenant() {
                 throw new AuthorizationError(
                     'テナント情報がトークンにありません。/api/platform/v1/admin/claims/sync を呼んでトークンを更新してください'
                 );
+            }
+            if (!(await primeTenantCache(tenantId))) {
+                throw new AuthorizationError('トークン内のテナント情報が無効です');
             }
             authenticatedReq.tenantId = tenantId;
             next();
