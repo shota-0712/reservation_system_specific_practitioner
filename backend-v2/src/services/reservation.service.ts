@@ -36,9 +36,9 @@ export interface ReservationCreateParams {
     practitionerName: string;
     menus: Menu[];
     options: Option[];
-    date: string;
-    startTime: string;
-    endTime: string;
+    startsAt: string;          // ISO timestamp
+    endsAt: string;            // ISO timestamp (server-computed)
+    timezone: string;
     totalDuration: number;
     totalPrice: number;
     menuPrice: number;
@@ -173,7 +173,6 @@ export class ReservationService {
         actor: ActorContext,
         practitioner: Practitioner,
         notificationTarget: { lineNotificationToken?: string; lineUserId?: string } | null,
-        timezone: string,
         req: Request
     ): Promise<Reservation> {
         const reservationRepo = createReservationRepository(this.tenantId);
@@ -190,9 +189,9 @@ export class ReservationService {
                 menuNames: params.menus.map((m) => m.name),
                 optionIds: params.options.map((o) => o.id),
                 optionNames: params.options.map((o) => o.name),
-                date: params.date,
-                startTime: params.startTime,
-                endTime: params.endTime,
+                startsAt: params.startsAt,
+                endsAt: params.endsAt,
+                timezone: params.timezone,
                 duration: params.totalDuration,
                 totalPrice: params.totalPrice,
                 status: params.status,
@@ -216,8 +215,7 @@ export class ReservationService {
                     optionPrice: o.price,
                     optionDuration: o.duration,
                 })),
-            } as Omit<Reservation, 'id' | 'tenantId' | 'createdAt' | 'updatedAt'>,
-            timezone
+            } as unknown as Omit<Reservation, 'id' | 'tenantId' | 'createdAt' | 'updatedAt'>
         );
 
         const targetToken =
@@ -235,7 +233,7 @@ export class ReservationService {
         createGoogleCalendarSyncService(this.tenantId).syncReservationCreation(
             reservation,
             practitioner,
-            timezone
+            params.timezone
         );
 
         const meta = getRequestMeta(req);
@@ -264,7 +262,6 @@ export class ReservationService {
         actor: ActorContext,
         practitioner: Practitioner,
         notificationTarget: { lineNotificationToken?: string; lineUserId?: string } | null,
-        timezone: string,
         req: Request,
         notifyChange?: { changeType: string; oldValue: string; newValue: string }
     ): Promise<Reservation> {
@@ -284,9 +281,9 @@ export class ReservationService {
                 menuNames: params.menus.map((m) => m.name),
                 optionIds: params.options.map((o) => o.id),
                 optionNames: params.options.map((o) => o.name),
-                date: params.date,
-                startTime: params.startTime,
-                endTime: params.endTime,
+                startsAt: params.startsAt,
+                endsAt: params.endsAt,
+                timezone: params.timezone,
                 duration: params.totalDuration,
                 totalPrice: params.totalPrice,
                 status: params.status,
@@ -313,8 +310,7 @@ export class ReservationService {
                 googleCalendarId: params.existingGoogleCalendarId,
                 googleCalendarEventId: params.existingGoogleCalendarEventId,
                 salonboardReservationId: params.existingSalonboardReservationId,
-            } as Omit<Reservation, 'id' | 'tenantId' | 'createdAt' | 'updatedAt'>,
-            timezone
+            } as unknown as Omit<Reservation, 'id' | 'tenantId' | 'createdAt' | 'updatedAt'>
         );
 
         if (notifyChange) {
@@ -343,7 +339,7 @@ export class ReservationService {
             updated,
             oldPractitioner,
             practitioner,
-            timezone
+            params.timezone
         );
 
         const meta = getRequestMeta(req);

@@ -83,20 +83,19 @@ export function requireFirebaseAuth() {
 
             const admin = adminRow as unknown as Admin;
 
-            const rowStoreIds = Array.isArray((adminRow as { store_ids?: unknown }).store_ids)
-                ? ((adminRow as { store_ids: unknown[] }).store_ids
-                    .filter((value): value is string => typeof value === 'string' && value.length > 0))
-                : [];
-
-            const activeStoreRows = await DatabaseService.query<{ id: string }>(
-                `SELECT id
-                 FROM stores
-                 WHERE tenant_id = $1
-                   AND status = 'active'
-                 ORDER BY display_order ASC, created_at ASC`,
-                [tenantId],
-                tenantId
-            );
+            const [assignmentRows, activeStoreRows] = await Promise.all([
+                DatabaseService.query<{ store_id: string }>(
+                    `SELECT store_id FROM admin_store_assignments WHERE tenant_id = $1 AND admin_id = $2`,
+                    [tenantId, (adminRow as { id: string }).id],
+                    tenantId
+                ),
+                DatabaseService.query<{ id: string }>(
+                    `SELECT id FROM stores WHERE tenant_id = $1 AND status = 'active' ORDER BY display_order ASC, created_at ASC`,
+                    [tenantId],
+                    tenantId
+                ),
+            ]);
+            const rowStoreIds = assignmentRows.map((row) => row.store_id);
             const activeStoreIds = activeStoreRows.map((row) => row.id);
 
             const scopedStoreIds = rowStoreIds.length > 0

@@ -7,7 +7,37 @@
 - 施術者向けマルチテナント予約SaaSを、本番運用可能な品質で提供する。
 - 管理画面 / 顧客アプリ / backend API / runbook を同一運用フローで管理する。
 
-## 2. 現在の実装状況（2026-03-07 時点）
+## 2. 設計の「なぜ」（Claudeはコードを読めるが理由は推測できない）
+
+### DB: Cloud SQL + PostgreSQL RLS（行レベルセキュリティ）
+- アプリ層のバグがあってもテナントデータ漏洩を防ぐため、**テナント分離をDB層で強制**した。
+- JWT の `store_code` クレームを `resolve_active_store_context()` 関数でセッション変数に設定し、全クエリを自動スコープ。
+- FORCE RLS（MT Wave-1 で追加）: superuser でも RLS フィルタを回避できないよう厳格化。migration 時の誤操作防止が目的。
+
+### 認証: Firebase Auth（二重構造）
+- 管理者: カスタムトークン + メール/パスワード
+- 顧客: LINE OAuth2 → Firebase カスタムトークン
+- `store_code` はトークンのカスタムクレームに格納。アプリが tenant を「知っている」前提ではなく、**トークンから必ず解決する**設計。
+
+### デプロイ: Cloud Run + Cloud Build
+- Revision タグでロールバックが `gcloud run services update-traffic` 一発で完了する。
+- DB マイグレーション専用ユーザー `migration_user` を分離し、アプリ実行ユーザー（`app_user`）の権限を最小化。
+
+## 3. 触らない領域（Do NOT Touch）
+
+- **`booking-links/resolve` の token-only 経路**
+  `tenantKey` ヒントなしで呼ぶと strict RLS 下で `404` になり得る既知問題。恒久対応方針が未決定（§5 ブロッカー参照）。トークン解決ロジックを変更する前に必ずテナント分離テストを実施すること。
+
+- **RLS ポリシー（migration ファイル内）**
+  変更する場合は §11.6 の T1/T2 クロステナント SQL 検証を必ず実行すること。ポリシーを緩めると全テナントのデータが漏洩する。
+
+- **`migration_user`（DB ユーザー）**
+  migration 専用ユーザー。`app_user` や他のユーザーへ変更不可。Cloud Build trigger の `_DB_USER` もこのユーザーに固定済み。
+
+- **`resolve_active_store_context()` 関数（DB）**
+  テナント解決の唯一の正規経路。この関数を経由しない `FROM stores` 直参照は廃止済み（MT-A2）。バイパスしてはいけない。
+
+## 4. 現在の実装状況（2026-03-07 時点）
 
 ### backend-v2（Cloud SQL + RLS）
 - Phase A/B + P0 + OPS-001: **完了**。
@@ -57,7 +87,7 @@
 - `DOC-002`: **完了**（`docs/runbooks/CUTOVER_EXECUTION_PLAN.md` 作成）
   - T-1 チェックリスト / T0 タイムライン / 当日コマンド / ロールバック手順 / 記録フォーマット を固定
 
-## 3. 直近で完了したこと（セッションログ）
+## 5. 直近で完了したこと（セッションログ）
 - 2026-03-07: `CRM-BE-001` gate pass（backend lint/typecheck/96 tests/build + admin lint/21 tests/build）。
 - 2026-03-07: `DOC-002` として `docs/runbooks/CUTOVER_EXECUTION_PLAN.md` を作成。T-1/T0 手順・ロールバック・記録フォーマットを固定。
 - 2026-03-06: `CRM-BE-006/007` を実装し backend gate を通過。
@@ -81,23 +111,23 @@
   - `INVALID_ARGUMENT` 失敗（exit 21）を自動検出し `import` フォールバックを実行。手作業 Python 編集は不要。
   - `DEPLOYMENT.md` / `DB_V3_PHASE_B_EXECUTION_LOG.md §13` に標準手順を記載。
 
-## 4. これからやること（優先順）
+## 6. これからやること（優先順）
 1. cutover 実施日の体制（担当/時刻/ロールバック責任者）を確定し、`CUTOVER_EXECUTION_PLAN.md` の体制欄に記入する。
 2. `generate_cutover_commands.sh` を実際の PROJECT_ID / Firebase / CloudSQL 値で実行して `CUTOVER_COMMANDS.generated.md` を生成する（T-1 チェックリスト #4）。
 3. 本番切替（WRITE_FREEZE + デプロイ + smoke）を実行し、24h 監視ログを残す。
 4. `booking-links/resolve` の token-only 経路（tenantKey なし）の恒久対応方針を決定する。
 
-## 5. ブロッカー / 保留中の意思決定
+## 7. ブロッカー / 保留中の意思決定
 - staging rehearsal 判定は **Go**（2026-03-06 JST 更新）。
 - MT Wave-1: ローカル **Go**、staging SQL検証（T1/T2）ペンディング。SQL検証コマンドは §11.6 に確定済み。
 - 保留事項: strict RLS 下での `booking-links/resolve` token-only 経路は `tenantKey` ヒントなしだと `404` になり得る。
 
-## 6. 毎回の更新ルール
+## 8. 毎回の更新ルール
 1. 作業開始前に `docs/PROJECT_MEMORY.md` を読む。
-2. 作業終了時に `2.現在の実装状況` `3.直近で完了したこと` `4.これからやること` を更新する。
+2. 作業終了時に `4.現在の実装状況` `5.直近で完了したこと` `6.これからやること` を更新する。
 3. 更新後に `npm run sync:agent-context` を実行して `CLAUDE.md` / `CODEX.md` を同期する。
 
-## 7. 再発防止ルール
+## 9. 再発防止ルール
 
 ### Cloud Build trigger 更新
 - `gcloud builds triggers update github --update-substitutions` が `INVALID_ARGUMENT` で失敗した場合は **手作業不要**。

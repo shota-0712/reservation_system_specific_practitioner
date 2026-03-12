@@ -4,6 +4,7 @@
  */
 
 import { Router, Request, Response } from 'express';
+import { formatInTimeZone } from 'date-fns-tz';
 import { requireFirebaseAuth, requireRole } from '../../middleware/auth.js';
 import { getTenantId } from '../../middleware/tenant.js';
 import { asyncHandler } from '../../middleware/error-handler.js';
@@ -159,11 +160,11 @@ router.get(
 
         const data = reservations
             .filter(r => ['confirmed', 'pending', 'completed'].includes(r.status))
-            .sort((a, b) => a.startTime.localeCompare(b.startTime))
+            .sort((a, b) => new Date(a.startsAt).getTime() - new Date(b.startsAt).getTime())
             .map((r: Reservation) => ({
                 id: r.id,
-                startTime: r.startTime,
-                endTime: r.endTime,
+                startTime: formatInTimeZone(new Date(r.startsAt), r.timezone, 'HH:mm'),
+                endTime: formatInTimeZone(new Date(r.endsAt), r.timezone, 'HH:mm'),
                 customerName: r.customerName,
                 menuNames: r.menuNames,
                 practitionerName: r.practitionerName,

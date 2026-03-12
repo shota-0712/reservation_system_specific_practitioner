@@ -349,8 +349,8 @@ async function calculateDaySlots(
             reservationsByPractitioner[res.practitionerId] = [];
         }
         reservationsByPractitioner[res.practitionerId].push({
-            startTime: res.startTime,
-            endTime: res.endTime,
+            startTime: format(new Date(res.startsAt), 'HH:mm', { timeZone: timezone }),
+            endTime: format(new Date(res.endsAt), 'HH:mm', { timeZone: timezone }),
         });
     }
 

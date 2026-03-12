@@ -11,6 +11,7 @@ describe('buildReservationFilterSql', () => {
                 date: '2026-03-06',
                 dateFrom: '2026-03-01',
                 dateTo: '2026-03-31',
+                timezone: 'Asia/Tokyo',
             },
             2
         );
@@ -20,18 +21,21 @@ describe('buildReservationFilterSql', () => {
                 ' AND status = ANY($2)' +
                 ' AND practitioner_id = $3' +
                 ' AND customer_id = $4' +
-                ' AND date = $5' +
-                ' AND date >= $6' +
-                ' AND date <= $7',
+                ' AND (starts_at AT TIME ZONE $5)::date = $6::date' +
+                ' AND (starts_at AT TIME ZONE $7)::date >= $8::date' +
+                ' AND (starts_at AT TIME ZONE $9)::date <= $10::date',
             params: [
                 ['pending', 'confirmed'],
                 'pr-1',
                 'cu-1',
+                'Asia/Tokyo',
                 '2026-03-06',
+                'Asia/Tokyo',
                 '2026-03-01',
+                'Asia/Tokyo',
                 '2026-03-31',
             ],
-            nextParamIndex: 8,
+            nextParamIndex: 11,
         });
     });
 
@@ -45,9 +49,9 @@ describe('buildReservationFilterSql', () => {
         );
 
         expect(result).toEqual({
-            sql: ' AND status = $4 AND date = $5',
-            params: ['completed', '2026-03-06'],
-            nextParamIndex: 6,
+            sql: ' AND status = $4 AND (starts_at AT TIME ZONE $5)::date = $6::date',
+            params: ['completed', 'Asia/Tokyo', '2026-03-06'],
+            nextParamIndex: 7,
         });
     });
 });

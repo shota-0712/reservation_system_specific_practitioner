@@ -4,6 +4,7 @@
  * Messaging API (Push Message) を使用して Flex Message を送信
  */
 
+import { formatInTimeZone } from 'date-fns-tz';
 import { DatabaseService } from '../config/database.js';
 import { TenantRepository } from '../repositories/tenant.repository.js';
 import { createPractitionerRepository, createStoreRepository } from '../repositories/index.js';
@@ -322,8 +323,8 @@ export class ServiceMessageService {
         const baseArgs: ServiceMessageTemplateArgs = {
             title: '',
             store_name: store?.name || tenant.name,
-            date: this.formatDate(reservation.date),
-            time: reservation.startTime,
+            date: this.formatDate(formatInTimeZone(new Date(reservation.startsAt), reservation.timezone, 'yyyy-MM-dd')),
+            time: formatInTimeZone(new Date(reservation.startsAt), reservation.timezone, 'HH:mm'),
             menu: reservation.menuNames?.join('、') ?? '',
             practitioner: reservation.practitionerName ?? '',
             duration: String(reservation.duration ?? 0),

@@ -17,7 +17,7 @@ export interface CustomerFilters {
 }
 
 function mapCustomer(row: Record<string, any>): Customer {
-    const lineNotificationToken = row.line_notification_token ?? row.attributes?.notificationToken ?? undefined;
+    const lineNotificationToken = row.line_notification_token ?? undefined;
     return {
         id: row.id,
         tenantId: row.tenant_id,
@@ -372,10 +372,6 @@ export class CustomerRepository {
                 is_active = COALESCE($13, is_active),
                 line_notification_token = COALESCE($14, line_notification_token),
                 line_notification_token_expires_at = COALESCE($15, line_notification_token_expires_at),
-                attributes = CASE
-                    WHEN $14 IS NULL THEN attributes
-                    ELSE COALESCE(attributes, '{}'::jsonb) || jsonb_build_object('notificationToken', $14)
-                END,
                 updated_at = NOW()
              WHERE id = $1 AND tenant_id = $2
              RETURNING *`,
@@ -399,10 +395,6 @@ export class CustomerRepository {
             `UPDATE customers SET
                 line_notification_token = $3,
                 line_notification_token_expires_at = $4,
-                attributes = CASE
-                    WHEN $3 IS NULL THEN attributes - 'notificationToken'
-                    ELSE COALESCE(attributes, '{}'::jsonb) || jsonb_build_object('notificationToken', $3)
-                END,
                 updated_at = NOW()
              WHERE id = $1 AND tenant_id = $2
              RETURNING *`,

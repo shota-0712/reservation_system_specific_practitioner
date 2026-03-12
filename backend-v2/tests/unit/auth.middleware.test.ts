@@ -39,10 +39,12 @@ describe('requireFirebaseAuth middleware', () => {
             firebase_uid: 'uid-1',
             role: 'manager',
             permissions: {},
-            store_ids: ['store-allowed'],
             is_active: true,
         });
-        queryMock.mockResolvedValue([{ id: 'store-allowed' }]);
+        // Promise.all: [admin_store_assignments, active stores]
+        queryMock
+            .mockResolvedValueOnce([{ store_id: 'store-allowed' }])
+            .mockResolvedValueOnce([{ id: 'store-allowed' }]);
 
         const req: any = {
             headers: {
@@ -71,10 +73,12 @@ describe('requireFirebaseAuth middleware', () => {
             firebase_uid: 'uid-2',
             role: 'manager',
             permissions: {},
-            store_ids: ['store-1', 'store-2'],
             is_active: true,
         });
-        queryMock.mockResolvedValue([{ id: 'store-1' }, { id: 'store-2' }]);
+        // Promise.all: [admin_store_assignments, active stores]
+        queryMock
+            .mockResolvedValueOnce([{ store_id: 'store-1' }, { store_id: 'store-2' }])
+            .mockResolvedValueOnce([{ id: 'store-1' }, { id: 'store-2' }]);
 
         const req: any = {
             headers: {
@@ -100,13 +104,12 @@ describe('requireFirebaseAuth middleware', () => {
             firebase_uid: 'uid-3',
             role: 'admin',
             permissions: {},
-            store_ids: [],
             is_active: true,
         });
-        queryMock.mockResolvedValue([
-            { id: 'store-a' },
-            { id: 'store-b' },
-        ]);
+        // Promise.all: [admin_store_assignments (empty), active stores]
+        queryMock
+            .mockResolvedValueOnce([])
+            .mockResolvedValueOnce([{ id: 'store-a' }, { id: 'store-b' }]);
 
         const req: any = {
             headers: {
@@ -119,7 +122,7 @@ describe('requireFirebaseAuth middleware', () => {
 
         await requireFirebaseAuth()(req, res, next);
 
-        expect(queryMock).toHaveBeenCalledTimes(1);
+        expect(queryMock).toHaveBeenCalledTimes(2);
         expect(req.storeId).toBe('store-a');
         expect(req.user?.storeIds).toEqual(['store-a', 'store-b']);
         expect(next).toHaveBeenCalledWith();

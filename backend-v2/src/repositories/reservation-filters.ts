@@ -4,9 +4,12 @@ export interface ReservationFilters {
     status?: ReservationStatus | ReservationStatus[];
     practitionerId?: string;
     customerId?: string;
+    // Date-based filters (YYYY-MM-DD) – converted internally to starts_at range.
+    // `timezone` defaults to 'Asia/Tokyo'. For UX convenience queries only.
     dateFrom?: string;
     dateTo?: string;
     date?: string;
+    timezone?: string;
 }
 
 export interface ReservationFilterSql {
@@ -22,6 +25,7 @@ export function buildReservationFilterSql(
     const clauses: string[] = [];
     const params: unknown[] = [];
     let paramIndex = startingParamIndex;
+    const tz = filters.timezone ?? 'Asia/Tokyo';
 
     if (filters.status) {
         if (Array.isArray(filters.status)) {
@@ -45,22 +49,23 @@ export function buildReservationFilterSql(
         paramIndex++;
     }
 
+    // Exact date: match reservations whose local date (in `tz`) equals the given date.
     if (filters.date) {
-        clauses.push(` AND date = $${paramIndex}`);
-        params.push(filters.date);
-        paramIndex++;
+        clauses.push(` AND (starts_at AT TIME ZONE $${paramIndex})::date = $${paramIndex + 1}::date`);
+        params.push(tz, filters.date);
+        paramIndex += 2;
     }
 
     if (filters.dateFrom) {
-        clauses.push(` AND date >= $${paramIndex}`);
-        params.push(filters.dateFrom);
-        paramIndex++;
+        clauses.push(` AND (starts_at AT TIME ZONE $${paramIndex})::date >= $${paramIndex + 1}::date`);
+        params.push(tz, filters.dateFrom);
+        paramIndex += 2;
     }
 
     if (filters.dateTo) {
-        clauses.push(` AND date <= $${paramIndex}`);
-        params.push(filters.dateTo);
-        paramIndex++;
+        clauses.push(` AND (starts_at AT TIME ZONE $${paramIndex})::date <= $${paramIndex + 1}::date`);
+        params.push(tz, filters.dateTo);
+        paramIndex += 2;
     }
 
     return {

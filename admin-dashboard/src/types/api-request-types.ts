@@ -13,8 +13,8 @@ export interface CreateAdminReservationRequest {
     practitionerId: string;
     menuIds: string[];
     optionIds?: string[];
-    date: string;        // YYYY-MM-DD
-    startTime: string;  // HH:mm
+    startsAt: string;    // ISO 8601 UTC datetime
+    timezone: string;    // IANA timezone, e.g. "Asia/Tokyo"
     status?: 'pending' | 'confirmed' | string;
     isNomination?: boolean;
     customerNote?: string | null;

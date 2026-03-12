@@ -10,14 +10,6 @@ import { buildReservationFilterSql, type ReservationFilters } from './reservatio
 
 const DEFAULT_TIMEZONE = 'Asia/Tokyo';
 
-function buildTimestampAtSql(
-    dateIdx: number,
-    timeIdx: number,
-    timezoneIdx: number
-): string {
-    return `(($${dateIdx}::date || ' ' || $${timeIdx} || ':00')::timestamp AT TIME ZONE $${timezoneIdx})`;
-}
-
 function buildPeriodRangeSql(
     dateIdx: number,
     startTimeIdx: number,
@@ -81,12 +73,9 @@ function mapReservation(row: Record<string, any>): Reservation {
         menuNames: row.menu_names ?? [],
         optionIds: row.option_ids ?? [],
         optionNames: row.option_names ?? [],
-        startsAt: row.starts_at ?? undefined,
-        endsAt: row.ends_at ?? undefined,
-        timezone: row.timezone ?? undefined,
-        date: row.date instanceof Date ? row.date.toISOString().split('T')[0] : row.date,
-        startTime: row.start_time,
-        endTime: row.end_time,
+        startsAt: row.starts_at,
+        endsAt: row.ends_at,
+        timezone: row.timezone ?? 'Asia/Tokyo',
         duration: row.total_duration ?? 0,
         totalPrice: row.total_price ?? 0,
         subtotal: row.subtotal ?? undefined,
@@ -303,7 +292,7 @@ export class ReservationRepository {
 
         sql += filterSql.sql;
         params.push(...filterSql.params);
-        sql += ' ORDER BY date ASC, start_time ASC';
+        sql += ' ORDER BY starts_at ASC';
 
         const rows = await DatabaseService.query(sql, params, this.tenantId);
         const reservations = rows.map(mapReservation);
@@ -344,9 +333,9 @@ export class ReservationRepository {
         const total = parseInt(countRow?.count || '0', 10);
 
         // Get paginated data
-        const sortField = pagination.sortBy === 'date' ? 'date' : 'created_at';
+        const sortField = pagination.sortBy === 'date' ? 'starts_at' : 'created_at';
         const sortOrder = pagination.sortOrder === 'asc' ? 'ASC' : 'DESC';
-        sql += ` ORDER BY ${sortField} ${sortOrder}, start_time ${sortOrder}`;
+        sql += ` ORDER BY ${sortField} ${sortOrder}`;
         sql += ` LIMIT $${filterSql.nextParamIndex} OFFSET $${filterSql.nextParamIndex + 1}`;
         params.push(limit, offset);
 
@@ -403,17 +392,15 @@ export class ReservationRepository {
      * Find upcoming reservations for a customer
      */
     async findUpcomingByCustomer(customerId: string): Promise<Reservation[]> {
-        const today = new Date().toISOString().split('T')[0];
-
         const rows = await DatabaseService.query(
             `SELECT * FROM reservations
              WHERE tenant_id = $1
                AND customer_id = $2
-               AND date >= $3
+               AND starts_at >= NOW()
                AND status IN ('pending', 'confirmed')
-             ORDER BY date ASC, start_time ASC
+             ORDER BY starts_at ASC
              LIMIT 10`,
-            [this.tenantId, customerId, today],
+            [this.tenantId, customerId],
             this.tenantId
         );
 
@@ -428,16 +415,14 @@ export class ReservationRepository {
         customerId: string,
         limit = 20
     ): Promise<Reservation[]> {
-        const today = new Date().toISOString().split('T')[0];
-
         const rows = await DatabaseService.query(
             `SELECT * FROM reservations
              WHERE tenant_id = $1
                AND customer_id = $2
-               AND date < $3
-             ORDER BY date DESC, start_time DESC
-             LIMIT $4`,
-            [this.tenantId, customerId, today, limit],
+               AND starts_at < NOW()
+             ORDER BY starts_at DESC
+             LIMIT $3`,
+            [this.tenantId, customerId, limit],
             this.tenantId
         );
 
@@ -450,11 +435,9 @@ export class ReservationRepository {
      * Uses TSTZRANGE for double-booking prevention via GIST exclusion constraint
      */
     async create(
-        data: Partial<Reservation> & ReservationItemInput,
-        timezone: string = DEFAULT_TIMEZONE
+        data: Partial<Reservation> & ReservationItemInput
     ): Promise<Reservation> {
         return DatabaseService.transaction(async (client) => {
-            const tz = timezone || DEFAULT_TIMEZONE;
             const subtotal = (data as any).subtotal ?? data.totalPrice ?? 0;
             const optionTotal = (data as any).optionTotal ?? 0;
             const nominationFee = (data as any).nominationFee ?? 0;
@@ -464,9 +447,7 @@ export class ReservationRepository {
             const row = await client.query(
                 `INSERT INTO reservations (
                     tenant_id, store_id, customer_id, practitioner_id,
-                    starts_at, ends_at,
-                    date, start_time, end_time,
-                    timezone,
+                    starts_at, ends_at, timezone,
                     status, source,
                     subtotal, option_total, nomination_fee, discount, total_price,
                     total_duration,
@@ -475,10 +456,7 @@ export class ReservationRepository {
                     google_calendar_id, google_calendar_event_id, salonboard_reservation_id
                 ) VALUES (
                     $1, $2, $3, $4,
-                    ${buildTimestampAtSql(5, 6, 24)},
-                    ${buildTimestampAtSql(5, 7, 24)},
-                    $5::date, $6::time, $7::time,
-                    $24,
+                    $5::timestamptz, $6::timestamptz, $7,
                     $8, $9,
                     $10, $11, $12, $13, $14,
                     $15,
@@ -492,9 +470,9 @@ export class ReservationRepository {
                     data.storeId ?? null,
                     data.customerId,
                     data.practitionerId,
-                    data.date,
-                    data.startTime,
-                    data.endTime,
+                    (data as any).startsAt ?? null,
+                    (data as any).endsAt ?? null,
+                    (data as any).timezone ?? 'Asia/Tokyo',
                     data.status ?? 'pending',
                     data.source ?? 'line',
                     subtotal,
@@ -511,7 +489,6 @@ export class ReservationRepository {
                     data.googleCalendarId ?? null,
                     data.googleCalendarEventId ?? null,
                     data.salonboardReservationId ?? null,
-                    tz,
                 ]
             );
 
@@ -538,27 +515,17 @@ export class ReservationRepository {
      */
     async update(
         id: string,
-        data: Partial<Reservation>,
-        timezone: string = DEFAULT_TIMEZONE
+        data: Partial<Reservation>
     ): Promise<Reservation> {
-        // When all date/time parts are provided, also update canonical starts_at/ends_at.
-        let canonicalTimeUpdate = '';
-        if (data.date && data.startTime && data.endTime) {
-            canonicalTimeUpdate = `,
-                starts_at = ${buildTimestampAtSql(17, 18, 20)},
-                ends_at = ${buildTimestampAtSql(17, 19, 20)}`;
-        }
-
-        const tz = timezone || DEFAULT_TIMEZONE;
         const params: any[] = [
             id,
             this.tenantId,
             data.storeId ?? null,
             data.customerId ?? null,
             data.practitionerId ?? null,
-            data.date ?? null,
-            data.startTime ?? null,
-            data.endTime ?? null,
+            (data as any).startsAt ?? null,
+            (data as any).endsAt ?? null,
+            (data as any).timezone ?? null,
             data.status ?? null,
             data.source ?? null,
             data.totalPrice ?? null,
@@ -567,23 +534,16 @@ export class ReservationRepository {
             data.customerPhone ?? null,
             data.practitionerName ?? null,
             data.customerNote ?? null,
-            // For period update
-            data.date ?? null,
-            data.startTime ?? null,
-            data.endTime ?? null,
         ];
-        if (canonicalTimeUpdate) {
-            params.push(tz);
-        }
 
         const row = await DatabaseService.queryOne(
             `UPDATE reservations SET
                 store_id = COALESCE($3, store_id),
                 customer_id = COALESCE($4, customer_id),
                 practitioner_id = COALESCE($5, practitioner_id),
-                date = COALESCE($6::date, date),
-                start_time = COALESCE($7::time, start_time),
-                end_time = COALESCE($8::time, end_time),
+                starts_at = COALESCE($6::timestamptz, starts_at),
+                ends_at = COALESCE($7::timestamptz, ends_at),
+                timezone = COALESCE($8, timezone),
                 status = COALESCE($9, status),
                 source = COALESCE($10, source),
                 total_price = COALESCE($11, total_price),
@@ -593,7 +553,6 @@ export class ReservationRepository {
                 practitioner_name = COALESCE($15, practitioner_name),
                 notes = COALESCE($16, notes),
                 updated_at = NOW()
-                ${canonicalTimeUpdate}
              WHERE id = $1 AND tenant_id = $2
              RETURNING *`,
             params,
@@ -612,11 +571,9 @@ export class ReservationRepository {
      */
     async updateWithItems(
         id: string,
-        data: Partial<Reservation> & ReservationItemInput,
-        timezone: string = DEFAULT_TIMEZONE
+        data: Partial<Reservation> & ReservationItemInput
     ): Promise<Reservation> {
         return DatabaseService.transaction(async (client) => {
-            const tz = timezone || DEFAULT_TIMEZONE;
             const subtotal = (data as any).subtotal ?? data.totalPrice ?? 0;
             const optionTotal = (data as any).optionTotal ?? 0;
             const nominationFee = (data as any).nominationFee ?? 0;
@@ -628,12 +585,9 @@ export class ReservationRepository {
                     store_id = $3,
                     customer_id = $4,
                     practitioner_id = $5,
-                    starts_at = ${buildTimestampAtSql(6, 7, 25)},
-                    ends_at = ${buildTimestampAtSql(6, 8, 25)},
-                    date = $6::date,
-                    start_time = $7::time,
-                    end_time = $8::time,
-                    timezone = $25,
+                    starts_at = $6::timestamptz,
+                    ends_at = $7::timestamptz,
+                    timezone = $8,
                     status = $9,
                     source = $10,
                     subtotal = $11,
@@ -659,9 +613,9 @@ export class ReservationRepository {
                     data.storeId ?? null,
                     data.customerId,
                     data.practitionerId,
-                    data.date,
-                    data.startTime,
-                    data.endTime,
+                    (data as any).startsAt ?? null,
+                    (data as any).endsAt ?? null,
+                    (data as any).timezone ?? 'Asia/Tokyo',
                     data.status ?? 'pending',
                     data.source ?? 'line',
                     subtotal,
@@ -678,7 +632,6 @@ export class ReservationRepository {
                     data.googleCalendarId ?? null,
                     data.googleCalendarEventId ?? null,
                     data.salonboardReservationId ?? null,
-                    tz,
                 ]
             );
 
@@ -800,7 +753,9 @@ export class ReservationRepository {
                 COUNT(*) FILTER (WHERE status = 'no_show') as no_show,
                 COALESCE(SUM(total_price) FILTER (WHERE status = 'completed'), 0) as total_revenue
              FROM reservations
-             WHERE tenant_id = $1 AND date >= $2 AND date <= $3`,
+             WHERE tenant_id = $1
+               AND (starts_at AT TIME ZONE 'Asia/Tokyo')::date >= $2::date
+               AND (starts_at AT TIME ZONE 'Asia/Tokyo')::date <= $3::date`,
             [this.tenantId, startDate, endDate],
             this.tenantId
         );
@@ -847,23 +802,24 @@ export class ReservationRepository {
      */
     async getBookedSlots(
         practitionerId: string,
-        date: string
-    ): Promise<Array<{ startTime: string; endTime: string }>> {
+        date: string,
+        timezone: string = DEFAULT_TIMEZONE
+    ): Promise<Array<{ startsAt: string; endsAt: string }>> {
         const rows = await DatabaseService.query(
-            `SELECT start_time, end_time
+            `SELECT starts_at, ends_at
              FROM reservations
              WHERE tenant_id = $1
                AND practitioner_id = $2
-               AND date = $3
+               AND (starts_at AT TIME ZONE $4)::date = $3::date
                AND status NOT IN ('canceled', 'no_show')
-             ORDER BY start_time ASC`,
-            [this.tenantId, practitionerId, date],
+             ORDER BY starts_at ASC`,
+            [this.tenantId, practitionerId, date, timezone],
             this.tenantId
         );
 
         return rows.map(r => ({
-            startTime: r.start_time,
-            endTime: r.end_time,
+            startsAt: r.starts_at,
+            endsAt: r.ends_at,
         }));
     }
 }

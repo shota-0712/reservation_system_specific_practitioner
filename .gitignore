@@ -42,3 +42,6 @@
 cloud_sql_proxy
 backend/service-account.json
 reservation-system-specific-b46b9cd93887.json
+CLAUDE.local.md
+.claude/settings.local.json
+.claude/logs/

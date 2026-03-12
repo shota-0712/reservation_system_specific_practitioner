@@ -232,15 +232,11 @@ export interface Reservation extends BaseEntity {
     optionIds: string[];
     optionNames: string[];       // 非正規化
 
-    // Canonical time fields (v3)
-    startsAt?: Timestamp;
-    endsAt?: Timestamp;
-    timezone?: string;
+    // v3 canonical time fields (required)
+    startsAt: Timestamp;
+    endsAt: Timestamp;
+    timezone: string;
 
-    // Backward-compatible derived fields
-    date: string;                // YYYY-MM-DD
-    startTime: string;           // HH:mm
-    endTime: string;             // HH:mm
     duration: number;            // 合計時間（分）
 
     totalPrice: number;
