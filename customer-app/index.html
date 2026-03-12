@@ -746,6 +746,7 @@
       menu: null,
       date: null,
       time: null,
+      storeTimezone: 'Asia/Tokyo',
       currentTab: 'home',
       // New state properties
       selectedPractitioner: null,
@@ -775,6 +776,74 @@
         .replace(/>/g, '&gt;')
         .replace(/"/g, '&quot;')
         .replace(/'/g, '&#39;');
+    }
+
+    function _tzOffsetMin(timezone, utcDate) {
+      const dtf = new Intl.DateTimeFormat('en-US', {
+        timeZone: timezone,
+        year: 'numeric',
+        month: 'numeric',
+        day: 'numeric',
+        hour: 'numeric',
+        minute: 'numeric',
+        second: 'numeric',
+        hour12: false,
+      });
+      const parts = dtf.formatToParts(utcDate);
+      const get = (type) => parseInt(parts.find((part) => part.type === type)?.value || '0', 10);
+      const hour = get('hour') % 24;
+      const localMs = Date.UTC(get('year'), get('month') - 1, get('day'), hour, get('minute'), get('second'));
+      return (utcDate.getTime() - localMs) / 60000;
+    }
+
+    function toStartsAtIso(date, time, timezone) {
+      const naiveUtc = new Date(`${date}T${time}:00Z`);
+      if (Number.isNaN(naiveUtc.getTime())) {
+        throw new Error('予約日時の形式が不正です。');
+      }
+      const localAheadMin = -_tzOffsetMin(timezone, naiveUtc);
+      return new Date(naiveUtc.getTime() - localAheadMin * 60000).toISOString();
+    }
+
+    function getReservationTimezone(reservation) {
+      const timezone = String(reservation?.timezone || state.storeTimezone || 'Asia/Tokyo').trim();
+      return timezone || 'Asia/Tokyo';
+    }
+
+    function getReservationDateParts(startsAt, timezone) {
+      const date = new Date(startsAt);
+      if (Number.isNaN(date.getTime())) {
+        throw new Error('予約日時の形式が不正です。');
+      }
+      const parts = new Intl.DateTimeFormat('en-CA', {
+        timeZone: timezone,
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: false,
+      }).formatToParts(date);
+      const get = (type) => parts.find((part) => part.type === type)?.value || '';
+      const hour = String(parseInt(get('hour') || '0', 10) % 24).padStart(2, '0');
+      return {
+        date,
+        year: get('year'),
+        month: get('month'),
+        day: get('day'),
+        hour,
+        minute: get('minute') || '00',
+      };
+    }
+
+    function formatReservationDisplayDate(startsAt, timezone) {
+      const parts = getReservationDateParts(startsAt, timezone);
+      return `${parts.year}年${parts.month}月${parts.day}日`;
+    }
+
+    function formatReservationDisplayTime(startsAt, timezone) {
+      const parts = getReservationDateParts(startsAt, timezone);
+      return `${parts.hour}:${parts.minute}`;
     }
 
     function renderConfigDiagnostics() {
@@ -1061,6 +1130,7 @@
         // Apply Header Customization from store/tenant data
         const tenantName = configData.tenantName || 'En Salon';
         const store = configData.store;
+        state.storeTimezone = store?.timezone || 'Asia/Tokyo';
         document.title = tenantName;
         document.getElementById('header-salon-name').innerText = store?.name || tenantName;
         if (store?.address) {
@@ -2181,19 +2251,27 @@
           upcoming = null;
 
           reservations.forEach(r => {
-            const resDate = new Date(r.date + 'T' + r.startTime);
+            if (typeof r.startsAt !== 'string') {
+              console.error('Invalid v3 reservation payload: missing startsAt', r);
+              return;
+            }
+            const timezone = getReservationTimezone(r);
+            const resDate = new Date(r.startsAt);
+            if (Number.isNaN(resDate.getTime())) {
+              console.error('Invalid v3 reservation payload: invalid startsAt', r);
+              return;
+            }
             const item = {
               id: r.id,
-              date: r.date.replace(/-/g, '年').replace(/年(\d+)$/, '月$1日'),
-              time: r.startTime + '〜',
+              date: formatReservationDisplayDate(r.startsAt, timezone),
+              time: formatReservationDisplayTime(r.startsAt, timezone) + '〜',
               practitioner: { name: r.practitionerName, title: '', imageUrl: '' },
               menus: r.menuNames || [r.menuName || 'メニュー'],
               price: r.totalPrice,
               status: r.status,
-              // Keep raw fields for reschedule flow
-              rawDate: r.date,
-              rawStartTime: r.startTime,
-              rawEndTime: r.endTime,
+              startsAt: r.startsAt,
+              endsAt: r.endsAt,
+              timezone,
               practitionerId: r.practitionerId,
               menuIds: r.menuIds,
               optionIds: r.optionIds,
@@ -2433,15 +2511,15 @@
           state.additionalMenus.forEach(m => menuIds.push(m.id));
         }
 
-        // Convert date format from YYYY/MM/DD to YYYY-MM-DD
-        const formattedDate = state.date.replace(/\//g, '-');
+        const reservationTimezone = state.storeTimezone || 'Asia/Tokyo';
+        const startsAt = toStartsAtIso(state.date.replace(/\//g, '-'), state.time, reservationTimezone);
 
         const payload = {
           practitionerId: practitionerId,
           menuIds: menuIds,
           optionIds: state.selectedOptions.map(o => o.id),
-          date: formattedDate,
-          startTime: state.time,
+          startsAt: startsAt,
+          timezone: reservationTimezone,
           customerNote: '',
           isNomination: !!state.selectedPractitioner,
           notificationToken: state.user.userId || state.user.sub,

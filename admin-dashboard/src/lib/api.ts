@@ -364,6 +364,45 @@ export const optionsApi = {
         apiClient(`/admin/options/${id}`, { method: 'DELETE' }),
 };
 
+type PractitionerStoreAssignments = {
+    practitionerId: string;
+    storeIds: string[];
+};
+
+type MenuPractitionerAssignments = {
+    menuId: string;
+    practitionerIds: string[];
+};
+
+type OptionMenuAssignments = {
+    optionId: string;
+    menuIds: string[];
+};
+
+export const assignmentsApi = {
+    getPractitionerStores: (id: string) =>
+        apiClient<PractitionerStoreAssignments>(`/admin/assignments/practitioners/${id}/stores`),
+    setPractitionerStores: (id: string, ids: string[]) =>
+        apiClient<PractitionerStoreAssignments>(`/admin/assignments/practitioners/${id}/stores`, {
+            method: 'PUT',
+            body: JSON.stringify({ ids }),
+        }),
+    getMenuPractitioners: (id: string) =>
+        apiClient<MenuPractitionerAssignments>(`/admin/assignments/menus/${id}/practitioners`),
+    setMenuPractitioners: (id: string, ids: string[]) =>
+        apiClient<MenuPractitionerAssignments>(`/admin/assignments/menus/${id}/practitioners`, {
+            method: 'PUT',
+            body: JSON.stringify({ ids }),
+        }),
+    getOptionMenus: (id: string) =>
+        apiClient<OptionMenuAssignments>(`/admin/assignments/options/${id}/menus`),
+    setOptionMenus: (id: string, ids: string[]) =>
+        apiClient<OptionMenuAssignments>(`/admin/assignments/options/${id}/menus`, {
+            method: 'PUT',
+            body: JSON.stringify({ ids }),
+        }),
+};
+
 // ============================================
 // 店舗 API
 // ============================================

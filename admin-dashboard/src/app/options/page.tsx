@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogBody, DialogContent, DialogFooter, DialogHeader, ConfirmDialog } from "@/components/ui/dialog";
 import { useToast } from "@/components/ui/toast";
-import { menusApi, optionsApi } from "@/lib/api";
+import { assignmentsApi, menusApi, optionsApi } from "@/lib/api";
 import { logger } from "@/lib/logger";
 
 interface OptionItem {
@@ -15,7 +15,7 @@ interface OptionItem {
     description?: string;
     duration: number;
     price: number;
-    applicableMenuIds?: string[];
+    menuIds?: string[];
     isActive: boolean;
     displayOrder?: number;
 }
@@ -53,7 +53,22 @@ export default function OptionsPage() {
         try {
             const [optionsRes, menusRes] = await Promise.all([optionsApi.list(), menusApi.listAll()]);
             if (optionsRes.success && Array.isArray(optionsRes.data)) {
-                setItems(optionsRes.data as OptionItem[]);
+                const optionItems = optionsRes.data as OptionItem[];
+                const optionsWithAssignments = await Promise.all(
+                    optionItems.map(async (item) => {
+                        const assignmentRes = await assignmentsApi.getOptionMenus(item.id);
+                        if (!assignmentRes.success || !assignmentRes.data) {
+                            throw new Error(
+                                assignmentRes.error?.message || `オプション割り当ての取得に失敗しました: ${item.name}`
+                            );
+                        }
+                        return {
+                            ...item,
+                            menuIds: assignmentRes.data.menuIds || [],
+                        };
+                    })
+                );
+                setItems(optionsWithAssignments);
             } else {
                 setError(optionsRes.error?.message || "オプションの取得に失敗しました");
             }
@@ -98,7 +113,7 @@ export default function OptionsPage() {
             description: item.description || "",
             duration: item.duration,
             price: item.price,
-            applicableMenuIdsText: (item.applicableMenuIds || []).join(","),
+            applicableMenuIdsText: (item.menuIds || []).join(","),
             isActive: item.isActive,
         });
         setIsEditOpen(true);
@@ -125,12 +140,12 @@ export default function OptionsPage() {
         setSaving(true);
         setError(null);
         try {
+            const menuIds = parseMenuIds();
             const payload = {
                 name: form.name.trim(),
                 description: form.description || undefined,
                 duration: Number(form.duration) || 0,
                 price: Number(form.price) || 0,
-                applicableMenuIds: parseMenuIds(),
                 isActive: form.isActive,
             };
 
@@ -138,8 +153,14 @@ export default function OptionsPage() {
                 ? await optionsApi.update(selected.id, payload)
                 : await optionsApi.create(payload);
 
-            if (!res.success) {
+            if (!res.success || !res.data) {
                 throw new Error(res.error?.message || "保存に失敗しました");
+            }
+
+            const optionId = selected?.id || (res.data as OptionItem).id;
+            const assignmentRes = await assignmentsApi.setOptionMenus(optionId, menuIds);
+            if (!assignmentRes.success) {
+                throw new Error(assignmentRes.error?.message || "対象メニューの保存に失敗しました");
             }
 
             setIsEditOpen(false);
@@ -248,7 +269,7 @@ export default function OptionsPage() {
                             </thead>
                             <tbody>
                                 {items.map((item) => {
-                                    const menuNames = (item.applicableMenuIds || [])
+                                    const menuNames = (item.menuIds || [])
                                         .map((id) => menuNameMap.get(id) || id)
                                         .join(", ");
 
