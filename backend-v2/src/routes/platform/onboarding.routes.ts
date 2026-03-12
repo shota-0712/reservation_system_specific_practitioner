@@ -284,13 +284,18 @@ router.get(
                     t.slug AS tenant_key,
                     t.name AS tenant_name,
                     a.role,
-                    a.store_ids
+                    array_agg(asa.store_id ORDER BY asa.store_id)
+                        FILTER (WHERE asa.store_id IS NOT NULL) AS store_ids
              FROM admins a
              INNER JOIN tenants t
                 ON t.id = a.tenant_id
+             LEFT JOIN admin_store_assignments asa
+                ON asa.tenant_id = a.tenant_id
+               AND asa.admin_id = a.id
              WHERE a.firebase_uid = $1
                AND a.is_active = true
                AND t.status IN ('active', 'trial')
+             GROUP BY a.id, a.tenant_id, t.slug, t.name, a.role, a.created_at
              ORDER BY a.created_at DESC`,
             [decoded.uid]
         );
