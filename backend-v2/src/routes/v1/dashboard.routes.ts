@@ -16,8 +16,11 @@ import { getDashboardActivity } from '../../services/dashboard-activity.service.
 import { z } from 'zod';
 
 const router = Router();
+const DEFAULT_DASHBOARD_TIMEZONE = 'Asia/Tokyo';
 
 const formatDate = (d: Date): string => d.toISOString().split('T')[0];
+const reservationLocalDateSql = (alias: string): string =>
+    `(${alias}.starts_at AT TIME ZONE COALESCE(${alias}.timezone, '${DEFAULT_DASHBOARD_TIMEZONE}'))::date`;
 
 const minutesBetween = (start: string, end: string): number => {
     const [sh, sm] = start.split(':').map(Number);
@@ -47,6 +50,7 @@ router.get(
         const yesterday = new Date(today);
         yesterday.setDate(yesterday.getDate() - 1);
         const yesterdayStr = formatDate(yesterday);
+        const localDateSql = reservationLocalDateSql('r');
 
         const [todayStats, yesterdayStats] = await Promise.all([
             DatabaseService.queryOne(
@@ -54,8 +58,8 @@ router.get(
                     COALESCE(SUM(total_price) FILTER (WHERE status = 'completed'), 0) as revenue,
                     COUNT(*) FILTER (WHERE status IN ('confirmed','pending','completed')) as bookings,
                     COUNT(*) FILTER (WHERE status = 'completed') as completed_count
-                 FROM reservations
-                 WHERE tenant_id = $1 AND date = $2`,
+                 FROM reservations r
+                 WHERE r.tenant_id = $1 AND ${localDateSql} = $2::date`,
                 [tenantId, todayStr],
                 tenantId
             ),
@@ -64,8 +68,8 @@ router.get(
                     COALESCE(SUM(total_price) FILTER (WHERE status = 'completed'), 0) as revenue,
                     COUNT(*) FILTER (WHERE status IN ('confirmed','pending','completed')) as bookings,
                     COUNT(*) FILTER (WHERE status = 'completed') as completed_count
-                 FROM reservations
-                 WHERE tenant_id = $1 AND date = $2`,
+                 FROM reservations r
+                 WHERE r.tenant_id = $1 AND ${localDateSql} = $2::date`,
                 [tenantId, yesterdayStr],
                 tenantId
             ),
@@ -250,28 +254,27 @@ router.get(
         const today = new Date();
         const startDate = new Date(today);
         startDate.setDate(today.getDate() - 6);
+        const localDateSql = reservationLocalDateSql('r');
 
         const summaryRows = await DatabaseService.query(
             `SELECT
-                date,
-                COUNT(*) FILTER (WHERE status IN ('confirmed','pending','completed')) as bookings,
-                COUNT(*) FILTER (WHERE status = 'completed') as completed_count,
-                COALESCE(SUM(total_price) FILTER (WHERE status = 'completed'), 0) as revenue
-             FROM reservations
-             WHERE tenant_id = $1
-               AND date >= $2
-               AND date <= $3
-             GROUP BY date
-             ORDER BY date ASC`,
+                to_char(r.starts_at AT TIME ZONE COALESCE(r.timezone, '${DEFAULT_DASHBOARD_TIMEZONE}'), 'YYYY-MM-DD') as local_date,
+                COUNT(*) FILTER (WHERE r.status IN ('confirmed','pending','completed')) as bookings,
+                COUNT(*) FILTER (WHERE r.status = 'completed') as completed_count,
+                COALESCE(SUM(r.total_price) FILTER (WHERE r.status = 'completed'), 0) as revenue
+             FROM reservations r
+             WHERE r.tenant_id = $1
+               AND ${localDateSql} >= $2::date
+               AND ${localDateSql} <= $3::date
+             GROUP BY local_date
+             ORDER BY local_date ASC`,
             [tenantId, formatDate(startDate), formatDate(today)],
             tenantId
         );
 
         const rowsByDate = new Map<string, Record<string, unknown>>();
         summaryRows.forEach((row) => {
-            const key = row.date instanceof Date
-                ? row.date.toISOString().split('T')[0]
-                : String(row.date);
+            const key = String(row.local_date);
             rowsByDate.set(key, row as Record<string, unknown>);
         });
 

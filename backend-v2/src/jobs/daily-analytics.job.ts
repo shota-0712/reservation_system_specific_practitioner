@@ -142,18 +142,22 @@ async function aggregateTenantDailyAnalytics(
     const fallbackStoreId = stores[0].id;
 
     const rows = await DatabaseService.query<AnalyticsAggregateRow>(
-        `WITH reservation_base AS (
+        `WITH reservation_source AS (
             SELECT
                 r.id,
                 COALESCE(r.store_id, $3::uuid) AS store_id,
                 r.customer_id,
                 COALESCE(r.practitioner_name, '未設定') AS practitioner_name,
-                r.start_time,
+                (r.starts_at AT TIME ZONE COALESCE(r.timezone, $4)) AS local_starts_at,
                 r.status,
                 COALESCE(r.total_price, 0) AS total_price
             FROM reservations r
             WHERE r.tenant_id = $1
-              AND r.date = $2
+        ),
+        reservation_base AS (
+            SELECT *
+            FROM reservation_source
+            WHERE local_starts_at::date = $2::date
         ),
         reservation_stats AS (
             SELECT
@@ -253,11 +257,11 @@ async function aggregateTenantDailyAnalytics(
         hour_totals AS (
             SELECT
                 store_id,
-                split_part(start_time, ':', 1) AS hour_key,
+                to_char(local_starts_at, 'HH24') AS hour_key,
                 COUNT(*)::bigint AS reservation_count
             FROM reservation_base
             WHERE status IN ('pending', 'confirmed', 'completed')
-            GROUP BY store_id, split_part(start_time, ':', 1)
+            GROUP BY store_id, to_char(local_starts_at, 'HH24')
         ),
         hour_json AS (
             SELECT
