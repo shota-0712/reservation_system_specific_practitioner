@@ -13,12 +13,16 @@ import { getMenuRankingData, getPractitionerRevenueData } from '../../services/r
 import { z } from 'zod';
 
 const router = Router();
+const DEFAULT_REPORT_TIMEZONE = 'Asia/Tokyo';
 
 const reportSummaryQuerySchema = z.object({
     period: z.enum(['week', 'month', 'year']).default('month'),
 });
 
 const formatDate = (d: Date): string => d.toISOString().split('T')[0];
+
+const reservationLocalDateSql = (alias: string): string =>
+    `(${alias}.starts_at AT TIME ZONE COALESCE(${alias}.timezone, '${DEFAULT_REPORT_TIMEZONE}'))::date`;
 
 const toInt = (value: unknown): number => {
     if (typeof value === 'number') return Number.isFinite(value) ? Math.trunc(value) : 0;
@@ -142,17 +146,19 @@ router.get(
                 ? (repeatCustomers / currentAnalytics.uniqueCustomers) * 100
                 : 0;
         } else {
+            const localDateSql = reservationLocalDateSql('r');
             const repeatTotals = await DatabaseService.queryOne(
                 `SELECT
                     COUNT(*) as total_customers,
                     COUNT(*) FILTER (WHERE visit_count > 1) as repeat_customers
                  FROM (
-                    SELECT customer_id, COUNT(*) as visit_count
-                    FROM reservations
-                    WHERE tenant_id = $1
-                      AND date >= $2 AND date <= $3
-                      AND status IN ('completed','confirmed','pending')
-                    GROUP BY customer_id
+                    SELECT r.customer_id, COUNT(*) as visit_count
+                    FROM reservations r
+                    WHERE r.tenant_id = $1
+                      AND ${localDateSql} >= $2::date
+                      AND ${localDateSql} <= $3::date
+                      AND r.status IN ('completed','confirmed','pending')
+                    GROUP BY r.customer_id
                  ) t`,
                 [tenant.id, startDateStr, endDateStr],
                 tenant.id
@@ -164,16 +170,18 @@ router.get(
         }
 
         if (currentAnalytics.rowCount === 0 || prevAnalytics.rowCount === 0) {
+            const localDateSql = reservationLocalDateSql('r');
             const [currentStats, prevStats] = await Promise.all([
                 DatabaseService.queryOne(
                     `SELECT
                         COUNT(*) as bookings,
                         COUNT(*) FILTER (WHERE status = 'completed') as completed_count,
                         COALESCE(SUM(total_price) FILTER (WHERE status = 'completed'), 0) as revenue
-                     FROM reservations
-                     WHERE tenant_id = $1
-                       AND date >= $2 AND date <= $3
-                       AND status IN ('completed','confirmed','pending')`,
+                     FROM reservations r
+                     WHERE r.tenant_id = $1
+                       AND ${localDateSql} >= $2::date
+                       AND ${localDateSql} <= $3::date
+                       AND r.status IN ('completed','confirmed','pending')`,
                     [tenant.id, startDateStr, endDateStr],
                     tenant.id
                 ),
@@ -182,10 +190,11 @@ router.get(
                         COUNT(*) as bookings,
                         COUNT(*) FILTER (WHERE status = 'completed') as completed_count,
                         COALESCE(SUM(total_price) FILTER (WHERE status = 'completed'), 0) as revenue
-                     FROM reservations
-                     WHERE tenant_id = $1
-                       AND date >= $2 AND date <= $3
-                       AND status IN ('completed','confirmed','pending')`,
+                     FROM reservations r
+                     WHERE r.tenant_id = $1
+                       AND ${localDateSql} >= $2::date
+                       AND ${localDateSql} <= $3::date
+                       AND r.status IN ('completed','confirmed','pending')`,
                     [tenant.id, prevStartDateStr, prevEndDateStr],
                     tenant.id
                 ),
@@ -278,14 +287,19 @@ router.get(
 
         let sourceRows = rows;
         if (sourceRows.length === 0) {
+            const localDateSql = reservationLocalDateSql('r');
             sourceRows = await DatabaseService.query(
                 `SELECT
-                    to_char(date_trunc('month', date), 'YYYY-MM') as month_key,
-                    COALESCE(SUM(total_price), 0) as revenue
-                 FROM reservations
-                 WHERE tenant_id = $1
-                   AND status = 'completed'
-                   AND date >= $2 AND date <= $3
+                    to_char(
+                        date_trunc('month', r.starts_at AT TIME ZONE COALESCE(r.timezone, '${DEFAULT_REPORT_TIMEZONE}')),
+                        'YYYY-MM'
+                    ) as month_key,
+                    COALESCE(SUM(r.total_price), 0) as revenue
+                 FROM reservations r
+                 WHERE r.tenant_id = $1
+                   AND r.status = 'completed'
+                   AND ${localDateSql} >= $2::date
+                   AND ${localDateSql} <= $3::date
                  GROUP BY month_key
                  ORDER BY month_key`,
                 [tenant.id, startRange, endRange],

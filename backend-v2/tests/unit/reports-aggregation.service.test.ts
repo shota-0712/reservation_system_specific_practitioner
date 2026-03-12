@@ -49,6 +49,9 @@ describe('reports-aggregation service', () => {
             { name: 'カラー', count: 8, revenue: 52000 },
         ]);
         expect(querySpy).toHaveBeenCalledTimes(2);
+        const fallbackSql = String(querySpy.mock.calls[1]?.[0] ?? '');
+        expect(fallbackSql).toContain('starts_at');
+        expect(fallbackSql).not.toContain('r.date >=');
     });
 
     it('falls back to reservations when daily_analytics query throws', async () => {
@@ -94,5 +97,8 @@ describe('reports-aggregation service', () => {
             { name: '山田', revenue: 88000, customers: 11 },
         ]);
         expect(querySpy).toHaveBeenCalledTimes(2);
+        const fallbackSql = String(querySpy.mock.calls[1]?.[0] ?? '');
+        expect(fallbackSql).toContain('starts_at');
+        expect(fallbackSql).not.toContain('AND date >=');
     });
 });
