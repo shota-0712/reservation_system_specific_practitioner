@@ -277,18 +277,30 @@ print(date.isoformat())
 PY
 )"
 
+  reservation_starts_at="$(python3 - <<PY
+from datetime import datetime
+from zoneinfo import ZoneInfo
+
+date = "${reservation_date}"
+timezone = "${TIMEZONE}"
+local_dt = datetime.fromisoformat(f"{date}T10:00:00").replace(tzinfo=ZoneInfo(timezone))
+print(local_dt.astimezone(ZoneInfo("UTC")).isoformat().replace("+00:00", "Z"))
+PY
+)"
+
   reservation_payload="$(jq -cn \
     --arg practitionerId "${practitioner_id}" \
     --arg menuId "${menu_id}" \
-    --arg date "${reservation_date}" \
+    --arg startsAt "${reservation_starts_at}" \
+    --arg timezone "${TIMEZONE}" \
     '{
       customerName:"スモーク顧客",
       customerPhone:"09012345678",
       practitionerId:$practitionerId,
       menuIds:[$menuId],
       optionIds:[],
-      date:$date,
-      startTime:"10:00",
+      startsAt:$startsAt,
+      timezone:$timezone,
       status:"confirmed",
       source:"admin"
     }')"
