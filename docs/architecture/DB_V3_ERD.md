@@ -1,35 +1,32 @@
 # DB V3 ER図（Cloud SQL OLTP）
 
-`Cloud SQL(PostgreSQL)` 側の正規化スキーマ（V3）の中核だけを示した ER 図です。
-分析系は `BigQuery raw/mart` に分離し、この図には含めません。
-
-**注記**: CRM拡張テーブル（`tenant_rfm_settings`, `tenant_notification_settings`）と
-SECURITY DEFINER 関数（`resolve_active_store_context`, `resolve_booking_link_token`）は
-この図に含めていません。正本は migration ファイルを参照してください。
-
-詳細なスキーマ定義（制約/RLS/FK 方針 / CRM拡張）は以下を参照:
-
-- `docs/architecture/DB_V3_SCHEMA_DEFINITION.md`
+この ER 図は `database/schema/001_initial_schema.sql` + `20260312_v3_hard_cleanup.sql` による v3-clean スキーマ全体を示す。CRM 拡張・assignment テーブル・booking link・settings を含め、欠落なく再解釈された図を提供する。
 
 ```mermaid
 erDiagram
-    TENANTS ||--o{ STORES : has
-    TENANTS ||--o{ ADMINS : has
-    TENANTS ||--o{ CUSTOMERS : has
-    TENANTS ||--o{ PRACTITIONERS : has
-    TENANTS ||--o{ MENUS : has
-    TENANTS ||--o{ MENU_OPTIONS : has
-    TENANTS ||--o{ RESERVATIONS : has
-    TENANTS ||--o{ EXPORT_JOBS : has
+    TENANTS ||--o{ STORES : operates
+    TENANTS ||--o{ ADMINS : hires
+    TENANTS ||--o{ CUSTOMERS : serves
+    TENANTS ||--o{ PRACTITIONERS : staffs
+    TENANTS ||--o{ MENUS : offers
+    TENANTS ||--o{ MENU_OPTIONS : sells
+    TENANTS ||--o{ RESERVATIONS : schedules
+    TENANTS ||--o{ EXPORT_JOBS : requests
+    TENANTS ||--o{ BOOKING_LINK_TOKENS : publishes
+    TENANTS ||--o{ SETTINGS : configures
+    TENANTS ||--o{ TENANT_RFM_SETTINGS : scores
+    TENANTS ||--o{ TENANT_NOTIFICATION_SETTINGS : notifies
 
-    STORES ||--o{ RESERVATIONS : serves
+    STORES ||--o{ RESERVATIONS : hosts
+    STORES ||--o{ SETTINGS : owns
+
     CUSTOMERS ||--o{ RESERVATIONS : books
     PRACTITIONERS ||--o{ RESERVATIONS : handles
 
-    RESERVATIONS ||--o{ RESERVATION_MENUS : includes
+    RESERVATIONS ||--o{ RESERVATION_MENUS : contains
     MENUS ||--o{ RESERVATION_MENUS : referenced
 
-    RESERVATIONS ||--o{ RESERVATION_OPTIONS : includes
+    RESERVATIONS ||--o{ RESERVATION_OPTIONS : contains
     MENU_OPTIONS ||--o{ RESERVATION_OPTIONS : referenced
 
     PRACTITIONERS ||--o{ PRACTITIONER_STORE_ASSIGNMENTS : assigned
@@ -44,11 +41,26 @@ erDiagram
     ADMINS ||--o{ ADMIN_STORE_ASSIGNMENTS : assigned
     STORES ||--o{ ADMIN_STORE_ASSIGNMENTS : assigned
 
+    BOOKING_LINK_TOKENS ||--|| STORES : resolves
+    BOOKING_LINK_TOKENS ||--|| PRACTITIONERS : requires
+    BOOKING_LINK_TOKENS ||--|| TENANTS : scoped
+
+    SETTINGS ||--|| STORES : scoped
+    SETTINGS ||--|| TENANTS : scoped
+
+    EXPORT_JOBS ||--|| STORES : from
+    EXPORT_JOBS ||--|| TENANTS : scoped
+
+    TENANT_RFM_SETTINGS ||--|| TENANTS : extends
+    TENANT_NOTIFICATION_SETTINGS ||--|| TENANTS : extends
+
     TENANTS {
       uuid id PK
       varchar slug UK
       varchar name
+      varchar plan
       varchar status
+      varchar onboarding_status
     }
 
     STORES {
@@ -56,7 +68,17 @@ erDiagram
       uuid tenant_id FK
       varchar store_code UK
       varchar name
+      varchar timezone
       varchar status
+    }
+
+    ADMINS {
+      uuid id PK
+      uuid tenant_id FK
+      varchar firebase_uid UK
+      varchar email
+      varchar role
+      boolean is_active
     }
 
     CUSTOMERS {
@@ -64,6 +86,8 @@ erDiagram
       uuid tenant_id FK
       varchar name
       varchar phone
+      varchar email
+      varchar rfm_segment
       boolean is_active
     }
 
@@ -71,6 +95,8 @@ erDiagram
       uuid id PK
       uuid tenant_id FK
       varchar name
+      varchar role
+      integer nomination_fee
       boolean is_active
     }
 
@@ -78,7 +104,9 @@ erDiagram
       uuid id PK
       uuid tenant_id FK
       varchar name
-      numeric price
+      varchar category
+      integer duration
+      integer price
       boolean is_active
     }
 
@@ -86,7 +114,8 @@ erDiagram
       uuid id PK
       uuid tenant_id FK
       varchar name
-      numeric price
+      integer duration
+      integer price
       boolean is_active
     }
 
@@ -94,12 +123,15 @@ erDiagram
       uuid id PK
       uuid tenant_id FK
       uuid store_id FK
-      uuid customer_id FK
       uuid practitioner_id FK
+      uuid customer_id FK
       timestamptz starts_at
       timestamptz ends_at
       varchar timezone
       varchar status
+      varchar source
+      integer total_price
+      integer total_duration
     }
 
     RESERVATION_MENUS {
@@ -107,8 +139,9 @@ erDiagram
       uuid tenant_id FK
       uuid reservation_id FK
       uuid menu_id FK
-      int quantity
-      numeric menu_price
+      varchar menu_name
+      integer menu_price
+      integer menu_duration
     }
 
     RESERVATION_OPTIONS {
@@ -116,8 +149,8 @@ erDiagram
       uuid tenant_id FK
       uuid reservation_id FK
       uuid option_id FK
-      int quantity
-      numeric option_price
+      varchar option_name
+      integer option_price
     }
 
     PRACTITIONER_STORE_ASSIGNMENTS {
@@ -144,6 +177,38 @@ erDiagram
       uuid store_id PK
     }
 
+    BOOKING_LINK_TOKENS {
+      uuid id PK
+      uuid tenant_id FK
+      uuid store_id FK
+      uuid practitioner_id FK
+      varchar token
+    }
+
+    SETTINGS {
+      uuid id PK
+      uuid tenant_id FK
+      uuid store_id FK
+      varchar shop_name
+      jsonb message_templates
+    }
+
+    TENANT_RFM_SETTINGS {
+      uuid id PK
+      uuid tenant_id FK
+      integer recency_score5
+      integer frequency_score5
+      integer monetary_score5
+    }
+
+    TENANT_NOTIFICATION_SETTINGS {
+      uuid id PK
+      uuid tenant_id FK
+      boolean email_new_reservation
+      boolean line_reminder
+      boolean push_new_reservation
+    }
+
     EXPORT_JOBS {
       uuid id PK
       uuid tenant_id FK
@@ -151,15 +216,7 @@ erDiagram
       varchar export_type
       varchar status
       varchar storage_type
-      text gcs_object_path
     }
 ```
 
-## 制約ポリシー（100点品質の要点）
-- 親テーブルは複合FK前提で `UNIQUE (tenant_id, id)` を持つ。
-- 参照は原則 `FOREIGN KEY (tenant_id, xxx_id) -> parent(tenant_id, id)`。
-- `reservations` は `CHECK (starts_at < ends_at)` と `EXCLUDE ... WHERE status NOT IN ('canceled', 'no_show')` を適用。
-- 予約ステータス遷移は固定し、`canceled/no_show` になったときのみ同時間帯の再予約を許可する。
-- RLS は `ENABLE + FORCE` を適用し、`app_user` は `NOBYPASSRLS` 前提。
-- テナントコンテキストはアプリの全Repositoryでトランザクション内 `SET LOCAL app.current_tenant = ...` を必須にする。
-- 多対多は配列ではなく assignment テーブルで表現する。
+図に含まれるすべての FK/assignment は `DB_V3_SCHEMA_DEFINITION.md` で定義された tenant-safe FK 方針に従っている。

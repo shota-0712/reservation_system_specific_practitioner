@@ -1,205 +1,105 @@
 # DB V3 スキーマ定義（Cloud SQL / PostgreSQL）
 
-更新日時: 2026-03-16 JST
+**Canonical basis**
+
+- `database/schema/001_initial_schema.sql` (fresh v3-clean bootstrap)
+- migrations through `20260312_v3_hard_cleanup.sql` (assignment tables, CRM extension, legacy column removal)
+
+**Live DB delta (2026-03-17)**
+
+- `schema_migrations` currently records `20260311_mt_wave1_rls_hardening.sql` as the latest applied file; `20260312_v3_hard_cleanup.sql` is pending.
+- Legacy array columns (`practitioners.store_ids`, `menus.practitioner_ids`, `menu_options.applicable_menu_ids`, `admins.store_ids`) still exist on the live database and are cleaned up only by the pending migration. The canonical definition in this document assumes the post-`20260312` shape.
+- Assignment tables (`*_assignments`) exist in both canonical and live assets, but live data may still retain the legacy arrays for downlevel tooling insights.
+
+更新日時: 2026-03-17 JST
 対象 migration:
 
-- `database/migrations/20260306_v3_core_normalization_and_exports.sql`
-- `database/migrations/20260307_export_jobs_gcs_storage.sql`
-- `database/migrations/20260305_rfm_thresholds.sql`（CRM拡張: tenant_rfm_settings）
-- `database/migrations/20260309_tenant_notification_settings.sql`（CRM拡張: tenant_notification_settings）
-- `database/migrations/20260310_booking_link_resolve_function.sql`（resolve_booking_link_token 関数）
-- `database/migrations/20260311_mt_wave1_rls_hardening.sql`（FORCE RLS + resolve_active_store_context 関数）
-- `database/migrations/20260312_v3_hard_cleanup.sql`（旧互換カラム / 互換トリガー削除）
+- `20260305_rfm_thresholds.sql`（CRM拡張: `tenant_rfm_settings`）
+- `20260306_v3_core_normalization_and_exports.sql`（core tables、tenant-safe FK、exports）
+- `20260307_export_jobs_gcs_storage.sql`（export_jobs：GCS storage column + indexes）
+- `20260309_tenant_notification_settings.sql`（CRM拡張: `tenant_notification_settings`）
+- `20260310_booking_link_resolve_function.sql`（`resolve_booking_link_token`関数）
+- `20260311_mt_wave1_rls_hardening.sql`（RLS/permission hardening + helper functions）
+- `20260312_v3_hard_cleanup.sql`（legacy column + trigger cleanup）
 
 ## 1. 目的
 
-- DB V3 の正本カラム、制約、RLS 方針を API 実装と同じ解像度で明文化する。
-- ER 図の補助として、運用時に参照できる「定義書」を持つ。
+- DB V3 の正本カラム、制約、RLS 方針を API 実装と同じ解像度で明文化すること。
+- 正規化済みの assignment テーブルと CRM 拡張を含む最新 ERD/図資産（`DB_V3_ERD.md`, `DB_V3_SCHEMA_DIAGRAM.md`, `DB_V3_SCHEMA_DAG.md`）へのナビゲーションを提供すること。
 
-ER 図は以下を参照:
+## 2. 中核テーブル（V3 canonical）
 
-- `docs/architecture/DB_V3_ERD.md`
+この節では `database/schema/001_initial_schema.sql`+上記 migration で確定したテーブルを列挙する。
 
-## 2. 中核テーブル定義（V3）
+### 2.1 `reservations`
 
-### 2.1 reservations（時間正本化）
+- ID/tenant/store/customer/practitioner を tenant-safe で持つ。
+- 時間は `starts_at`/`ends_at`/`timezone` の3要素のみ、`period/date/start_time/end_time` は既に削除済み。
+- `status` は `pending/confirmed/completed/canceled/no_show`、`source` は `line/phone/walk_in/salonboard/hotpepper/web/admin/google_calendar`。
+- `reservations_no_overlap_v3` (GIST + `status NOT IN ('canceled','no_show')`) による排他制約。
+- Tenant-safe FK: `(tenant_id, store_id)` → `stores`, `(tenant_id, customer_id)` → `customers`, `(tenant_id, practitioner_id)` → `practitioners`。
 
-主要カラム:
+#### 支援テーブル
 
-- `id uuid PK`
-- `tenant_id uuid NOT NULL`
-- `store_id uuid NULL`
-- `customer_id uuid NOT NULL`
-- `practitioner_id uuid NOT NULL`
-- `starts_at timestamptz NOT NULL`
-- `ends_at timestamptz NOT NULL`
-- `timezone varchar(50) NOT NULL default 'Asia/Tokyo'`
-- `status varchar`
+- `reservation_menus`/`reservation_options` はそれぞれ `menu_option` 中間明細で、`tenant_id` を含む FK を持ち RLS を強制。
 
-削除済みレガシーカラム:
+### 2.2 Assignment テーブル
 
-- `period`
-- `date`
-- `start_time`
-- `end_time`
+- `practitioner_store_assignments`, `menu_practitioner_assignments`, `option_menu_assignments`, `admin_store_assignments` を v3-clean の正本とし、legacy array 列（`store_ids`, `practitioner_ids`, `applicable_menu_ids`）は `20260312_v3_hard_cleanup.sql` にて完全削除。
+- すべて `tenant_id` を含む複合 PK で tenant-safe FK を定義。
 
-主要制約:
+### 2.3 `customers` / `admins` / `practitioners` / `menus` / `menu_options`
 
-- `CHECK (starts_at < ends_at)` (`reservations_starts_before_ends`)
-- 予約重複防止:
-  - `EXCLUDE USING GIST (tenant_id WITH =, practitioner_id WITH =, tstzrange(starts_at, ends_at, '[)') WITH &&)`
-  - 条件: `status NOT IN ('canceled', 'no_show')`
-  - 制約名: `reservations_no_overlap_v3`
-- tenant-safe FK:
-  - `(tenant_id, store_id) -> stores(tenant_id, id)`
-  - `(tenant_id, customer_id) -> customers(tenant_id, id)`
-  - `(tenant_id, practitioner_id) -> practitioners(tenant_id, id)`
+- `customer` は RFM/LINE/CRM フィールドを備え、`total_visits`/`total_spend` などの集計カラムを持つ。
+- `admins` は Firebase UID + 権限 JSONB を持ち `tenant_id` を通した RLS を強制。
+- `practitioners` は `schedule`/`availableMenuIds` を assignment テーブルへ移行済み。`nomination_fee`/`lineConfig` を保持。
+- `menus` は `category`/`display_order`/`attributes` を持ち、`menu_practitioner_assignments` で施術者を紐づける。未割当メニューは全施術者（assignment row なし）を意味する。
+- `menu_options` は `option_menu_assignments` でメニューと繋がる。未割当オプションはすべてのメニューを対象として扱う。
 
-補助トリガー:
+### 2.4 `booking_link_tokens`
 
-- `enforce_reservation_status_transition_trigger`
-  - status 遷移を DB で強制
+- `token` → `tenant/store/practitioner` を解決する `resolve_booking_link_token(text)` をセットアップ。
+- `practitioner_id` を必須にし、`status` (active/revoked) + `expires_at` を持つ。
 
-備考:
+### 2.5 `settings`, `tenant_rfm_settings`, `tenant_notification_settings`
 
-- `20260312_v3_hard_cleanup.sql` 適用後は `sync_reservation_time_fields_trigger` と互換用 `period/date/start_time/end_time` は存在しない
-- `database/schema/001_initial_schema.sql` は fresh install 時点で cleanup 後の形になっている
+- `settings` は `tenant_id`/`store_id` 単位でブランディングや通知テンプレートを保持。
+- CRM: `tenant_rfm_settings`, `tenant_notification_settings` はそれぞれ `tenant_id` UNIQUE で RLS が `app.current_tenant` を参照。また `20260311_mt_wave1_rls_hardening.sql` で `FORCE ROW LEVEL SECURITY` となる。
 
-### 2.2 assignment テーブル群（多対多正規化）
+### 2.6 `export_jobs`
 
-旧配列カラムは cleanup 済みで、以下の assignment テーブルが正本:
+- CSV エクスポートを表し、`export_type`/`format`/`storage_type` に CHECK 制約。
+- `gcs_bucket`/`gcs_object_path` + `download_url_expires_at` は GCS 連携用（`20260307_export_jobs_gcs_storage.sql` で追加）。
 
-#### practitioner_store_assignments
+## 3. Tenant-safe FK 方針
 
-- PK: `(tenant_id, practitioner_id, store_id)`
-- FK:
-  - `(tenant_id, practitioner_id) -> practitioners(tenant_id, id)`
-  - `(tenant_id, store_id) -> stores(tenant_id, id)`
-
-#### menu_practitioner_assignments
-
-- PK: `(tenant_id, menu_id, practitioner_id)`
-- FK:
-  - `(tenant_id, menu_id) -> menus(tenant_id, id)`
-  - `(tenant_id, practitioner_id) -> practitioners(tenant_id, id)`
-
-#### option_menu_assignments
-
-- PK: `(tenant_id, option_id, menu_id)`
-- FK:
-  - `(tenant_id, option_id) -> menu_options(tenant_id, id)`
-  - `(tenant_id, menu_id) -> menus(tenant_id, id)`
-
-#### admin_store_assignments
-
-- PK: `(tenant_id, admin_id, store_id)`
-- FK:
-  - `(tenant_id, admin_id) -> admins(tenant_id, id)`
-  - `(tenant_id, store_id) -> stores(tenant_id, id)`
-
-### 2.3 export_jobs（CSVエクスポート）
-
-主要カラム:
-
-- `id uuid PK`
-- `tenant_id uuid NOT NULL`
-- `store_id uuid NULL`
-- `export_type varchar(50) NOT NULL`
-- `format varchar(10) NOT NULL default 'csv'`
-- `params jsonb NOT NULL default '{}'::jsonb`
-- `status varchar(20) NOT NULL default 'queued'`
-- `csv_content text NULL`
-- `storage_type varchar(20) NOT NULL default 'inline'`
-- `gcs_bucket text NULL`
-- `gcs_object_path text NULL`
-- `download_url_expires_at timestamptz NULL`
-
-主要制約:
-
-- `export_type IN (...)`
-  - `operations_reservations`
-  - `operations_customers`
-  - `analytics_store_daily_kpi`
-  - `analytics_menu_performance`
-- `format IN ('csv')`
-- `status IN ('queued','running','completed','failed')`
-- `storage_type IN ('inline','gcs')` (`export_jobs_storage_type_check`)
-- tenant-safe FK:
-  - `(tenant_id, store_id) -> stores(tenant_id, id)`
-
-## 3. tenant-safe FK 方針
-
-V3 では「ID 単独 FK」を段階的に排し、以下を正本とする。
-
-- 親テーブルに `UNIQUE (tenant_id, id)` を追加
-- 子テーブル参照を `FOREIGN KEY (tenant_id, xxx_id) REFERENCES parent(tenant_id, id)` に統一
-
-適用対象（代表）:
-
-- `reservations`
-- `reservation_menus`
-- `reservation_options`
-- `kartes`
-- `booking_link_tokens`
-- `google_calendar_sync_tasks`
-- `service_message_logs`
-- `export_jobs`
+- `UNIQUE (tenant_id, id)` を親テーブルに追加し、子テーブルは `(tenant_id, xxx_id)` で参照。
+- 代表: `reservations`, `reservation_menus`, `reservation_options`, `kartes`, `booking_link_tokens`, `export_jobs`, `service_message_logs`, `google_calendar_sync_tasks`.
 
 ## 4. RLS / 権限
 
-RLS 対象:
+- すべての業務テーブルで `ENABLE + FORCE ROW LEVEL SECURITY`。
+- policy は `tenant_id = current_setting('app.current_tenant', true)::UUID` で `USING`/`WITH CHECK`。
+- `app_user` は `BYPASSRLS` 禁止で、`migration_user` が ddl を実行。
 
-- 業務テーブルは `ENABLE ROW LEVEL SECURITY` + `FORCE ROW LEVEL SECURITY`
-- policy は原則:
-  - `USING (tenant_id = current_setting('app.current_tenant', true)::uuid)`
-  - `WITH CHECK (tenant_id = current_setting('app.current_tenant', true)::uuid)`
+## 5. 運用への注意
 
-アプリロール要件:
+- Repository/Service 側は `DatabaseService` を通じて `tenantId` を transation ごとに `SET LOCAL app.current_tenant`。
+- 予約操作は `starts_at`/`ends_at` を正本として扱い、`EXCLUDE ...` で競合を防ぐ。
+- `resolve_active_store_context` は `store_code` → `tenant_id`/`store_id`、`resolve_booking_link_token` は token から `tenant_id/store_id/practitioner_id` を返す。
 
-- `app_user` は `BYPASSRLS` を持ってはいけない
-- migration で `ALTER ROLE app_user NOBYPASSRLS` を試行し、解除不能なら失敗させる
+## 6. CRM 拡張テーブル
 
-## 5. API 実装との整合ポイント
+- `tenant_rfm_settings`: threshold scores × 4段階、`tenant_id` UNIQUE。`20260305_rfm_thresholds.sql + 20260311_mt_wave1_rls_hardening.sql` にて定義。
+- `tenant_notification_settings`: email/line/push のフラグ群。
+- いずれも `updated_at`/`updated_by` を持ち、role-based UI から参照。
 
-- Repository からの DB アクセスは `DatabaseService.query/queryOne/transaction(..., tenantId)` を使用し tenant context を設定
-- 予約作成/更新は `starts_at/ends_at` を正本として更新
-- 日付ベース抽出は `starts_at AT TIME ZONE timezone` から導出する
-- 予約重複の競合判定は DB の exclusion 制約（`23P01`）と API 409 変換で整合
+## 7. Schema 図資産
 
-## 6. CRM 拡張テーブル（Wave-B / MT-Wave-1）
+- 最新の ER 図: `docs/architecture/DB_V3_ERD.md`
+- ハイレベルな領域図: `docs/architecture/DB_V3_SCHEMA_DIAGRAM.md`
+- 依存 DAG: `docs/architecture/DB_V3_SCHEMA_DAG.md`
 
-正本は migration ファイル。以下は概要のみ。
+## 8. 監査／実行ユーザー
 
-### 6.1 tenant_rfm_settings
-
-- migration: `20260305_rfm_thresholds.sql` + `20260311_mt_wave1_rls_hardening.sql`
-- RLS: `ENABLE + FORCE ROW LEVEL SECURITY`
-- 主要カラム: `tenant_id UUID UNIQUE FK`, recency/frequency/monetary スコア閾値 × 4段階
-
-### 6.2 tenant_notification_settings
-
-- migration: `20260309_tenant_notification_settings.sql` + `20260311_mt_wave1_rls_hardening.sql`
-- RLS: `ENABLE + FORCE ROW LEVEL SECURITY`
-- 主要カラム: `tenant_id UUID UNIQUE FK`, email/line/push フラグ × 各種
-
-### 6.3 SECURITY DEFINER 関数
-
-| 関数名 | migration | 用途 |
-|---|---|---|
-| `resolve_booking_link_token(text)` | `20260310_booking_link_resolve_function.sql` | booking-link token → tenant_id/store_id 解決（token-only 公開フロー） |
-| `resolve_active_store_context(text)` | `20260311_mt_wave1_rls_hardening.sql` | store_code → tenant_id/store_id 解決（テナント解決ミドルウェア bootstrap フロー） |
-
-両関数とも `REVOKE ALL FROM PUBLIC` + `GRANT EXECUTE TO app_user` で権限制御。
-
-## 7. migration 実行ユーザー
-
-- migration は `migration_user`（DDL権限保有）で実行。
-- アプリ実行は `app_user`（`BYPASSRLS` 禁止）で実行。
-- `app_user` に `BYPASSRLS` が残っている場合は migration を失敗させる（要 `ALTER ROLE app_user NOBYPASSRLS`）。
-
-## 8. 監査参照
-
-- Phase A 監査:
-  - `docs/runbooks/DB_V3_PHASE_A_AUDIT.md`
-- Phase B 実行ログ（MT Wave-1 §11 含む）:
-  - `docs/runbooks/DB_V3_PHASE_B_EXECUTION_LOG.md`
+- migrations は `migration_user`、アプリ実行は `app_user`。`app_user` に `BYPASSRLS` があれば `ALTER ROLE ... NOBYPASSRLS` を強制。

@@ -13,8 +13,8 @@
 
 BEGIN;
 
-SET LOCAL lock_timeout = '30s';
-SET LOCAL statement_timeout = '60min';
+SET LOCAL lock_timeout = '5s';
+SET LOCAL statement_timeout = '15min';
 
 -- ============================================================
 -- PRECHECK: Ensure assignment tables have data before dropping
@@ -22,12 +22,17 @@ SET LOCAL statement_timeout = '60min';
 -- the legacy columns are not, something went wrong in a prior
 -- migration. We fail fast rather than silently lose data.
 -- ============================================================
+-- Tracks: practitioner_store, admin_store, menu_practitioner, option_menu assignments.
 DO $$
 DECLARE
     legacy_practitioner_store_count BIGINT;
     assignment_practitioner_store_count BIGINT;
     legacy_admin_store_count BIGINT;
     assignment_admin_store_count BIGINT;
+    legacy_menu_practitioner_count BIGINT;
+    assignment_menu_practitioner_count BIGINT;
+    legacy_option_menu_count BIGINT;
+    assignment_option_menu_count BIGINT;
 BEGIN
     -- Check practitioner store_ids vs assignment table
     IF EXISTS (
@@ -69,6 +74,50 @@ BEGIN
                 'but admin_store_assignments is empty. '
                 'Run the 20260306 migration first to backfill assignment tables.',
                 legacy_admin_store_count
+            USING ERRCODE = 'P0001';
+        END IF;
+    END IF;
+
+    -- Check menus.practitioner_ids vs assignment table
+    IF EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'menus' AND column_name = 'practitioner_ids'
+    ) THEN
+        SELECT COUNT(*) INTO legacy_menu_practitioner_count
+        FROM menus
+        WHERE array_length(practitioner_ids, 1) > 0;
+
+        SELECT COUNT(*) INTO assignment_menu_practitioner_count
+        FROM menu_practitioner_assignments;
+
+        IF legacy_menu_practitioner_count > 0 AND assignment_menu_practitioner_count = 0 THEN
+            RAISE EXCEPTION
+                'PRECHECK FAILED: menus.practitioner_ids has % rows with data '
+                'but menu_practitioner_assignments is empty. '
+                'Run the 20260306 migration first to populate menu relationships.',
+                legacy_menu_practitioner_count
+            USING ERRCODE = 'P0001';
+        END IF;
+    END IF;
+
+    -- Check menu_options.applicable_menu_ids vs assignment table
+    IF EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'menu_options' AND column_name = 'applicable_menu_ids'
+    ) THEN
+        SELECT COUNT(*) INTO legacy_option_menu_count
+        FROM menu_options
+        WHERE array_length(applicable_menu_ids, 1) > 0;
+
+        SELECT COUNT(*) INTO assignment_option_menu_count
+        FROM option_menu_assignments;
+
+        IF legacy_option_menu_count > 0 AND assignment_option_menu_count = 0 THEN
+            RAISE EXCEPTION
+                'PRECHECK FAILED: menu_options.applicable_menu_ids has % rows with data '
+                'but option_menu_assignments is empty. '
+                'Run the 20260306 migration first to populate option relationships.',
+                legacy_option_menu_count
             USING ERRCODE = 'P0001';
         END IF;
     END IF;

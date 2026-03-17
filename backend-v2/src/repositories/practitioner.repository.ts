@@ -7,13 +7,6 @@ import { NotFoundError } from '../utils/errors.js';
 import { encrypt } from '../utils/crypto.js';
 import type { Practitioner } from '../types/index.js';
 
-function isUndefinedTableError(error: unknown): boolean {
-    return typeof error === 'object'
-        && error !== null
-        && 'code' in error
-        && (error as { code?: string }).code === '42P01';
-}
-
 type WorkScheduleDay = {
     isWorking: boolean;
     startTime?: string;
@@ -121,9 +114,9 @@ function mapPractitioner(row: Record<string, any>): Practitioner {
         snsInstagram: row.sns_instagram ?? undefined,
         snsTwitter: row.sns_twitter ?? undefined,
         nominationFee: row.nomination_fee ?? 0,
-        storeIds: row.store_ids ?? [],
+        storeIds: [],
         schedule,
-        availableMenuIds: row.available_menu_ids ?? undefined,
+        availableMenuIds: [],
         calendarId: row.google_calendar_id ?? undefined,
         salonboardStaffId: row.salonboard_staff_id ?? undefined,
         lineConfig,
@@ -154,54 +147,45 @@ export class PractitionerRepository {
         if (practitioners.length === 0) return practitioners;
         const practitionerIds = practitioners.map((p) => p.id);
 
-        try {
-            const [storeRows, menuRows] = await Promise.all([
-                DatabaseService.query<{ practitioner_id: string; store_ids: string[] | null }>(
-                    `SELECT
-                        practitioner_id,
-                        array_agg(store_id ORDER BY store_id) AS store_ids
-                     FROM practitioner_store_assignments
-                     WHERE tenant_id = $1
-                       AND practitioner_id = ANY($2)
-                     GROUP BY practitioner_id`,
-                    [this.tenantId, practitionerIds],
-                    this.tenantId
-                ),
-                DatabaseService.query<{ practitioner_id: string; menu_ids: string[] | null }>(
-                    `SELECT
-                        practitioner_id,
-                        array_agg(menu_id ORDER BY menu_id) AS menu_ids
-                     FROM menu_practitioner_assignments
-                     WHERE tenant_id = $1
-                       AND practitioner_id = ANY($2)
-                     GROUP BY practitioner_id`,
-                    [this.tenantId, practitionerIds],
-                    this.tenantId
-                ),
-            ]);
+        const [storeRows, menuRows] = await Promise.all([
+            DatabaseService.query<{ practitioner_id: string; store_ids: string[] | null }>(
+                `SELECT
+                    practitioner_id,
+                    array_agg(store_id ORDER BY store_id) AS store_ids
+                 FROM practitioner_store_assignments
+                 WHERE tenant_id = $1
+                   AND practitioner_id = ANY($2)
+                 GROUP BY practitioner_id`,
+                [this.tenantId, practitionerIds],
+                this.tenantId
+            ),
+            DatabaseService.query<{ practitioner_id: string; menu_ids: string[] | null }>(
+                `SELECT
+                    practitioner_id,
+                    array_agg(menu_id ORDER BY menu_id) AS menu_ids
+                 FROM menu_practitioner_assignments
+                 WHERE tenant_id = $1
+                   AND practitioner_id = ANY($2)
+                 GROUP BY practitioner_id`,
+                [this.tenantId, practitionerIds],
+                this.tenantId
+            ),
+        ]);
 
-            const storeMap = new Map<string, string[]>();
-            for (const row of storeRows) {
-                storeMap.set(row.practitioner_id, row.store_ids ?? []);
-            }
-            const menuMap = new Map<string, string[]>();
-            for (const row of menuRows) {
-                menuMap.set(row.practitioner_id, row.menu_ids ?? []);
-            }
-
-            return practitioners.map((practitioner) => ({
-                ...practitioner,
-                storeIds: storeMap.has(practitioner.id)
-                    ? (storeMap.get(practitioner.id) ?? [])
-                    : (practitioner.storeIds ?? []),
-                availableMenuIds: menuMap.get(practitioner.id) ?? practitioner.availableMenuIds,
-            }));
-        } catch (error) {
-            if (isUndefinedTableError(error)) {
-                return practitioners;
-            }
-            throw error;
+        const storeMap = new Map<string, string[]>();
+        for (const row of storeRows) {
+            storeMap.set(row.practitioner_id, row.store_ids ?? []);
         }
+        const menuMap = new Map<string, string[]>();
+        for (const row of menuRows) {
+            menuMap.set(row.practitioner_id, row.menu_ids ?? []);
+        }
+
+        return practitioners.map((practitioner) => ({
+            ...practitioner,
+            storeIds: storeMap.get(practitioner.id) ?? [],
+            availableMenuIds: menuMap.get(practitioner.id) ?? [],
+        }));
     }
 
     private async replaceStoreAssignments(
@@ -209,28 +193,21 @@ export class PractitionerRepository {
         storeIds: string[] | undefined
     ): Promise<void> {
         if (storeIds === undefined) return;
-        try {
-            await DatabaseService.transaction(async (client) => {
+        await DatabaseService.transaction(async (client) => {
+            await client.query(
+                `DELETE FROM practitioner_store_assignments
+                 WHERE tenant_id = $1 AND practitioner_id = $2`,
+                [this.tenantId, practitionerId]
+            );
+            for (const storeId of storeIds) {
                 await client.query(
-                    `DELETE FROM practitioner_store_assignments
-                     WHERE tenant_id = $1 AND practitioner_id = $2`,
-                    [this.tenantId, practitionerId]
+                    `INSERT INTO practitioner_store_assignments (tenant_id, practitioner_id, store_id)
+                     VALUES ($1, $2, $3)
+                     ON CONFLICT DO NOTHING`,
+                    [this.tenantId, practitionerId, storeId]
                 );
-                for (const storeId of storeIds) {
-                    await client.query(
-                        `INSERT INTO practitioner_store_assignments (tenant_id, practitioner_id, store_id)
-                         VALUES ($1, $2, $3)
-                         ON CONFLICT DO NOTHING`,
-                        [this.tenantId, practitionerId, storeId]
-                    );
-                }
-            }, this.tenantId);
-        } catch (error) {
-            if (isUndefinedTableError(error)) {
-                return;
             }
-            throw error;
-        }
+        }, this.tenantId);
     }
 
     private async replaceMenuAssignments(
@@ -238,28 +215,21 @@ export class PractitionerRepository {
         menuIds: string[] | undefined
     ): Promise<void> {
         if (menuIds === undefined) return;
-        try {
-            await DatabaseService.transaction(async (client) => {
+        await DatabaseService.transaction(async (client) => {
+            await client.query(
+                `DELETE FROM menu_practitioner_assignments
+                 WHERE tenant_id = $1 AND practitioner_id = $2`,
+                [this.tenantId, practitionerId]
+            );
+            for (const menuId of menuIds) {
                 await client.query(
-                    `DELETE FROM menu_practitioner_assignments
-                     WHERE tenant_id = $1 AND practitioner_id = $2`,
-                    [this.tenantId, practitionerId]
+                    `INSERT INTO menu_practitioner_assignments (tenant_id, menu_id, practitioner_id)
+                     VALUES ($1, $2, $3)
+                     ON CONFLICT DO NOTHING`,
+                    [this.tenantId, menuId, practitionerId]
                 );
-                for (const menuId of menuIds) {
-                    await client.query(
-                        `INSERT INTO menu_practitioner_assignments (tenant_id, menu_id, practitioner_id)
-                         VALUES ($1, $2, $3)
-                         ON CONFLICT DO NOTHING`,
-                        [this.tenantId, menuId, practitionerId]
-                    );
-                }
-            }, this.tenantId);
-        } catch (error) {
-            if (isUndefinedTableError(error)) {
-                return;
             }
-            throw error;
-        }
+        }, this.tenantId);
     }
 
     async findById(id: string): Promise<Practitioner | null> {
@@ -323,59 +293,29 @@ export class PractitionerRepository {
     }
 
     async findByMenuId(menuId: string): Promise<Practitioner[]> {
-        try {
-            const assignmentRows = await DatabaseService.query<{ practitioner_id: string }>(
-                `SELECT practitioner_id
-                 FROM menu_practitioner_assignments
-                 WHERE tenant_id = $1 AND menu_id = $2`,
-                [this.tenantId, menuId],
-                this.tenantId
-            );
+        const assignmentRows = await DatabaseService.query<{ practitioner_id: string }>(
+            `SELECT practitioner_id
+             FROM menu_practitioner_assignments
+             WHERE tenant_id = $1 AND menu_id = $2`,
+            [this.tenantId, menuId],
+            this.tenantId
+        );
 
-            const assignedIds = assignmentRows.map((row) => row.practitioner_id);
-            if (assignedIds.length === 0) {
-                return this.findAllActive();
-            }
-
-            const rows = await DatabaseService.query(
-                `SELECT * FROM practitioners
-                 WHERE tenant_id = $1
-                   AND is_active = true
-                   AND id = ANY($2)
-                 ORDER BY display_order ASC`,
-                [this.tenantId, assignedIds],
-                this.tenantId
-            );
-            return this.hydrateAssignments(rows.map(mapPractitioner));
-        } catch (error) {
-            if (!isUndefinedTableError(error)) {
-                throw error;
-            }
-            const menuRow = await DatabaseService.queryOne(
-                'SELECT practitioner_ids FROM menus WHERE id = $1 AND tenant_id = $2',
-                [menuId, this.tenantId],
-                this.tenantId
-            );
-
-            const ids = (menuRow?.practitioner_ids as string[] | null) ?? [];
-
-            let rows: Array<Record<string, any>>;
-            if (ids.length === 0) {
-                rows = await DatabaseService.query(
-                    'SELECT * FROM practitioners WHERE tenant_id = $1 AND is_active = true ORDER BY display_order ASC',
-                    [this.tenantId],
-                    this.tenantId
-                );
-            } else {
-                rows = await DatabaseService.query(
-                    'SELECT * FROM practitioners WHERE tenant_id = $1 AND id = ANY($2) AND is_active = true ORDER BY display_order ASC',
-                    [this.tenantId, ids],
-                    this.tenantId
-                );
-            }
-
-            return rows.map(mapPractitioner);
+        const assignedIds = assignmentRows.map((row) => row.practitioner_id);
+        if (assignedIds.length === 0) {
+            return this.findAllActive();
         }
+
+        const rows = await DatabaseService.query(
+            `SELECT * FROM practitioners
+             WHERE tenant_id = $1
+               AND is_active = true
+               AND id = ANY($2)
+             ORDER BY display_order ASC`,
+            [this.tenantId, assignedIds],
+            this.tenantId
+        );
+        return this.hydrateAssignments(rows.map(mapPractitioner));
     }
 
     async findByMenuIdScoped(menuId: string, storeId?: string): Promise<Practitioner[]> {

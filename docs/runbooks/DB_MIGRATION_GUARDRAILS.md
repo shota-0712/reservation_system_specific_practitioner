@@ -16,7 +16,10 @@ This runbook defines non-negotiable migration safety rules for production cutove
 - `lock_timeout`: `5s`
 - `statement_timeout`: `15min`
 
+These defaults are the production guardrail; any deviation must be captured as an explicit waiver in the rehearsal record and approved before cutover. Migrations must set their own `SET LOCAL` values before mutating data so the guardrails always take effect regardless of the runner.
+
 Both values are enforced during migration execution (`scripts/run_migrations_cloudbuild.sh`).
+Waiver requests that change either timeout must be recorded in the rehearsal log referenced in §7, include the new timeout values, and receive explicit approval from the release lead before the cutover can proceed.
 
 ## 3. Rehearsal SLO
 - Full rehearsal total duration: `<= 45 minutes`
@@ -31,6 +34,8 @@ Rollback is mandatory when any of the following is true:
 - API error rate exceeds `2.0%` for `5 consecutive minutes` after cutover.
 - P95 latency for reservation APIs degrades by `>= 50%` vs pre-cutover baseline for `10 minutes`.
 - Data integrity checks fail (orphan rows, tenant-cross references, mismatch in critical counts).
+
+Rollback consists of restoring the Cloud SQL instance via PITR/restore to the pre-cutover timestamp recorded in the rehearsal log; rolling back only the application revision does not revert the schema cleanup, so it does not meet the rollback requirement. The rehearsal record must capture the PITR timestamp and target instance so the approved rollback path is repeatable without ad-hoc guesswork.
 
 ## 5. Integrity Gates (Must Pass)
 - Tenant-safe composite FK validations complete successfully.

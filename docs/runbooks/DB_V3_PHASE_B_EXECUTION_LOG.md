@@ -601,7 +601,7 @@ curl -sS -X POST -H "Authorization: Bearer $ADMIN_ID_TOKEN" -H "x-tenant-id: $TE
 | A2 | MT-A2 | `backend-v2/src/middleware/tenant.ts` の `getTenantByStoreCode` を `resolve_active_store_context` 経由に変更 |
 | A3 | MT-A3 | `backend-v2/tests/unit/tenant.middleware.test.ts` を新仕様に全面更新（7テスト、42883 Fail-fast含む） |
 | A4 | MT-A4 | `cloudbuild.yaml` / `run_migrations_cloudbuild.sh` / `create_cloudbuild_triggers.sh` / `generate_cutover_commands.sh` の migration 既定ユーザーを `app_user` → `migration_user` に変更 |
-| A5 | MT-A5 | `MULTI_TENANT_ARCHITECTURE.md` / `API_DESIGN.md` / `DEPLOYMENT.md` / `jobs.admin.routes.ts` コメントの管理API経路を `/api/v1/admin` に統一 |
+| A5 | MT-A5 | `DB_V3_SCHEMA_DEFINITION.md` / `API_DESIGN.md` / `DEPLOYMENT.md` / `jobs.admin.routes.ts` コメントの管理API経路を `/api/v1/admin` に統一 |
 | A6 | MT-A6 | 統合検証・本記録 |
 
 ### 11.2 migration 内容（20260311_mt_wave1_rls_hardening.sql）

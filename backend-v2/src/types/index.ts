@@ -1,6 +1,6 @@
 /**
  * Core Type Definitions for Multi-tenant Reservation System
- * Based on: docs/architecture/MULTI_TENANT_ARCHITECTURE.md
+ * Based on: docs/architecture/DB_V3_SCHEMA_DEFINITION.md
  */
 
 export type Timestamp = Date;
