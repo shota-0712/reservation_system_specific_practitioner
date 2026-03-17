@@ -4,11 +4,9 @@
  */
 
 import { Request, Response, NextFunction } from 'express';
-import { createHmac } from 'crypto';
 import { getAuthInstance } from '../config/firebase.js';
 import { DatabaseService } from '../config/database.js';
 import { primeTenantCache } from './tenant.js';
-import { decrypt } from '../utils/crypto.js';
 import { AuthenticationError, AuthorizationError } from '../utils/errors.js';
 import { logger } from '../utils/logger.js';
 import type { AuthenticatedRequest, Admin, AdminRole, DecodedLineToken } from '../types/index.js';
@@ -323,56 +321,39 @@ async function verifyLineIdToken(
     tenantId?: string
 ): Promise<DecodedLineToken> {
     try {
-        const parts = idToken.split('.');
-        if (parts.length !== 3) {
-            throw new Error('Invalid token format');
+        const expectedChannelId = await getLineChannelId(tenantId);
+        if (!expectedChannelId) {
+            throw new AuthenticationError('LINE認証設定が不完全です（チャンネルID未設定）');
         }
 
-        const [headerB64, payloadB64, signatureB64] = parts;
+        const response = await fetch('https://api.line.me/oauth2/v2.1/verify', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded',
+            },
+            body: new URLSearchParams({
+                id_token: idToken,
+                client_id: expectedChannelId,
+            }),
+        });
 
-        // Decode payload first to get basic info
-        const payload = JSON.parse(
-            Buffer.from(payloadB64, 'base64url').toString('utf-8')
-        ) as DecodedLineToken;
-
-        // Get LINE channel secret from tenant settings or environment
-        const channelSecret = await getLineChannelSecret(tenantId);
-
-        if (channelSecret) {
-            // Verify signature with HMAC-SHA256
-            const signatureInput = `${headerB64}.${payloadB64}`;
-            const expectedSignature = createHmac('sha256', channelSecret)
-                .update(signatureInput)
-                .digest('base64url');
-
-            if (signatureB64 !== expectedSignature) {
-                logger.warn('LINE token signature mismatch');
-                throw new AuthenticationError('無効なLINEトークン署名です');
-            }
-
-            // Verify token expiration
-            const now = Math.floor(Date.now() / 1000);
-            if (payload.exp && payload.exp < now) {
-                throw new AuthenticationError('LINEトークンの有効期限が切れています');
-            }
-
-            // Verify issuer
-            if (payload.iss !== 'https://access.line.me') {
-                throw new AuthenticationError('無効なトークン発行者です');
-            }
-
-            // Get expected channel ID from tenant settings or environment
-            const expectedChannelId = await getLineChannelId(tenantId);
-            if (expectedChannelId && payload.aud !== expectedChannelId) {
-                throw new AuthenticationError('トークンのチャネルIDが一致しません');
-            }
-
-            logger.debug('LINE token verified successfully');
-        } else {
-            throw new AuthenticationError('LINE認証設定が不完全です（チャンネルシークレット未設定）');
+        if (!response.ok) {
+            const errorBody = await response.json().catch(() => ({}));
+            logger.warn('LINE token verification endpoint rejected token', {
+                tenantId,
+                status: response.status,
+                error: errorBody,
+            });
+            throw new AuthenticationError('無効なLINEトークンです');
         }
 
-        return payload;
+        const verifiedToken = await response.json() as DecodedLineToken;
+        if (verifiedToken.aud && verifiedToken.aud !== expectedChannelId) {
+            throw new AuthenticationError('トークンのチャネルIDが一致しません');
+        }
+
+        logger.debug('LINE token verified successfully');
+        return verifiedToken;
     } catch (error) {
         if (error instanceof AuthenticationError) {
             throw error;
@@ -380,34 +361,6 @@ async function verifyLineIdToken(
         logger.error('LINE token verification error:', { error });
         throw new AuthenticationError('無効なLINEトークンです');
     }
-}
-
-/**
- * Get LINE Channel Secret from tenant settings or environment
- */
-async function getLineChannelSecret(tenantId?: string): Promise<string | null> {
-    if (tenantId) {
-        try {
-            const row = await DatabaseService.queryOne(
-                'SELECT line_channel_secret_encrypted FROM tenants WHERE id = $1',
-                [tenantId],
-                tenantId
-            );
-            const encrypted = row?.line_channel_secret_encrypted as string | undefined;
-            if (encrypted) {
-                try {
-                    return decrypt(encrypted);
-                } catch {
-                    return encrypted;
-                }
-            }
-        } catch (error) {
-            logger.warn('Failed to get LINE channel secret from DB:', { error });
-        }
-    }
-
-    // Fallback to environment variable
-    return process.env.LINE_CHANNEL_SECRET || null;
 }
 
 /**

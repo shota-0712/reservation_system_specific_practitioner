@@ -117,13 +117,13 @@ describe('resolveTenant — store_code path (resolve_active_store_context)', () 
                 throw { code: '22P02', message: 'invalid input syntax for type uuid: ""' };
             }
             if (sql.includes('FROM tenants WHERE slug = $1')) {
-                return makeTenantRow();
+                return makeTenantRow({ slug: STORE_CODE });
             }
             return null;
         });
 
         const middleware = resolveTenant({ required: true });
-        const req: any = { params: { tenantKey: 'default' }, headers: {}, query: {} };
+        const req: any = { params: { tenantKey: STORE_CODE }, headers: {}, query: {} };
         const res: any = {};
         const next = vi.fn();
 
@@ -178,9 +178,8 @@ describe('resolveTenant — store_code path (resolve_active_store_context)', () 
 });
 
 describe('resolveTenant — slug path', () => {
-    it('resolves tenant by slug when store-code lookup returns null', async () => {
+    it('resolves tenant by slug without calling resolve_active_store_context', async () => {
         queryOneMock.mockImplementation(async (sql: string) => {
-            if (sql.includes('resolve_active_store_context')) return null;
             if (sql.includes('FROM tenants WHERE slug = $1')) return makeTenantRow();
             return null;
         });
@@ -194,6 +193,10 @@ describe('resolveTenant — slug path', () => {
 
         expect(next).toHaveBeenCalledWith();
         expect(req.tenantId).toBe(TENANT_ID);
+        const storeFuncCalls = queryOneMock.mock.calls.filter((args: unknown[]) =>
+            typeof args[0] === 'string' && args[0].includes('resolve_active_store_context')
+        );
+        expect(storeFuncCalls).toHaveLength(0);
     });
 });
 

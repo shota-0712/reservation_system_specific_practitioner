@@ -4,6 +4,13 @@
 
 このディレクトリには、マルチテナント予約・CRMシステムのPostgreSQLスキーマとマイグレーションファイルが含まれています。
 
+現在の正本:
+
+- fresh install: `database/schema/001_initial_schema.sql`
+- existing DB upgrade: `database/migrations/*.sql`
+
+`001_initial_schema.sql` は v3 clean 状態を前提としており、`reservations.period/date/start_time/end_time` などの旧互換カラムは含みません。
+
 ## ディレクトリ構造
 
 ```
@@ -30,18 +37,20 @@ database/
 | インスタンスID | `reservation-system-db` |
 | パスワード | （自動生成を推奨） |
 | リージョン | `asia-northeast1` (東京) |
-| ゾーン | 複数ゾーン（高可用性） |
-| データベースバージョン | PostgreSQL 15 |
-| マシンタイプ | 4 vCPU, 16 GB RAM（Enterprise Plus） |
-| ストレージ | SSD, 100GB（自動増加有効） |
+| ゾーン | 運用要件に応じて選択（本番は高可用性を推奨） |
+| データベースバージョン | PostgreSQL 16 以降を推奨 |
+| マシンタイプ | 負荷見積りに応じて選定 |
+| ストレージ | 自動増加有効を推奨 |
+
+詳細なセキュリティ基準は `docs/architecture/GCP_SECURITY_BASELINE.md` を参照してください。
 
 ### 2. gcloud CLI から作成
 
 ```bash
 # インスタンス作成
 gcloud sql instances create reservation-system-db \
-  --database-version=POSTGRES_15 \
-  --tier=db-custom-4-16384 \
+  --database-version=POSTGRES_16 \
+  --tier=db-custom-2-8192 \
   --region=asia-northeast1 \
   --availability-type=REGIONAL \
   --storage-type=SSD \
@@ -72,19 +81,23 @@ brew install cloud-sql-proxy
 # Auth Proxy起動
 cloud-sql-proxy PROJECT_ID:asia-northeast1:reservation-system-db &
 
-# スキーマ適用
-psql -h 127.0.0.1 -U postgres -d reservation_system -f database/schema/001_initial_schema.sql
+# スキーマ適用（新規DB bootstrap）
+psql -h 127.0.0.1 -U migration_user -d reservation_system -f database/schema/001_initial_schema.sql
 
 # シードデータ投入（開発環境のみ）
-psql -h 127.0.0.1 -U postgres -d reservation_system -f database/seeds/001_dev_seed.sql
+psql -h 127.0.0.1 -U migration_user -d reservation_system -f database/seeds/001_dev_seed.sql
 ```
 
-## 既存DBのアップグレード（v2.0 → v2.1）
+## 既存DBのアップグレード
 
-すでに旧スキーマが適用済みの場合は、以下のマイグレーションを実行してください。
+すでに旧スキーマが適用済みの場合は、`database/migrations/*.sql` をファイル名順に適用してください。
+
+Cloud Build から適用する場合は `scripts/run_migrations_cloudbuild.sh` を使用します。
 
 ```bash
-psql -h 127.0.0.1 -U postgres -d reservation_system -f database/migrations/20260131_schema_update_v2_1.sql
+for file in database/migrations/*.sql; do
+  psql -h 127.0.0.1 -U migration_user -d reservation_system -f "$file"
+done
 ```
 
 ## RLS（Row Level Security）の使用方法
@@ -137,7 +150,7 @@ async function executeWithTenant<T>(
 EXCLUDE USING GIST (
     tenant_id WITH =,
     practitioner_id WITH =,
-    period WITH &&
+    tstzrange(starts_at, ends_at, '[)') WITH &&
 ) WHERE (status NOT IN ('canceled', 'no_show'))
 ```
 

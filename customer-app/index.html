@@ -934,8 +934,9 @@
       const resolveParams = new URLSearchParams({
         token: BOOKING_LINK_TOKEN,
       });
-      if (isTenantKeyValid(TENANT_KEY_FROM_URL)) {
-        resolveParams.set('tenantKey', TENANT_KEY_FROM_URL);
+      const tenantHint = TENANT_KEY_FROM_URL || TENANT_KEY;
+      if (isTenantKeyValid(tenantHint)) {
+        resolveParams.set('tenantKey', tenantHint);
       }
       const endpoint = `${API_BASE_URL}/api/platform/v1/booking-links/resolve?${resolveParams.toString()}`;
       const response = await fetch(endpoint, {
@@ -1003,9 +1004,16 @@
       });
 
       if (!response.ok) {
+        if (response.status === 401 && !sessionStorage.getItem('liff_auth_retried')) {
+          sessionStorage.setItem('liff_auth_retried', '1');
+          liff.logout();
+          liff.login();
+          return;
+        }
         const body = await response.json().catch(() => ({}));
         throw new Error(body.error?.message || '認証セッションの確立に失敗しました');
       }
+      sessionStorage.removeItem('liff_auth_retried');
     }
 
     // ==============================================
@@ -1424,7 +1432,10 @@
       state.menu = menu;
       state.additionalMenus = []; // Initialize additional menus
       state.selectedOptions = []; // (Legacy support)
-      state.selectedPractitioner = null;
+      // Preserve booking-token preselected practitioner; reset only when none is pinned
+      state.selectedPractitioner = PRESELECTED_PRACTITIONER_ID
+        ? (state.practitioners.find(p => String(p.id) === PRESELECTED_PRACTITIONER_ID) ?? null)
+        : null;
 
       // Go directly to Date Selection
       initDateStep();
@@ -1855,7 +1866,7 @@
     }
 
     async function renderWeeklyCalendar() {
-      const startDateStr = formatDate(currentWeekStart);
+      const startDateStr = formatApiDate(currentWeekStart);
       const title = `${currentWeekStart.getFullYear()}年 ${currentWeekStart.getMonth() + 1}月`;
       const titleEl = document.getElementById('current-month-display');
       if (titleEl) titleEl.innerText = title;
@@ -2117,6 +2128,13 @@
       const m = String(date.getMonth() + 1).padStart(2, '0');
       const d = String(date.getDate()).padStart(2, '0');
       return `${y}/${m}/${d}`;
+    }
+
+    function formatApiDate(date) {
+      const y = date.getFullYear();
+      const m = String(date.getMonth() + 1).padStart(2, '0');
+      const d = String(date.getDate()).padStart(2, '0');
+      return `${y}-${m}-${d}`;
     }
 
     function generateMockWeeklyData(startDate) {

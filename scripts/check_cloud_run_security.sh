@@ -86,7 +86,16 @@ for raw_service in "${service_list[@]}"; do
       gcloud run services describe "${service}" \
         --project "${PROJECT_ID}" \
         --region "${REGION}" \
-        --format='value(metadata.annotations.run.googleapis.com/ingress)' 2>/dev/null || true
+        --format='value(metadata.annotations."run.googleapis.com/ingress")' 2>/dev/null || true
+    )"
+    ingress="$(trim "${ingress}")"
+  fi
+  if [ -z "${ingress}" ]; then
+    ingress="$(
+      gcloud run services describe "${service}" \
+        --project "${PROJECT_ID}" \
+        --region "${REGION}" \
+        --format='value(metadata.annotations."run.googleapis.com/ingress-status")' 2>/dev/null || true
     )"
     ingress="$(trim "${ingress}")"
   fi

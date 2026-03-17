@@ -16,9 +16,14 @@ const CACHE_TTL_MS = 1 * 60 * 1000; // 1 minute
 
 const UUID_V4_LIKE_REGEX =
     /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const STORE_CODE_REGEX = /^[a-z0-9]{8,10}$/;
 
 function isUuidLike(value: string): boolean {
     return UUID_V4_LIKE_REGEX.test(value);
+}
+
+function isStoreCodeLike(value: string): boolean {
+    return STORE_CODE_REGEX.test(value);
 }
 
 function isRecoverableTenantLookupError(error: unknown): boolean {
@@ -200,7 +205,9 @@ export function resolveTenant(options: { required?: boolean; allowInactive?: boo
             }
 
             // 2) store_code
-            if (!tenant) {
+            // Only call the SECURITY DEFINER lookup when the key actually matches store_code shape.
+            // Slugs frequently contain hyphens and should bypass this path entirely.
+            if (!tenant && isStoreCodeLike(tenantKey)) {
                 const storeResult = await getTenantByStoreCode(tenantKey);
                 if (storeResult) {
                     tenant = storeResult.tenant;

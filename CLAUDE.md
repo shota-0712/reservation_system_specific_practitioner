@@ -2,7 +2,7 @@
 
 # プロジェクトメモ（正本）
 
-**最終更新日**: 2026-03-12（v3 fresh-DB foundation/UI local integration）
+**最終更新日**: 2026-03-12（v3 fresh-DB real LINE smoke runbook）
 **更新者**: Codex
 
 ## 1. このプロジェクトでやりたいこと
@@ -100,14 +100,17 @@
   - `admin-dashboard` の staff/options で legacy compatibility field 依存をやめ、assignment API ベースへ移行。
   - `admin-dashboard` gate: `npm test`, `npm run build` 成功。
 - Remote:
-  - `reserve-api-dev-v3` / `reserve-customer-dev-v3` と fresh Cloud SQL は未作成。
-  - owner register / login / claims sync / onboarding / seed / LIFF 実認証 smoke は未着手。
+  - `reserve-api-dev-v3` / `reserve-customer-dev-v3` と fresh Cloud SQL は作成済みで、remote bootstrap まで確認済み。
+  - seeded tenant `smoke-salon-1773288454` では owner login / claims sync / admin context / tenant LINE config 注入を確認済み。残タスクは real LINE app での LIFF 実認証 smoke。
 
 ## 5. 直近で完了したこと（セッションログ）
 - 2026-03-12: dirty worktree から `codex/v3-wave1-baseline` baseline snapshot commit を作成し、Codex 専用 worktree (`codex/v3-foundation`, `codex/v3-ui`) を切り出し。
 - 2026-03-12: Foundation merge を取り込み、fresh v3 schema で壊れる backend fallback SQL を `starts_at` / `timezone` ベースへ統一。
 - 2026-03-12: UI merge を取り込み、customer-app の reservation 契約を `startsAt` / `timezone` へ移行し、admin-dashboard の assignment 依存を API 正本へ寄せた。
 - 2026-03-12: baseline 統合後の gate を再実行し、`backend-v2` test/build と `admin-dashboard` test/build がすべて成功。
+- 2026-03-12: fresh dev-v3 remote stack（Cloud SQL / `reserve-api-dev-v3` / `reserve-customer-dev-v3`）の bootstrap を確認し、seeded tenant `smoke-salon-1773288454` へ tenant mode LINE config を投入。customer root URL / booking token URL が LIFF init -> LINE Login redirect まで進むことを確認し、残タスクを real LINE app E2E に絞り込んだ。
+- 2026-03-12: LIFF redirect で観測した `client_id=2008799804` に合わせて tenant `channelId` も `2008799804` へ再投入し、dev-v3 DB / `line/resolve-preview` の整合を確認した。
+- 2026-03-12: `/tmp/reserve-v3-findings.md` を実機 smoke 記録テンプレートとして整備し、preflight / log watch / `auth/session 401 x2` 修復コマンドと判定基準を固定した。
 - 2026-03-07: `CRM-BE-001` gate pass（backend lint/typecheck/96 tests/build + admin lint/21 tests/build）。
 - 2026-03-07: `DOC-002` として `docs/runbooks/CUTOVER_EXECUTION_PLAN.md` を作成。T-1/T0 手順・ロールバック・記録フォーマットを固定。
 - 2026-03-06: `CRM-BE-006/007` を実装し backend gate を通過。
@@ -132,18 +135,72 @@
   - `DEPLOYMENT.md` / `DB_V3_PHASE_B_EXECUTION_LOG.md §13` に標準手順を記載。
 
 ## 6. これからやること（優先順）
-1. `keyexpress-reserve` / `asia-northeast1` に fresh v3 専用の Cloud SQL instance/database/users/secrets を作成し、既存 `reservation-system-db` と完全分離する。
-2. `reserve-api-dev-v3` / `reserve-customer-dev-v3` を新 DB に向けて deploy し、owner register -> login -> claims sync -> onboarding -> seed を通す。
-3. admin/customer の実認証 smoke を行い、major screens と LIFF 予約 create/cancel を `/tmp/reserve-v3-findings.md` に記録しながら潰す。
-4. `booking-links/resolve` の token-only 経路（tenantKey なし）の恒久対応方針を決定する。
+1. real LINE app で `reserve-customer-dev-v3` の root URL と booking token URL を開き、`LIFF init -> login -> reservation create -> my reservations -> cancel` を `/tmp/reserve-v3-findings.md` に記録しながら完走する。
+2. post-login auth が失敗した場合は、`channelSecret` / `channelAccessToken` が LIFF app と同じ `channelId=2008799804` の値かを最優先で切り分け、`reserve-api-dev-v3` の LINE token verification ログを確認する。
+3. `booking-links/resolve` の token-only 経路（tenantKey なし）の恒久対応方針を決定する。
+
+### real LINE app smoke 手順（2026-03-12 fixpoint）
+
+Step 0: Cloud Run ログ監視を別ターミナルで流し続ける。
+
+```bash
+gcloud logging read \
+  'resource.type="cloud_run_revision" AND resource.labels.service_name="reserve-api-dev-v3"' \
+  --limit=50 \
+  --format='value(timestamp,textPayload,jsonPayload.message)' \
+  --freshness=5m \
+  --project=keyexpress-reserve
+```
+
+Step 1: 実機前に preflight を打ち、`liffId` / `lineMode` / `lineConfigSource` と booking token resolve を確認する。
+
+```bash
+curl -s "https://reserve-api-dev-v3-czjwiprc2q-an.a.run.app/api/v1/smoke-salon-1773288454/auth/config" \
+  | jq '{liffId:.data.liffId, mode:.data.lineMode, source:.data.lineConfigSource, storeId:.data.storeId}'
+
+curl -s "https://reserve-api-dev-v3-czjwiprc2q-an.a.run.app/api/platform/v1/booking-links/resolve?token=YEJ2QHO-qMQZ4FkOO-sNKjJofKmU0R4y&tenantKey=smoke-salon-1773288454" \
+  | jq '{success:.success, tenantKey:.data.tenantKey, storeId:.data.storeId, practitionerId:.data.practitionerId}'
+```
+
+Step 2: 実機テストは root URL を先に、booking token URL を後に開く。各ステップ結果は `/tmp/reserve-v3-findings.md` の表へ記録する。
+
+- root URL: `https://reserve-customer-dev-v3-czjwiprc2q-an.a.run.app/`
+- booking token URL: `https://reserve-customer-dev-v3-czjwiprc2q-an.a.run.app/?t=YEJ2QHO-qMQZ4FkOO-sNKjJofKmU0R4y`
+
+Step 3: `auth/session 401` が 2 回続いたら、LINE Console で `channelId=2008799804` の Channel secret / Channel access token を確認後、admin token を取得して tenant LINE config を再投入する。
+
+```bash
+curl -s -X PUT \
+  "https://reserve-api-dev-v3-czjwiprc2q-an.a.run.app/api/v1/admin/settings/line" \
+  -H "Authorization: Bearer {ADMIN_TOKEN}" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "mode": "tenant",
+    "channelId": "2008799804",
+    "channelSecret": "{CHANNEL_SECRET_FROM_CONSOLE}",
+    "channelAccessToken": "{LONG_LIVED_TOKEN_FROM_CONSOLE}",
+    "liffId": "2008799804-XMrmdrSg"
+  }'
+```
+
+判定基準:
+
+| 現象 | 判定 | 対処 |
+|------|------|------|
+| 全ステップ完走 | Go | `PROJECT_MEMORY` 更新 |
+| `auth/session 401` x1 のみ | 自動再試行で回復 | 続行 |
+| `auth/session 401` x2 | `channelSecret` / token が別 channel | Step 3 の再投入 |
+| `auth/session 404` | store / practitioner inactive | store status を確認 |
+| `liff.init` 失敗 | `liffId` と LINE Console 不一致 | LINE Console で LIFF app ID を再確認 |
 
 ## 7. ブロッカー / 保留中の意思決定
 - staging rehearsal 判定は **Go**（2026-03-06 JST 更新）。
 - MT Wave-1: ローカル **Go**、staging SQL検証（T1/T2）ペンディング。SQL検証コマンドは §11.6 に確定済み。
 - 保留事項: strict RLS 下での `booking-links/resolve` token-only 経路は `tenantKey` ヒントなしだと `404` になり得る。
 - 2026-03-12 時点の fresh-DB blocker:
-  - local contract/gate は解消済み。
-  - remote blocker は fresh Cloud SQL と `reserve-api-dev-v3` / `reserve-customer-dev-v3` の未作成、および owner/tenant/LIFF 実運用情報の未払い出し。
+  - local contract/gate と fresh dev-v3 remote bootstrap は解消済み。
+  - seeded tenant `smoke-salon-1773288454` の owner login / claims sync / admin context / tenant LINE config 注入、および `channelId=2008799804` への整合は確認済み。
+  - 残る remote blocker は real LINE app での LIFF 実認証 E2E と、必要に応じた LINE credential same-channel 整合確認。
 
 ## 8. 毎回の更新ルール
 1. 作業開始前に `docs/PROJECT_MEMORY.md` を読む。
