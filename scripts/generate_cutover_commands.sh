@@ -24,8 +24,9 @@ Optional env vars:
   LANDING_SERVICE (default: reserve-landing)
   CUSTOMER_API_URL (default: NEXT_PUBLIC_API_URL)
   CUSTOMER_TENANT_KEY (default: demo-salon)
-  DB_USER (default: app_user)
+  DB_USER (default: migration_user)
   DB_NAME (default: reservation_system)
+  DB_PASSWORD_SECRET (default: db-password-migration)
   JOB_LOCATION (default: asia-northeast1)
   JOB_NAMES (default: reminder-day-before,reminder-same-day,daily-analytics,google-calendar-sync)
   OLD_BACKEND_SERVICE (default: reserve-api-legacy)
@@ -77,8 +78,9 @@ LANDING_SERVICE="${LANDING_SERVICE:-reserve-landing}"
 CUSTOMER_API_URL="${CUSTOMER_API_URL:-${NEXT_PUBLIC_API_URL}}"
 CUSTOMER_TENANT_KEY="${CUSTOMER_TENANT_KEY:-${NEXT_PUBLIC_TENANT_ID}}"
 NEXT_PUBLIC_TENANT_ID="${NEXT_PUBLIC_TENANT_ID}"
-DB_USER="${DB_USER:-app_user}"
+DB_USER="${DB_USER:-migration_user}"  # migration専用ユーザー。アプリ実行ユーザー(app_user)とは分離
 DB_NAME="${DB_NAME:-reservation_system}"
+DB_PASSWORD_SECRET="${DB_PASSWORD_SECRET:-db-password-migration}"  # migration専用 secret。runtime は db-password を使用
 JOB_LOCATION="${JOB_LOCATION:-asia-northeast1}"
 JOB_NAMES="${JOB_NAMES:-reminder-day-before,reminder-same-day,daily-analytics,google-calendar-sync}"
 OLD_BACKEND_SERVICE="${OLD_BACKEND_SERVICE:-reserve-api-legacy}"
@@ -153,7 +155,8 @@ _RUN_MIGRATIONS=true,\\
 _WRITE_FREEZE_MODE=true,\\
 _CLOUDSQL_INSTANCE=${CLOUDSQL_INSTANCE},\\
 _DB_USER=${DB_USER},\\
-_DB_NAME=${DB_NAME}
+_DB_NAME=${DB_NAME},\\
+_DB_PASSWORD_SECRET=${DB_PASSWORD_SECRET}
 \`\`\`
 
 ## 5) Smoke / Ready Checks

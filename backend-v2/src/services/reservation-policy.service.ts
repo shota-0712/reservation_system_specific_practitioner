@@ -1,3 +1,4 @@
+import { formatInTimeZone } from 'date-fns-tz';
 import { createStoreRepository } from '../repositories/index.js';
 import { ValidationError } from '../utils/errors.js';
 import { validateAdvanceBooking, validateCancelDeadline, type ReservationPolicyConfig } from '../utils/reservation-policy.js';
@@ -40,5 +41,8 @@ export function enforceAdvanceBookingPolicy(date: string, policy: ReservationPol
 }
 
 export function enforceCancelPolicy(reservation: Reservation, policy: ReservationPolicyConfig): void {
-    validateCancelDeadline(reservation.date, reservation.startTime, policy);
+    const tz = policy.timezone || 'Asia/Tokyo';
+    const date = formatInTimeZone(reservation.startsAt, tz, 'yyyy-MM-dd');
+    const startTime = formatInTimeZone(reservation.startsAt, tz, 'HH:mm');
+    validateCancelDeadline(date, startTime, policy);
 }

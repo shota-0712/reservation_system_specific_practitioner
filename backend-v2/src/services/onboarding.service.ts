@@ -224,10 +224,9 @@ export class OnboardingService {
                         name,
                         role,
                         permissions,
-                        is_active,
-                        store_ids
+                        is_active
                     )
-                    VALUES ($1, $2, $3, $4, 'owner', $5::jsonb, true, ARRAY[$6]::uuid[])
+                    VALUES ($1, $2, $3, $4, 'owner', $5::jsonb, true)
                     RETURNING id`,
                     [
                         tenant.id,
@@ -235,7 +234,6 @@ export class OnboardingService {
                         input.email,
                         input.ownerName,
                         JSON.stringify(buildDefaultPermissions()),
-                        store.id,
                     ]
                 );
 
@@ -243,6 +241,17 @@ export class OnboardingService {
                 if (!admin) {
                     throw new Error('管理者作成に失敗しました');
                 }
+
+                await client.query(
+                    `INSERT INTO admin_store_assignments (
+                        tenant_id,
+                        admin_id,
+                        store_id
+                    )
+                    VALUES ($1, $2, $3)
+                    ON CONFLICT DO NOTHING`,
+                    [tenant.id, admin.id, store.id]
+                );
 
                 return {
                     tenantId: tenant.id,

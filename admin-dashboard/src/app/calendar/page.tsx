@@ -7,6 +7,7 @@ import { ja } from "date-fns/locale";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { practitionersApi, reservationsApi } from "@/lib/api";
+import { toLocalDate, toLocalTime } from "@/lib/reservation-time";
 import { logger } from "@/lib/logger";
 
 const HOURS = Array.from({ length: 12 }, (_, i) => i + 9); // 9:00 - 20:00
@@ -19,9 +20,9 @@ interface Practitioner {
 
 interface Reservation {
     id: string;
-    date: string;
-    startTime: string;
-    endTime: string;
+    startsAt: string;
+    endsAt: string;
+    timezone: string;
     practitionerId: string;
     customerName: string;
     menuNames: string[];
@@ -66,13 +67,13 @@ export default function CalendarPage() {
     const getReservationsForDayAndStaff = (staffId: string) => {
         const dateStr = format(currentDate, "yyyy-MM-dd");
         return reservations.filter(
-            (r) => r.date === dateStr && r.practitionerId === staffId && r.status !== 'canceled'
+            (r) => toLocalDate(r.startsAt, r.timezone) === dateStr && r.practitionerId === staffId && r.status !== 'canceled'
         );
     };
 
-    const getReservationStyle = (startTime: string, endTime: string) => {
-        const [startHour, startMin] = startTime.split(":").map(Number);
-        const [endHour, endMin] = endTime.split(":").map(Number);
+    const getReservationStyle = (startsAt: string, endsAt: string, timezone: string) => {
+        const [startHour, startMin] = toLocalTime(startsAt, timezone).split(":").map(Number);
+        const [endHour, endMin] = toLocalTime(endsAt, timezone).split(":").map(Number);
         const left = (startHour - 9) * 80 + (startMin / 60) * 80;
         const width = ((endHour - startHour) * 60 + (endMin - startMin)) * (80 / 60);
         return { left: `${left}px`, width: `${width}px` };
@@ -199,10 +200,10 @@ export default function CalendarPage() {
                                                 key={res.id}
                                                 className="absolute top-1 bottom-1 rounded px-2 py-1 text-xs text-white overflow-hidden cursor-pointer hover:opacity-90 flex flex-col justify-center"
                                                 style={{
-                                                    ...getReservationStyle(res.startTime, res.endTime),
+                                                    ...getReservationStyle(res.startsAt, res.endsAt, res.timezone),
                                                     backgroundColor: getColor(staff, index),
                                                 }}
-                                                title={`${res.startTime}-${res.endTime} ${res.customerName} - ${res.menuNames?.join(', ')}`}
+                                                title={`${toLocalTime(res.startsAt, res.timezone)}-${toLocalTime(res.endsAt, res.timezone)} ${res.customerName} - ${res.menuNames?.join(', ')}`}
                                             >
                                                 <div className="font-medium truncate">
                                                     {res.customerName}

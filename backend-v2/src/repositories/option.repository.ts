@@ -198,8 +198,8 @@ export class OptionRepository {
     async create(data: Partial<Option>): Promise<Option> {
         const row = await DatabaseService.queryOne(
             `INSERT INTO menu_options (
-                tenant_id, name, description, price, duration, applicable_menu_ids, is_active, display_order
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+                tenant_id, name, description, price, duration, is_active, display_order
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7)
             RETURNING *`,
             [
                 this.tenantId,
@@ -207,7 +207,6 @@ export class OptionRepository {
                 data.description ?? null,
                 data.price ?? 0,
                 data.duration ?? 0,
-                data.applicableMenuIds ?? [],
                 data.isActive ?? true,
                 data.displayOrder ?? 0,
             ],
@@ -230,9 +229,8 @@ export class OptionRepository {
                 description = COALESCE($4, description),
                 price = COALESCE($5, price),
                 duration = COALESCE($6, duration),
-                applicable_menu_ids = COALESCE($7, applicable_menu_ids),
-                is_active = COALESCE($8, is_active),
-                display_order = COALESCE($9, display_order),
+                is_active = COALESCE($7, is_active),
+                display_order = COALESCE($8, display_order),
                 updated_at = NOW()
              WHERE id = $1 AND tenant_id = $2
              RETURNING *`,
@@ -243,7 +241,6 @@ export class OptionRepository {
                 data.description ?? null,
                 data.price ?? null,
                 data.duration ?? null,
-                data.applicableMenuIds ?? null,
                 data.isActive ?? null,
                 data.displayOrder ?? null,
             ],

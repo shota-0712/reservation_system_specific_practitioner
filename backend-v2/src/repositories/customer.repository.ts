@@ -6,6 +6,7 @@
 import { DatabaseService } from '../config/database.js';
 import { NotFoundError } from '../utils/errors.js';
 import type { Customer } from '../types/index.js';
+import { calcRfmSegment, getRfmThresholds } from '../services/rfm-thresholds.service.js';
 
 export interface CustomerFilters {
     search?: string;
@@ -16,7 +17,7 @@ export interface CustomerFilters {
 }
 
 function mapCustomer(row: Record<string, any>): Customer {
-    const lineNotificationToken = row.line_notification_token ?? row.attributes?.notificationToken ?? undefined;
+    const lineNotificationToken = row.line_notification_token ?? undefined;
     return {
         id: row.id,
         tenantId: row.tenant_id,
@@ -371,10 +372,6 @@ export class CustomerRepository {
                 is_active = COALESCE($13, is_active),
                 line_notification_token = COALESCE($14, line_notification_token),
                 line_notification_token_expires_at = COALESCE($15, line_notification_token_expires_at),
-                attributes = CASE
-                    WHEN $14 IS NULL THEN attributes
-                    ELSE COALESCE(attributes, '{}'::jsonb) || jsonb_build_object('notificationToken', $14)
-                END,
                 updated_at = NOW()
              WHERE id = $1 AND tenant_id = $2
              RETURNING *`,
@@ -398,10 +395,6 @@ export class CustomerRepository {
             `UPDATE customers SET
                 line_notification_token = $3,
                 line_notification_token_expires_at = $4,
-                attributes = CASE
-                    WHEN $3 IS NULL THEN attributes - 'notificationToken'
-                    ELSE COALESCE(attributes, '{}'::jsonb) || jsonb_build_object('notificationToken', $3)
-                END,
                 updated_at = NOW()
              WHERE id = $1 AND tenant_id = $2
              RETURNING *`,
@@ -442,9 +435,9 @@ export class CustomerRepository {
             throw new NotFoundError('顧客', customerId);
         }
 
-        // Update RFM segment
+        // Update RFM segment (threshold-driven)
         const customer = mapCustomer(row as Record<string, any>);
-        const rfmSegment = this.calculateRfmSegment(customer);
+        const rfmSegment = await this.calculateRfmSegmentForCustomer(customer);
 
         if (rfmSegment !== customer.rfmSegment) {
             await DatabaseService.query(
@@ -459,43 +452,23 @@ export class CustomerRepository {
     }
 
     /**
-     * Calculate RFM segment
+     * CRM-BE-004: Calculate RFM segment using tenant thresholds (threshold-driven).
+     * Loads thresholds from DB (falls back to defaults if not configured).
      */
-    private calculateRfmSegment(customer: Customer): string {
+    private async calculateRfmSegmentForCustomer(customer: Customer): Promise<string> {
+        const thresholds = await getRfmThresholds(this.tenantId);
+
         const lastVisitDate = customer.lastVisitAt;
         const daysSinceLastVisit = lastVisitDate
             ? Math.floor((Date.now() - new Date(lastVisitDate).getTime()) / (1000 * 60 * 60 * 24))
             : Infinity;
 
-        const visitCount = customer.totalVisits ?? 0;
-        const totalSpent = customer.totalSpend ?? 0;
-
-        // VIP: Recent, frequent, high spending
-        if (daysSinceLastVisit <= 30 && visitCount >= 10 && totalSpent >= 100000) {
-            return 'vip';
-        }
-
-        // Loyal: Regular, moderate spending
-        if (daysSinceLastVisit <= 60 && visitCount >= 5) {
-            return 'loyal';
-        }
-
-        // New: First time or very recent
-        if (visitCount <= 2) {
-            return 'new';
-        }
-
-        // Dormant: Haven't visited in a while
-        if (daysSinceLastVisit > 60 && daysSinceLastVisit <= 180) {
-            return 'dormant';
-        }
-
-        // Lost: Haven't visited in a long time
-        if (daysSinceLastVisit > 180) {
-            return 'lost';
-        }
-
-        return 'loyal';
+        return calcRfmSegment(
+            daysSinceLastVisit,
+            customer.totalVisits ?? 0,
+            customer.totalSpend ?? 0,
+            thresholds
+        );
     }
 
     /**
@@ -603,20 +576,20 @@ export class CustomerRepository {
      */
     async getCustomerStats(): Promise<{
         total: number;
-        vip: number;
+        champion: number;
         loyal: number;
         new: number;
-        dormant: number;
-        lost: number;
+        atRisk: number;
+        hibernating: number;
     }> {
         const row = await DatabaseService.queryOne(
             `SELECT
                 COUNT(*) as total,
-                COUNT(*) FILTER (WHERE rfm_segment = 'vip') as vip,
+                COUNT(*) FILTER (WHERE rfm_segment = 'champion') as champion,
                 COUNT(*) FILTER (WHERE rfm_segment = 'loyal') as loyal,
-                COUNT(*) FILTER (WHERE rfm_segment = 'new' OR rfm_segment IS NULL) as new,
-                COUNT(*) FILTER (WHERE rfm_segment = 'dormant') as dormant,
-                COUNT(*) FILTER (WHERE rfm_segment = 'lost') as lost
+                COUNT(*) FILTER (WHERE rfm_segment = 'new' OR rfm_segment = 'potential' OR rfm_segment IS NULL) as new,
+                COUNT(*) FILTER (WHERE rfm_segment = 'atRisk') as at_risk,
+                COUNT(*) FILTER (WHERE rfm_segment = 'hibernating') as hibernating
              FROM customers
              WHERE tenant_id = $1 AND is_active = true`,
             [this.tenantId],
@@ -625,11 +598,11 @@ export class CustomerRepository {
 
         return {
             total: parseInt(row?.total || '0', 10),
-            vip: parseInt(row?.vip || '0', 10),
+            champion: parseInt(row?.champion || '0', 10),
             loyal: parseInt(row?.loyal || '0', 10),
             new: parseInt(row?.new || '0', 10),
-            dormant: parseInt(row?.dormant || '0', 10),
-            lost: parseInt(row?.lost || '0', 10),
+            atRisk: parseInt(row?.at_risk || '0', 10),
+            hibernating: parseInt(row?.hibernating || '0', 10),
         };
     }
 

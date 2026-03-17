@@ -710,8 +710,17 @@
       return '';
     }
 
+    function parseBooleanFlag(value) {
+      return String(value || '').trim().toLowerCase() === 'true';
+    }
+
     const API_BASE_URL = resolveApiBaseUrl();
     const BOOKING_LINK_TOKEN = resolveBookingLinkToken();
+    // URL クエリに明示された tenantKey のみ保持（localStorage/config 由来は含めない）
+    const TENANT_KEY_FROM_URL = (() => {
+      const v = (queryParams.get('tenant') || queryParams.get('tenantKey') || '').trim().toLowerCase();
+      return isTenantKeyValid(v) ? v : '';
+    })();
     let TENANT_KEY = resolveTenantKey();
     let PRESELECTED_PRACTITIONER_ID = resolvePreselectedPractitionerId();
     let SELECTED_STORE_ID = resolveStoreId();
@@ -721,10 +730,13 @@
     let LIFF_ID = null;
     let idToken = null; // LINE ID Token for API authentication
 
-    // モック起動は明示フラグ時のみ有効化する
-    const isLocalDev = isLocalRuntime && String(window.RESERVATION_ENABLE_MOCK || '').toLowerCase() === 'true';
-    // LIFF を使わずに API 接続したい場合（ローカル開発用）
-    const useBypassLiff = isLocalRuntime && String(window.RESERVATION_BYPASS_LIFF || '').toLowerCase() === 'true';
+    // 要求フラグ（設定値）
+    const mockFlagRequested = parseBooleanFlag(window.RESERVATION_ENABLE_MOCK);
+    const bypassLiffFlagRequested = parseBooleanFlag(window.RESERVATION_BYPASS_LIFF);
+    // 実適用フラグ（本番/ステージングなどの非ローカルでは常に false）
+    const isLocalDev = isLocalRuntime && mockFlagRequested;
+    const useBypassLiff = isLocalRuntime && bypassLiffFlagRequested;
+    const hasDisallowedRuntimeFlags = !isLocalRuntime && (mockFlagRequested || bypassLiffFlagRequested);
 
     // ==============================================
     // State
@@ -734,6 +746,7 @@
       menu: null,
       date: null,
       time: null,
+      storeTimezone: 'Asia/Tokyo',
       currentTab: 'home',
       // New state properties
       selectedPractitioner: null,
@@ -765,6 +778,74 @@
         .replace(/'/g, '&#39;');
     }
 
+    function _tzOffsetMin(timezone, utcDate) {
+      const dtf = new Intl.DateTimeFormat('en-US', {
+        timeZone: timezone,
+        year: 'numeric',
+        month: 'numeric',
+        day: 'numeric',
+        hour: 'numeric',
+        minute: 'numeric',
+        second: 'numeric',
+        hour12: false,
+      });
+      const parts = dtf.formatToParts(utcDate);
+      const get = (type) => parseInt(parts.find((part) => part.type === type)?.value || '0', 10);
+      const hour = get('hour') % 24;
+      const localMs = Date.UTC(get('year'), get('month') - 1, get('day'), hour, get('minute'), get('second'));
+      return (utcDate.getTime() - localMs) / 60000;
+    }
+
+    function toStartsAtIso(date, time, timezone) {
+      const naiveUtc = new Date(`${date}T${time}:00Z`);
+      if (Number.isNaN(naiveUtc.getTime())) {
+        throw new Error('予約日時の形式が不正です。');
+      }
+      const localAheadMin = -_tzOffsetMin(timezone, naiveUtc);
+      return new Date(naiveUtc.getTime() - localAheadMin * 60000).toISOString();
+    }
+
+    function getReservationTimezone(reservation) {
+      const timezone = String(reservation?.timezone || state.storeTimezone || 'Asia/Tokyo').trim();
+      return timezone || 'Asia/Tokyo';
+    }
+
+    function getReservationDateParts(startsAt, timezone) {
+      const date = new Date(startsAt);
+      if (Number.isNaN(date.getTime())) {
+        throw new Error('予約日時の形式が不正です。');
+      }
+      const parts = new Intl.DateTimeFormat('en-CA', {
+        timeZone: timezone,
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: false,
+      }).formatToParts(date);
+      const get = (type) => parts.find((part) => part.type === type)?.value || '';
+      const hour = String(parseInt(get('hour') || '0', 10) % 24).padStart(2, '0');
+      return {
+        date,
+        year: get('year'),
+        month: get('month'),
+        day: get('day'),
+        hour,
+        minute: get('minute') || '00',
+      };
+    }
+
+    function formatReservationDisplayDate(startsAt, timezone) {
+      const parts = getReservationDateParts(startsAt, timezone);
+      return `${parts.year}年${parts.month}月${parts.day}日`;
+    }
+
+    function formatReservationDisplayTime(startsAt, timezone) {
+      const parts = getReservationDateParts(startsAt, timezone);
+      return `${parts.hour}:${parts.minute}`;
+    }
+
     function renderConfigDiagnostics() {
       if (!DEBUG_CONFIG_ENABLED) return;
       const container = document.getElementById('config-debug-box');
@@ -782,6 +863,8 @@
         ['RESERVATION_TENANT_KEY', window.RESERVATION_TENANT_KEY || '(empty)'],
         ['RESERVATION_ENABLE_MOCK', window.RESERVATION_ENABLE_MOCK || 'false'],
         ['RESERVATION_BYPASS_LIFF', window.RESERVATION_BYPASS_LIFF || 'false'],
+        ['MOCK_MODE_ACTIVE', isLocalDev ? 'true' : 'false'],
+        ['BYPASS_LIFF_ACTIVE', useBypassLiff ? 'true' : 'false'],
       ];
 
       const rows = diagnostics.map(([label, value]) =>
@@ -795,6 +878,21 @@
         <div class="rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-xs">
           <p class="font-semibold text-amber-800 mb-2">Config Debug</p>
           ${rows}
+        </div>
+      `;
+      container.classList.remove('hidden');
+    }
+
+    function renderRuntimePolicyNotice() {
+      if (!hasDisallowedRuntimeFlags) {
+        return;
+      }
+      const container = document.getElementById('init-error-box');
+      if (!container) return;
+      container.innerHTML = `
+        <div class="rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+          <p class="font-semibold mb-1">実行ポリシー: 本番/ステージングではローカル専用フラグは無効です</p>
+          <p class="text-xs leading-relaxed">RESERVATION_ENABLE_MOCK / RESERVATION_BYPASS_LIFF はローカル実行時（localhost/127.0.0.1/file://）のみ有効です。現在は通常の本番認証フロー（LIFF）で初期化します。</p>
         </div>
       `;
       container.classList.remove('hidden');
@@ -833,7 +931,14 @@
         throw new Error('API URL が未設定のため予約URLトークンを解決できません。');
       }
 
-      const endpoint = `${API_BASE_URL}/api/platform/v1/booking-links/resolve?token=${encodeURIComponent(BOOKING_LINK_TOKEN)}`;
+      const resolveParams = new URLSearchParams({
+        token: BOOKING_LINK_TOKEN,
+      });
+      const tenantHint = TENANT_KEY_FROM_URL || TENANT_KEY;
+      if (isTenantKeyValid(tenantHint)) {
+        resolveParams.set('tenantKey', tenantHint);
+      }
+      const endpoint = `${API_BASE_URL}/api/platform/v1/booking-links/resolve?${resolveParams.toString()}`;
       const response = await fetch(endpoint, {
         method: 'GET',
         headers: { 'Content-Type': 'application/json' },
@@ -899,9 +1004,16 @@
       });
 
       if (!response.ok) {
+        if (response.status === 401 && !sessionStorage.getItem('liff_auth_retried')) {
+          sessionStorage.setItem('liff_auth_retried', '1');
+          liff.logout();
+          liff.login();
+          return;
+        }
         const body = await response.json().catch(() => ({}));
         throw new Error(body.error?.message || '認証セッションの確立に失敗しました');
       }
+      sessionStorage.removeItem('liff_auth_retried');
     }
 
     // ==============================================
@@ -910,6 +1022,7 @@
     window.onload = async () => {
       console.log('Window Loaded. isLocalRuntime:', isLocalRuntime, 'isLocalDev:', isLocalDev, 'useBypassLiff:', useBypassLiff);
       renderConfigDiagnostics();
+      renderRuntimePolicyNotice();
 
       if (!API_BASE_URL) {
         showInitError('初期化エラー: API URL が未設定です。', {
@@ -1006,10 +1119,10 @@
         const configData = config.data || config;
         LIFF_ID = configData.liffId;
         if (!LIFF_ID) {
-          const localHint = isLocalRuntime
+          const runtimeHint = isLocalRuntime
             ? 'ローカル検証では window.RESERVATION_ENABLE_MOCK=true または window.RESERVATION_BYPASS_LIFF=true を設定してください。'
-            : '';
-          showInitError(`LIFF設定が未構成です。管理者に設定を依頼してください。${localHint}`, {
+            : '本番/ステージングではモック/LIFFバイパスへフォールバックせず停止します。管理者に LIFF 設定を依頼してください。';
+          showInitError(`LIFF設定が未構成です。${runtimeHint}`, {
             apiBaseUrl: API_BASE_URL,
             tenantKey: TENANT_KEY,
           });
@@ -1025,6 +1138,7 @@
         // Apply Header Customization from store/tenant data
         const tenantName = configData.tenantName || 'En Salon';
         const store = configData.store;
+        state.storeTimezone = store?.timezone || 'Asia/Tokyo';
         document.title = tenantName;
         document.getElementById('header-salon-name').innerText = store?.name || tenantName;
         if (store?.address) {
@@ -1318,7 +1432,10 @@
       state.menu = menu;
       state.additionalMenus = []; // Initialize additional menus
       state.selectedOptions = []; // (Legacy support)
-      state.selectedPractitioner = null;
+      // Preserve booking-token preselected practitioner; reset only when none is pinned
+      state.selectedPractitioner = PRESELECTED_PRACTITIONER_ID
+        ? (state.practitioners.find(p => String(p.id) === PRESELECTED_PRACTITIONER_ID) ?? null)
+        : null;
 
       // Go directly to Date Selection
       initDateStep();
@@ -1749,7 +1866,7 @@
     }
 
     async function renderWeeklyCalendar() {
-      const startDateStr = formatDate(currentWeekStart);
+      const startDateStr = formatApiDate(currentWeekStart);
       const title = `${currentWeekStart.getFullYear()}年 ${currentWeekStart.getMonth() + 1}月`;
       const titleEl = document.getElementById('current-month-display');
       if (titleEl) titleEl.innerText = title;
@@ -2013,6 +2130,13 @@
       return `${y}/${m}/${d}`;
     }
 
+    function formatApiDate(date) {
+      const y = date.getFullYear();
+      const m = String(date.getMonth() + 1).padStart(2, '0');
+      const d = String(date.getDate()).padStart(2, '0');
+      return `${y}-${m}-${d}`;
+    }
+
     function generateMockWeeklyData(startDate) {
       const result = [];
       for (let i = 0; i < 7; i++) {
@@ -2145,19 +2269,27 @@
           upcoming = null;
 
           reservations.forEach(r => {
-            const resDate = new Date(r.date + 'T' + r.startTime);
+            if (typeof r.startsAt !== 'string') {
+              console.error('Invalid v3 reservation payload: missing startsAt', r);
+              return;
+            }
+            const timezone = getReservationTimezone(r);
+            const resDate = new Date(r.startsAt);
+            if (Number.isNaN(resDate.getTime())) {
+              console.error('Invalid v3 reservation payload: invalid startsAt', r);
+              return;
+            }
             const item = {
               id: r.id,
-              date: r.date.replace(/-/g, '年').replace(/年(\d+)$/, '月$1日'),
-              time: r.startTime + '〜',
+              date: formatReservationDisplayDate(r.startsAt, timezone),
+              time: formatReservationDisplayTime(r.startsAt, timezone) + '〜',
               practitioner: { name: r.practitionerName, title: '', imageUrl: '' },
               menus: r.menuNames || [r.menuName || 'メニュー'],
               price: r.totalPrice,
               status: r.status,
-              // Keep raw fields for reschedule flow
-              rawDate: r.date,
-              rawStartTime: r.startTime,
-              rawEndTime: r.endTime,
+              startsAt: r.startsAt,
+              endsAt: r.endsAt,
+              timezone,
               practitionerId: r.practitionerId,
               menuIds: r.menuIds,
               optionIds: r.optionIds,
@@ -2397,15 +2529,15 @@
           state.additionalMenus.forEach(m => menuIds.push(m.id));
         }
 
-        // Convert date format from YYYY/MM/DD to YYYY-MM-DD
-        const formattedDate = state.date.replace(/\//g, '-');
+        const reservationTimezone = state.storeTimezone || 'Asia/Tokyo';
+        const startsAt = toStartsAtIso(state.date.replace(/\//g, '-'), state.time, reservationTimezone);
 
         const payload = {
           practitionerId: practitionerId,
           menuIds: menuIds,
           optionIds: state.selectedOptions.map(o => o.id),
-          date: formattedDate,
-          startTime: state.time,
+          startsAt: startsAt,
+          timezone: reservationTimezone,
           customerNote: '',
           isNomination: !!state.selectedPractitioner,
           notificationToken: state.user.userId || state.user.sub,

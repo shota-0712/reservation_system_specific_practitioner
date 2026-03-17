@@ -5,6 +5,7 @@ import { DatabaseService } from '../../config/database.js';
 import { getAuthInstance } from '../../config/firebase.js';
 import { env } from '../../config/env.js';
 import { asyncHandler, validateBody } from '../../middleware/index.js';
+import { createTenantRepository } from '../../repositories/index.js';
 import { createBookingLinkTokenService } from '../../services/booking-link-token.service.js';
 import { createGoogleCalendarService } from '../../services/google-calendar.service.js';
 import { decodeGoogleOAuthState } from '../../services/google-oauth-state.service.js';
@@ -60,6 +61,7 @@ const registrationSchema = z.object({
 });
 const bookingLinkResolveSchema = z.object({
     token: z.string().trim().min(16).max(128),
+    tenantKey: z.string().trim().toLowerCase().regex(/^[a-z0-9](?:[a-z0-9-]{1,38}[a-z0-9])?$/).optional(),
 });
 const adminContextQuerySchema = z.object({
     tenantKey: z.string().trim().toLowerCase().regex(/^[a-z0-9](?:[a-z0-9-]{1,38}[a-z0-9])?$/).optional(),
@@ -206,7 +208,22 @@ router.get(
             throw new ValidationError('token が不正です');
         }
 
-        const service = createBookingLinkTokenService();
+        let service = createBookingLinkTokenService();
+        if (parsed.data.tenantKey) {
+            const tenant = await createTenantRepository().findBySlug(parsed.data.tenantKey);
+            if (!tenant || !['active', 'trial'].includes(tenant.status)) {
+                res.status(404).json({
+                    success: false,
+                    error: {
+                        code: 'NOT_FOUND',
+                        message: '予約URLが見つかりません',
+                    },
+                });
+                return;
+            }
+            service = createBookingLinkTokenService(tenant.id);
+        }
+
         const resolved = await service.resolve(parsed.data.token);
         if (!resolved) {
             res.status(404).json({
@@ -254,51 +271,95 @@ router.get(
         }
         const requestedTenantKey = parsed.data.tenantKey;
 
-        const adminRows = await DatabaseService.query<{
+        const adminRows = await DatabaseService.transaction<{
             admin_id: string;
             tenant_id: string;
             tenant_key: string;
             tenant_name: string;
             role: 'owner' | 'admin' | 'manager' | 'staff';
-            store_ids: string[] | null;
-        }>(
-            `SELECT a.id AS admin_id,
-                    a.tenant_id,
-                    t.slug AS tenant_key,
-                    t.name AS tenant_name,
-                    a.role,
-                    a.store_ids
-             FROM admins a
-             INNER JOIN tenants t
-                ON t.id = a.tenant_id
-             WHERE a.firebase_uid = $1
-               AND a.is_active = true
-               AND t.status IN ('active', 'trial')
-             ORDER BY a.created_at DESC`,
-            [decoded.uid]
-        );
+            store_ids: string[];
+        }[]>(async (client) => {
+            await client.query(`SELECT set_config('app.current_firebase_uid', $1, true)`, [decoded.uid]);
+
+            const adminResult = await client.query<{
+                admin_id: string;
+                tenant_id: string;
+                role: 'owner' | 'admin' | 'manager' | 'staff';
+            }>(
+                `SELECT id AS admin_id, tenant_id, role
+                 FROM admins
+                 WHERE firebase_uid = $1
+                   AND is_active = true
+                 ORDER BY created_at DESC`,
+                [decoded.uid]
+            );
+
+            const hydratedRows: Array<{
+                admin_id: string;
+                tenant_id: string;
+                tenant_key: string;
+                tenant_name: string;
+                role: 'owner' | 'admin' | 'manager' | 'staff';
+                store_ids: string[];
+            }> = [];
+
+            for (const adminRow of adminResult.rows) {
+                await DatabaseService.setTenantContext(client, adminRow.tenant_id);
+
+                const tenantResult = await client.query<{
+                    tenant_key: string;
+                    tenant_name: string;
+                }>(
+                    `SELECT slug AS tenant_key, name AS tenant_name
+                     FROM tenants
+                     WHERE id = $1
+                       AND status IN ('active', 'trial')
+                     LIMIT 1`,
+                    [adminRow.tenant_id]
+                );
+                const tenantRow = tenantResult.rows[0];
+                if (!tenantRow) {
+                    continue;
+                }
+
+                const [assignmentResult, activeStoreResult] = await Promise.all([
+                    client.query<{ store_id: string }>(
+                        `SELECT store_id
+                         FROM admin_store_assignments
+                         WHERE tenant_id = $1
+                           AND admin_id = $2
+                         ORDER BY store_id`,
+                        [adminRow.tenant_id, adminRow.admin_id]
+                    ),
+                    client.query<{ id: string }>(
+                        `SELECT id
+                         FROM stores
+                         WHERE tenant_id = $1
+                           AND status = 'active'
+                         ORDER BY display_order ASC, created_at ASC`,
+                        [adminRow.tenant_id]
+                    ),
+                ]);
+
+                const activeStoreIds = activeStoreResult.rows.map((row) => row.id);
+                const assignedStoreIds = assignmentResult.rows.map((row) => row.store_id);
+                const scopedStoreIds = assignedStoreIds.filter((id) => activeStoreIds.includes(id));
+
+                hydratedRows.push({
+                    admin_id: adminRow.admin_id,
+                    tenant_id: adminRow.tenant_id,
+                    tenant_key: tenantRow.tenant_key,
+                    tenant_name: tenantRow.tenant_name,
+                    role: adminRow.role,
+                    store_ids: scopedStoreIds.length > 0 ? scopedStoreIds : activeStoreIds,
+                });
+            }
+
+            return hydratedRows;
+        });
 
         if (adminRows.length === 0) {
             throw new AuthorizationError('管理者として登録されていません');
-        }
-
-        const tenantIds = [...new Set(adminRows.map((row) => row.tenant_id))];
-        const storeRows = tenantIds.length > 0
-            ? await DatabaseService.query<{ tenant_id: string; id: string }>(
-                `SELECT tenant_id, id
-                 FROM stores
-                 WHERE tenant_id = ANY($1::uuid[])
-                   AND status = 'active'
-                 ORDER BY display_order ASC, created_at ASC`,
-                [tenantIds]
-            )
-            : [];
-
-        const activeStoreIdsByTenant = new Map<string, string[]>();
-        for (const row of storeRows) {
-            const list = activeStoreIdsByTenant.get(row.tenant_id) ?? [];
-            list.push(row.id);
-            activeStoreIdsByTenant.set(row.tenant_id, list);
         }
 
         const availableTenantMap = new Map<string, {
@@ -310,14 +371,12 @@ router.get(
         }>();
 
         for (const row of adminRows) {
-            const activeStoreIds = activeStoreIdsByTenant.get(row.tenant_id) ?? [];
-            const scopedStoreIds = (row.store_ids ?? []).filter((id) => activeStoreIds.includes(id));
             availableTenantMap.set(row.tenant_id, {
                 tenantKey: row.tenant_key,
                 tenantId: row.tenant_id,
                 tenantName: row.tenant_name,
                 adminRole: row.role,
-                storeIds: scopedStoreIds.length > 0 ? scopedStoreIds : activeStoreIds,
+                storeIds: row.store_ids,
             });
         }
         const availableTenants = Array.from(availableTenantMap.values());

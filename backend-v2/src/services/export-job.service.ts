@@ -4,6 +4,8 @@ import { env } from '../config/env.js';
 import { getStorageInstance } from '../config/firebase.js';
 import { GoogleAuth } from 'google-auth-library';
 
+const DEFAULT_TIMEZONE = 'Asia/Tokyo';
+
 export type ExportType =
     | 'operations_reservations'
     | 'operations_customers'
@@ -99,6 +101,18 @@ function mapExportJob(row: ExportJobRow): ExportJob {
 function normalizeDate(value: unknown): string | undefined {
     if (typeof value !== 'string') return undefined;
     return /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : undefined;
+}
+
+function reservationLocalDateSql(alias: string): string {
+    return `(${alias}.starts_at AT TIME ZONE COALESCE(${alias}.timezone, '${DEFAULT_TIMEZONE}'))::date`;
+}
+
+function reservationLocalTimeSql(alias: string, column: 'starts_at' | 'ends_at'): string {
+    return `to_char(${alias}.${column} AT TIME ZONE COALESCE(${alias}.timezone, '${DEFAULT_TIMEZONE}'), 'HH24:MI')`;
+}
+
+function reservationLocalDateLabelSql(alias: string): string {
+    return `to_char(${alias}.starts_at AT TIME ZONE COALESCE(${alias}.timezone, '${DEFAULT_TIMEZONE}'), 'YYYY-MM-DD')`;
 }
 
 function escapeCsvCell(value: unknown): string {
@@ -502,6 +516,7 @@ export class ExportJobService {
         dateFrom?: string,
         dateTo?: string
     ): Promise<{ csv: string; rowCount: number }> {
+        const localDateSql = reservationLocalDateSql('r');
         const filters: string[] = ['r.tenant_id = $1'];
         const values: Array<string | null> = [this.tenantId];
         let idx = 2;
@@ -511,41 +526,50 @@ export class ExportJobService {
             values.push(storeId);
         }
         if (dateFrom) {
-            filters.push(`r.date >= $${idx++}`);
+            filters.push(`${localDateSql} >= $${idx++}::date`);
             values.push(dateFrom);
         }
         if (dateTo) {
-            filters.push(`r.date <= $${idx++}`);
+            filters.push(`${localDateSql} <= $${idx++}::date`);
             values.push(dateTo);
         }
 
         const rows = await DatabaseService.query<Record<string, unknown>>(
-            `SELECT
+            `WITH reservation_base AS (
+                SELECT
+                    r.*,
+                    ${reservationLocalDateLabelSql('r')} AS reservation_date,
+                    ${reservationLocalTimeSql('r', 'starts_at')} AS start_time_local,
+                    ${reservationLocalTimeSql('r', 'ends_at')} AS end_time_local
+                FROM reservations r
+                WHERE ${filters.join(' AND ')}
+            )
+            SELECT
                 r.id,
                 s.name AS store_name,
                 r.customer_name,
                 r.customer_phone,
                 r.practitioner_name,
-                r.date,
-                r.start_time,
-                r.end_time,
+                r.reservation_date,
+                r.start_time_local,
+                r.end_time_local,
                 r.status,
                 r.total_price,
                 COALESCE(string_agg(DISTINCT rm.menu_name, ' / '), '') AS menu_names,
                 COALESCE(string_agg(DISTINCT ro.option_name, ' / '), '') AS option_names,
                 r.created_at
-             FROM reservations r
+             FROM reservation_base r
              LEFT JOIN stores s
                ON s.tenant_id = r.tenant_id AND s.id = r.store_id
              LEFT JOIN reservation_menus rm
                ON rm.tenant_id = r.tenant_id AND rm.reservation_id = r.id
              LEFT JOIN reservation_options ro
                ON ro.tenant_id = r.tenant_id AND ro.reservation_id = r.id
-             WHERE ${filters.join(' AND ')}
              GROUP BY
                 r.id, s.name, r.customer_name, r.customer_phone, r.practitioner_name,
-                r.date, r.start_time, r.end_time, r.status, r.total_price, r.created_at
-             ORDER BY r.date DESC, r.start_time DESC`,
+                r.reservation_date, r.start_time_local, r.end_time_local,
+                r.status, r.total_price, r.created_at, r.starts_at
+             ORDER BY r.starts_at DESC`,
             values,
             this.tenantId
         );
@@ -572,9 +596,9 @@ export class ExportJobService {
             customerName: r.customer_name,
             customerPhone: r.customer_phone,
             practitionerName: r.practitioner_name,
-            date: r.date,
-            startTime: r.start_time,
-            endTime: r.end_time,
+            date: r.reservation_date,
+            startTime: r.start_time_local,
+            endTime: r.end_time_local,
             status: r.status,
             totalPrice: r.total_price,
             menus: r.menu_names,
@@ -712,6 +736,7 @@ export class ExportJobService {
         dateFrom?: string,
         dateTo?: string
     ): Promise<{ csv: string; rowCount: number }> {
+        const localDateSql = reservationLocalDateSql('r');
         const filters: string[] = ['r.tenant_id = $1'];
         const values: Array<string | null> = [this.tenantId];
         let idx = 2;
@@ -721,11 +746,11 @@ export class ExportJobService {
             values.push(storeId);
         }
         if (dateFrom) {
-            filters.push(`r.date >= $${idx++}`);
+            filters.push(`${localDateSql} >= $${idx++}::date`);
             values.push(dateFrom);
         }
         if (dateTo) {
-            filters.push(`r.date <= $${idx++}`);
+            filters.push(`${localDateSql} <= $${idx++}::date`);
             values.push(dateTo);
         }
 

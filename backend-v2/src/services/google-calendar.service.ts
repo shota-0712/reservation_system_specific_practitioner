@@ -1,4 +1,3 @@
-import { fromZonedTime } from 'date-fns-tz';
 import { env } from '../config/env.js';
 import { DatabaseService } from '../config/database.js';
 import { decrypt, encrypt } from '../utils/crypto.js';
@@ -160,8 +159,8 @@ export class GoogleCalendarService {
         const accessToken = await this.getAccessToken();
         if (!accessToken) return null;
 
-        const start = this.toIso(reservation.date, reservation.startTime, timezone);
-        const end = this.toIso(reservation.date, reservation.endTime, timezone);
+        const start = new Date(reservation.startsAt).toISOString();
+        const end = new Date(reservation.endsAt).toISOString();
 
         const body = {
             summary: `予約: ${reservation.customerName || 'ゲスト'} / ${reservation.menuNames.join('、')}`,
@@ -204,8 +203,8 @@ export class GoogleCalendarService {
         const accessToken = await this.getAccessToken();
         if (!accessToken) return;
 
-        const start = this.toIso(reservation.date, reservation.startTime, timezone);
-        const end = this.toIso(reservation.date, reservation.endTime, timezone);
+        const start = new Date(reservation.startsAt).toISOString();
+        const end = new Date(reservation.endsAt).toISOString();
 
         const body = {
             summary: `予約: ${reservation.customerName || 'ゲスト'} / ${reservation.menuNames.join('、')}`,
@@ -309,10 +308,6 @@ export class GoogleCalendarService {
 
         const token = await tokenResponse.json() as OAuthTokenResponse;
         return token.access_token;
-    }
-
-    private toIso(date: string, time: string, timezone: string): string {
-        return fromZonedTime(`${date}T${time}:00`, timezone).toISOString();
     }
 
     private async resolveGoogleEmail(accessToken: string): Promise<string | undefined> {

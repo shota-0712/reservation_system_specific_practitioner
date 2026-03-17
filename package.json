@@ -1,6 +1,9 @@
 {
   "scripts": {
-    "sync:agent-context": "bash scripts/sync_agent_context.sh"
+    "sync:agent-context": "bash scripts/sync_agent_context.sh",
+    "clean:dry-run": "bash scripts/clean_workspace.sh",
+    "clean:workspace": "bash scripts/clean_workspace.sh --apply",
+    "clean:workspace:all": "bash scripts/clean_workspace.sh --apply --include-tools"
   },
   "dependencies": {
     "@types/pg": "^8.16.0",

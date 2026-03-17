@@ -198,8 +198,8 @@ export class MenuRepository {
         const row = await DatabaseService.queryOne(
             `INSERT INTO menus (
                 tenant_id, name, description, category, price, duration, image_url,
-                is_active, display_order, practitioner_ids
-            ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+                is_active, display_order
+            ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
             RETURNING *`,
             [
                 this.tenantId,
@@ -211,7 +211,6 @@ export class MenuRepository {
                 data.imageUrl ?? null,
                 data.isActive ?? true,
                 data.displayOrder ?? 0,
-                data.availablePractitionerIds ?? [],
             ],
             this.tenantId
         );
@@ -232,7 +231,6 @@ export class MenuRepository {
                 image_url = COALESCE($8, image_url),
                 is_active = COALESCE($9, is_active),
                 display_order = COALESCE($10, display_order),
-                practitioner_ids = COALESCE($11, practitioner_ids),
                 updated_at = NOW()
              WHERE id = $1 AND tenant_id = $2
              RETURNING *`,
@@ -247,7 +245,6 @@ export class MenuRepository {
                 data.imageUrl ?? null,
                 data.isActive ?? null,
                 data.displayOrder ?? null,
-                data.availablePractitionerIds ?? null,
             ],
             this.tenantId
         );

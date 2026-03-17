@@ -4,18 +4,23 @@
  */
 
 import { Router, Request, Response } from 'express';
+import { formatInTimeZone } from 'date-fns-tz';
 import { requireFirebaseAuth, requireRole } from '../../middleware/auth.js';
-import { getTenant } from '../../middleware/tenant.js';
+import { getTenantId } from '../../middleware/tenant.js';
 import { asyncHandler } from '../../middleware/error-handler.js';
 import { validateQuery } from '../../middleware/validation.js';
 import { DatabaseService } from '../../config/database.js';
 import { createReservationRepository, createPractitionerRepository } from '../../repositories/index.js';
 import type { Reservation, Practitioner } from '../../types/index.js';
+import { getDashboardActivity } from '../../services/dashboard-activity.service.js';
 import { z } from 'zod';
 
 const router = Router();
+const DEFAULT_DASHBOARD_TIMEZONE = 'Asia/Tokyo';
 
 const formatDate = (d: Date): string => d.toISOString().split('T')[0];
+const reservationLocalDateSql = (alias: string): string =>
+    `(${alias}.starts_at AT TIME ZONE COALESCE(${alias}.timezone, '${DEFAULT_DASHBOARD_TIMEZONE}'))::date`;
 
 const minutesBetween = (start: string, end: string): number => {
     const [sh, sm] = start.split(':').map(Number);
@@ -37,7 +42,7 @@ router.get(
     requireFirebaseAuth(),
     requireRole('staff', 'manager', 'owner'),
     asyncHandler(async (req: Request, res: Response): Promise<void> => {
-        const tenant = getTenant(req);
+        const tenantId = getTenantId(req);
 
         const today = new Date();
         const todayStr = formatDate(today);
@@ -45,6 +50,7 @@ router.get(
         const yesterday = new Date(today);
         yesterday.setDate(yesterday.getDate() - 1);
         const yesterdayStr = formatDate(yesterday);
+        const localDateSql = reservationLocalDateSql('r');
 
         const [todayStats, yesterdayStats] = await Promise.all([
             DatabaseService.queryOne(
@@ -52,20 +58,20 @@ router.get(
                     COALESCE(SUM(total_price) FILTER (WHERE status = 'completed'), 0) as revenue,
                     COUNT(*) FILTER (WHERE status IN ('confirmed','pending','completed')) as bookings,
                     COUNT(*) FILTER (WHERE status = 'completed') as completed_count
-                 FROM reservations
-                 WHERE tenant_id = $1 AND date = $2`,
-                [tenant.id, todayStr],
-                tenant.id
+                 FROM reservations r
+                 WHERE r.tenant_id = $1 AND ${localDateSql} = $2::date`,
+                [tenantId, todayStr],
+                tenantId
             ),
             DatabaseService.queryOne(
                 `SELECT
                     COALESCE(SUM(total_price) FILTER (WHERE status = 'completed'), 0) as revenue,
                     COUNT(*) FILTER (WHERE status IN ('confirmed','pending','completed')) as bookings,
                     COUNT(*) FILTER (WHERE status = 'completed') as completed_count
-                 FROM reservations
-                 WHERE tenant_id = $1 AND date = $2`,
-                [tenant.id, yesterdayStr],
-                tenant.id
+                 FROM reservations r
+                 WHERE r.tenant_id = $1 AND ${localDateSql} = $2::date`,
+                [tenantId, yesterdayStr],
+                tenantId
             ),
         ]);
 
@@ -87,15 +93,15 @@ router.get(
                 `SELECT COUNT(*) as count
                  FROM customers
                  WHERE tenant_id = $1 AND created_at >= $2 AND created_at < $3`,
-                [tenant.id, todayStart, tomorrowStart],
-                tenant.id
+                [tenantId, todayStart, tomorrowStart],
+                tenantId
             ),
             DatabaseService.queryOne(
                 `SELECT COUNT(*) as count
                  FROM customers
                  WHERE tenant_id = $1 AND created_at >= $2 AND created_at < $3`,
-                [tenant.id, yesterdayStart, todayStart],
-                tenant.id
+                [tenantId, yesterdayStart, todayStart],
+                tenantId
             ),
         ]);
 
@@ -150,19 +156,19 @@ router.get(
     requireFirebaseAuth(),
     requireRole('staff', 'manager', 'owner'),
     asyncHandler(async (req: Request, res: Response): Promise<void> => {
-        const tenant = getTenant(req);
+        const tenantId = getTenantId(req);
         const todayStr = formatDate(new Date());
 
-        const reservationRepo = createReservationRepository(tenant.id);
+        const reservationRepo = createReservationRepository(tenantId);
         const reservations = await reservationRepo.findByDate(todayStr);
 
         const data = reservations
             .filter(r => ['confirmed', 'pending', 'completed'].includes(r.status))
-            .sort((a, b) => a.startTime.localeCompare(b.startTime))
+            .sort((a, b) => new Date(a.startsAt).getTime() - new Date(b.startsAt).getTime())
             .map((r: Reservation) => ({
                 id: r.id,
-                startTime: r.startTime,
-                endTime: r.endTime,
+                startTime: formatInTimeZone(new Date(r.startsAt), r.timezone, 'HH:mm'),
+                endTime: formatInTimeZone(new Date(r.endsAt), r.timezone, 'HH:mm'),
                 customerName: r.customerName,
                 menuNames: r.menuNames,
                 practitionerName: r.practitionerName,
@@ -187,11 +193,11 @@ router.get(
     requireFirebaseAuth(),
     requireRole('manager', 'owner'),
     asyncHandler(async (req: Request, res: Response): Promise<void> => {
-        const tenant = getTenant(req);
+        const tenantId = getTenantId(req);
         const todayStr = formatDate(new Date());
 
-        const practitionerRepo = createPractitionerRepository(tenant.id);
-        const reservationRepo = createReservationRepository(tenant.id);
+        const practitionerRepo = createPractitionerRepository(tenantId);
+        const reservationRepo = createReservationRepository(tenantId);
 
         const practitioners = await practitionerRepo.findAllActive();
         const reservations = await reservationRepo.findByDate(todayStr);
@@ -243,33 +249,32 @@ router.get(
     requireFirebaseAuth(),
     requireRole('staff', 'manager', 'owner'),
     asyncHandler(async (req: Request, res: Response): Promise<void> => {
-        const tenant = getTenant(req);
+        const tenantId = getTenantId(req);
 
         const today = new Date();
         const startDate = new Date(today);
         startDate.setDate(today.getDate() - 6);
+        const localDateSql = reservationLocalDateSql('r');
 
         const summaryRows = await DatabaseService.query(
             `SELECT
-                date,
-                COUNT(*) FILTER (WHERE status IN ('confirmed','pending','completed')) as bookings,
-                COUNT(*) FILTER (WHERE status = 'completed') as completed_count,
-                COALESCE(SUM(total_price) FILTER (WHERE status = 'completed'), 0) as revenue
-             FROM reservations
-             WHERE tenant_id = $1
-               AND date >= $2
-               AND date <= $3
-             GROUP BY date
-             ORDER BY date ASC`,
-            [tenant.id, formatDate(startDate), formatDate(today)],
-            tenant.id
+                to_char(r.starts_at AT TIME ZONE COALESCE(r.timezone, '${DEFAULT_DASHBOARD_TIMEZONE}'), 'YYYY-MM-DD') as local_date,
+                COUNT(*) FILTER (WHERE r.status IN ('confirmed','pending','completed')) as bookings,
+                COUNT(*) FILTER (WHERE r.status = 'completed') as completed_count,
+                COALESCE(SUM(r.total_price) FILTER (WHERE r.status = 'completed'), 0) as revenue
+             FROM reservations r
+             WHERE r.tenant_id = $1
+               AND ${localDateSql} >= $2::date
+               AND ${localDateSql} <= $3::date
+             GROUP BY local_date
+             ORDER BY local_date ASC`,
+            [tenantId, formatDate(startDate), formatDate(today)],
+            tenantId
         );
 
         const rowsByDate = new Map<string, Record<string, unknown>>();
         summaryRows.forEach((row) => {
-            const key = row.date instanceof Date
-                ? row.date.toISOString().split('T')[0]
-                : String(row.date);
+            const key = String(row.local_date);
             rowsByDate.set(key, row as Record<string, unknown>);
         });
 
@@ -303,28 +308,9 @@ router.get(
     requireRole('staff', 'manager', 'owner'),
     validateQuery(dashboardActivityQuerySchema),
     asyncHandler(async (req: Request, res: Response): Promise<void> => {
-        const tenant = getTenant(req);
+        const tenantId = getTenantId(req);
         const { limit } = req.query as unknown as z.infer<typeof dashboardActivityQuerySchema>;
-
-        const rows = await DatabaseService.query(
-            `SELECT action, entity_type, entity_id, actor_type, actor_id, actor_name, created_at
-             FROM audit_logs
-             WHERE tenant_id = $1
-             ORDER BY created_at DESC
-             LIMIT $2`,
-            [tenant.id, limit],
-            tenant.id
-        );
-
-        const data = rows.map((row) => ({
-            action: row.action,
-            entityType: row.entity_type,
-            entityId: row.entity_id,
-            actorType: row.actor_type,
-            actorId: row.actor_id,
-            actorName: row.actor_name,
-            createdAt: row.created_at,
-        }));
+        const data = await getDashboardActivity(tenantId, limit);
 
         res.json({ success: true, data });
     })

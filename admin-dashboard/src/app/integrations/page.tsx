@@ -190,7 +190,9 @@ export default function IntegrationsPage() {
         return "未連携";
     };
 
-    const runManualJob = async (job: "day-before" | "same-day" | "analytics" | "google-sync" | "google-retry-dead") => {
+    const runManualJob = async (
+        job: "day-before" | "same-day" | "analytics" | "google-sync" | "google-retry-dead" | "rfm-recalculate"
+    ) => {
         setJobRunning(true);
         setJobResult(null);
         setError(null);
@@ -201,6 +203,8 @@ export default function IntegrationsPage() {
                     ? await adminJobsApi.runDayBeforeReminder()
                     : job === "same-day"
                       ? await adminJobsApi.runSameDayReminder()
+                      : job === "rfm-recalculate"
+                        ? await adminJobsApi.runRfmRecalculate()
                       : job === "google-retry-dead"
                         ? await adminJobsApi.runGoogleCalendarRetry(100, false)
                       : job === "google-sync"
@@ -234,6 +238,11 @@ export default function IntegrationsPage() {
                 const fromFailed = Number(retryStats?.fromFailed ?? 0);
                 setJobResult(`Google deadキューを再投入しました / reset: ${reset}, fromDead: ${fromDead}, fromFailed: ${fromFailed}`);
                 await fetchStatus();
+            } else if (job === "rfm-recalculate") {
+                const processed = Number(stats.processed ?? 0);
+                const updated = Number(stats.updated ?? 0);
+                const unchanged = Number(stats.unchanged ?? 0);
+                setJobResult(`RFM再計算を実行しました / processed: ${processed}, updated: ${updated}, unchanged: ${unchanged}`);
             } else {
                 const reminderStats = stats.stats as Record<string, unknown> | undefined;
                 const sent = Number(reminderStats?.sent ?? 0);
@@ -406,6 +415,13 @@ export default function IntegrationsPage() {
                             onClick={() => runManualJob("google-retry-dead")}
                         >
                             Google deadキュー再投入
+                        </Button>
+                        <Button
+                            variant="outline"
+                            disabled={jobRunning}
+                            onClick={() => runManualJob("rfm-recalculate")}
+                        >
+                            RFM再計算実行
                         </Button>
                     </div>
 

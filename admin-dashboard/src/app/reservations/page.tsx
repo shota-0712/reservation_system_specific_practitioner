@@ -22,9 +22,10 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogBody, DialogFooter } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
-import { format, addDays, startOfWeek, endOfWeek, isToday, isTomorrow, parseISO } from "date-fns";
+import { format, addDays, startOfWeek, endOfWeek, isToday, isTomorrow } from "date-fns";
 import { ja } from "date-fns/locale";
 import { reservationsApi, practitionersApi, menusApi } from "@/lib/api";
+import { toLocalDate, toLocalTime, toStartsAt } from "@/lib/reservation-time";
 import { logger } from "@/lib/logger";
 
 // 予約ステータスの定義
@@ -32,9 +33,9 @@ type ReservationStatus = "confirmed" | "pending" | "completed" | "canceled" | "n
 
 interface Reservation {
     id: string;
-    date: string;
-    startTime: string;
-    endTime: string;
+    startsAt: string;    // ISO 8601 UTC datetime
+    endsAt: string;      // ISO 8601 UTC datetime
+    timezone: string;    // IANA timezone
     customerName: string;
     customerPhone: string;
     menuName: string; // from menuNames[0]
@@ -102,9 +103,9 @@ export default function ReservationsPage() {
             if (res.success && Array.isArray(res.data)) {
                 const formatted: Reservation[] = res.data.map((r: any) => ({
                     id: r.id,
-                    date: r.date,
-                    startTime: r.startTime,
-                    endTime: r.endTime,
+                    startsAt: r.startsAt,
+                    endsAt: r.endsAt,
+                    timezone: r.timezone || 'Asia/Tokyo',
                     customerName: r.customerName || 'ゲスト',
                     customerPhone: r.customerPhone || '',
                     menuName: r.menuNames?.[0] || 'メニュー未定',
@@ -198,8 +199,8 @@ export default function ReservationsPage() {
                 practitionerId: createForm.practitionerId,
                 menuIds: [createForm.menuId],
                 optionIds: [],
-                date: createForm.date,
-                startTime: createForm.startTime,
+                startsAt: toStartsAt(createForm.date, createForm.startTime, 'Asia/Tokyo'),
+                timezone: 'Asia/Tokyo',
                 status: "confirmed",
                 isNomination: createForm.isNomination,
                 source: "admin",
@@ -257,11 +258,11 @@ export default function ReservationsPage() {
 
                 // 日付フィルター
                 if (dateRange === "day") {
-                    const resDate = format(parseISO(res.date), "yyyy-MM-dd");
+                    const resDate = toLocalDate(res.startsAt, res.timezone);
                     const targetDate = format(currentDate, "yyyy-MM-dd");
                     if (resDate !== targetDate) return false;
                 } else if (dateRange === "week") {
-                    const resDate = parseISO(res.date);
+                    const resDate = new Date(res.startsAt);
                     const weekStart = startOfWeek(currentDate, { weekStartsOn: 1 });
                     const weekEnd = endOfWeek(currentDate, { weekStartsOn: 1 });
                     if (resDate < weekStart || resDate > weekEnd) return false;
@@ -269,12 +270,7 @@ export default function ReservationsPage() {
 
                 return true;
             })
-            .sort((a, b) => {
-                // 日付・時間でソート
-                const dateCompare = a.date.localeCompare(b.date);
-                if (dateCompare !== 0) return dateCompare;
-                return a.startTime.localeCompare(b.startTime);
-            });
+            .sort((a, b) => a.startsAt.localeCompare(b.startsAt));
     }, [reservations, searchQuery, statusFilter, practitionerFilter, dateRange, currentDate]);
 
     // 統計データ
@@ -283,17 +279,17 @@ export default function ReservationsPage() {
         const tomorrowStr = format(addDays(new Date(), 1), "yyyy-MM-dd");
 
         const todayReservations = reservations.filter(
-            (r) => r.date === todayStr && r.status !== "canceled" && r.status !== "no_show"
+            (r) => toLocalDate(r.startsAt, r.timezone) === todayStr && r.status !== "canceled" && r.status !== "no_show"
         );
         const tomorrowReservations = reservations.filter(
-            (r) => r.date === tomorrowStr && r.status !== "canceled" && r.status !== "no_show"
+            (r) => toLocalDate(r.startsAt, r.timezone) === tomorrowStr && r.status !== "canceled" && r.status !== "no_show"
         );
         const pendingReservations = reservations.filter((r) => r.status === "pending");
 
         // 今月の売上 (簡易計算)
         const currentMonth = format(new Date(), "yyyy-MM");
         const thisMonthRevenue = reservations
-            .filter((r) => r.date.startsWith(currentMonth) && r.status === "completed")
+            .filter((r) => toLocalDate(r.startsAt, r.timezone).startsWith(currentMonth) && r.status === "completed")
             .reduce((sum, r) => sum + r.totalPrice, 0);
 
         return {
@@ -305,7 +301,7 @@ export default function ReservationsPage() {
     }, [reservations]);
 
     const getDateLabel = (dateStr: string) => {
-        const date = parseISO(dateStr);
+        const date = new Date(dateStr + "T00:00:00");
         if (isToday(date)) return "今日";
         if (isTomorrow(date)) return "明日";
         return format(date, "M/d (E)", { locale: ja });
@@ -538,14 +534,14 @@ export default function ReservationsPage() {
                                                     <div className="flex items-center gap-2">
                                                         <div className="text-center min-w-[60px]">
                                                             <div className="text-xs text-muted-foreground">
-                                                                {getDateLabel(reservation.date)}
+                                                                {getDateLabel(toLocalDate(reservation.startsAt, reservation.timezone))}
                                                             </div>
                                                             <div className="font-medium">
-                                                                {reservation.startTime}
+                                                                {toLocalTime(reservation.startsAt, reservation.timezone)}
                                                             </div>
                                                         </div>
                                                         <div className="text-xs text-gray-400">
-                                                            〜{reservation.endTime}
+                                                            〜{toLocalTime(reservation.endsAt, reservation.timezone)}
                                                         </div>
                                                     </div>
                                                 </td>

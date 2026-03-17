@@ -23,6 +23,7 @@ import type {
     UpdateProfileRequest,
     UpdateBusinessRequest,
     UpdateLineRequest,
+    UpdateNotificationSettingsRequest,
 } from '@/types/api-request-types';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080';
@@ -363,6 +364,45 @@ export const optionsApi = {
         apiClient(`/admin/options/${id}`, { method: 'DELETE' }),
 };
 
+type PractitionerStoreAssignments = {
+    practitionerId: string;
+    storeIds: string[];
+};
+
+type MenuPractitionerAssignments = {
+    menuId: string;
+    practitionerIds: string[];
+};
+
+type OptionMenuAssignments = {
+    optionId: string;
+    menuIds: string[];
+};
+
+export const assignmentsApi = {
+    getPractitionerStores: (id: string) =>
+        apiClient<PractitionerStoreAssignments>(`/admin/assignments/practitioners/${id}/stores`),
+    setPractitionerStores: (id: string, ids: string[]) =>
+        apiClient<PractitionerStoreAssignments>(`/admin/assignments/practitioners/${id}/stores`, {
+            method: 'PUT',
+            body: JSON.stringify({ ids }),
+        }),
+    getMenuPractitioners: (id: string) =>
+        apiClient<MenuPractitionerAssignments>(`/admin/assignments/menus/${id}/practitioners`),
+    setMenuPractitioners: (id: string, ids: string[]) =>
+        apiClient<MenuPractitionerAssignments>(`/admin/assignments/menus/${id}/practitioners`, {
+            method: 'PUT',
+            body: JSON.stringify({ ids }),
+        }),
+    getOptionMenus: (id: string) =>
+        apiClient<OptionMenuAssignments>(`/admin/assignments/options/${id}/menus`),
+    setOptionMenus: (id: string, ids: string[]) =>
+        apiClient<OptionMenuAssignments>(`/admin/assignments/options/${id}/menus`, {
+            method: 'PUT',
+            body: JSON.stringify({ ids }),
+        }),
+};
+
 // ============================================
 // 店舗 API
 // ============================================
@@ -439,8 +479,41 @@ export const googleCalendarApi = {
 // 設定 API
 // ============================================
 
+export type RfmScoreThresholds = {
+    score5: number;
+    score4: number;
+    score3: number;
+    score2: number;
+};
+
+export type RfmThresholdSettings = {
+    recency: RfmScoreThresholds;
+    frequency: RfmScoreThresholds;
+    monetary: RfmScoreThresholds;
+};
+
+export type RfmRecalculateResult = {
+    processed: number;
+    updated: number;
+    unchanged: number;
+};
+
+export type NotificationSettings = {
+    emailNewReservation: boolean;
+    emailCancellation: boolean;
+    emailDailyReport: boolean;
+    lineReminder: boolean;
+    lineConfirmation: boolean;
+    lineReview: boolean;
+    pushNewReservation: boolean;
+    pushCancellation: boolean;
+    updatedAt?: string;
+    updatedBy?: string;
+};
+
 export const settingsApi = {
     get: () => apiClient('/admin/settings'),
+    getNotifications: () => apiClient<NotificationSettings>('/admin/settings/notifications'),
     updateProfile: (data: UpdateProfileRequest) =>
         apiClient('/admin/settings/profile', {
             method: 'PUT',
@@ -456,8 +529,22 @@ export const settingsApi = {
             method: 'PUT',
             body: JSON.stringify(data),
         }),
+    updateNotifications: (data: UpdateNotificationSettingsRequest) =>
+        apiClient<NotificationSettings>('/admin/settings/notifications', {
+            method: 'PUT',
+            body: JSON.stringify(data),
+        }),
     resolveLinePreview: (params?: { storeId?: string; practitionerId?: string }) =>
         apiClient('/admin/settings/line/resolve-preview' + buildQuery(params || {})),
+};
+
+export const rfmSettingsApi = {
+    get: () => apiClient<RfmThresholdSettings>('/admin/settings/rfm-thresholds'),
+    update: (payload: RfmThresholdSettings) =>
+        apiClient<RfmThresholdSettings>('/admin/settings/rfm-thresholds', {
+            method: 'PUT',
+            body: JSON.stringify(payload),
+        }),
 };
 
 // ============================================
@@ -571,6 +658,10 @@ export const adminJobsApi = {
                 ...(limit ? { limit } : {}),
                 includeFailed,
             }),
+        }),
+    runRfmRecalculate: () =>
+        apiClient<RfmRecalculateResult>('/admin/jobs/customers/rfm/recalculate', {
+            method: 'POST',
         }),
 };
 

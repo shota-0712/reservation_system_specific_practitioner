@@ -1,12 +1,11 @@
 import { Router, Request, Response } from 'express';
 import { z } from 'zod';
+import { formatInTimeZone } from 'date-fns-tz';
 import {
     asyncHandler,
     validateBody,
     validateParams,
     idParamSchema,
-    dateSchema,
-    timeSchema,
 } from '../../middleware/index.js';
 import { getTenantId } from '../../middleware/tenant.js';
 import { requireLineAuth, getUser } from '../../middleware/auth.js';
@@ -35,10 +34,7 @@ const createReservationSchema = z.object({
     practitionerId: z.string().min(1, '施術者を選択してください'),
     menuIds: z.array(z.string()).min(1, 'メニューを選択してください'),
     optionIds: z.array(z.string()).optional().default([]),
-    date: dateSchema.optional(),
-    startTime: timeSchema.optional(),
-    startsAt: z.string().datetime().optional(),
-    endsAt: z.string().datetime().optional(),
+    startsAt: z.string().datetime({ message: 'startsAt は ISO 8601 形式で指定してください' }),
     timezone: z.string().max(100).optional(),
     customerNote: z.string().max(500).optional(),
     isNomination: z.boolean().optional(),
@@ -50,24 +46,13 @@ const createReservationSchema = z.object({
     // When present, the server validates that the practitionerId and storeId
     // in the request match the token so the nominated practitioner cannot be swapped.
     bookingToken: z.string().optional(),
-}).superRefine((value, ctx) => {
-    if (!(value.startsAt || (value.date && value.startTime))) {
-        ctx.addIssue({
-            code: z.ZodIssueCode.custom,
-            message: 'date/startTime または startsAt のいずれかを指定してください',
-            path: ['startsAt'],
-        });
-    }
 });
 
 const updateReservationSchema = z.object({
     practitionerId: z.string().optional(),
     menuIds: z.array(z.string()).min(1, 'メニューを選択してください').optional(),
     optionIds: z.array(z.string()).optional().default([]),
-    date: dateSchema.optional(),
-    startTime: timeSchema.optional(),
     startsAt: z.string().datetime().optional(),
-    endsAt: z.string().datetime().optional(),
     timezone: z.string().max(100).optional(),
     customerNote: z.string().max(500).optional(),
     isNomination: z.boolean().optional(),
@@ -75,14 +60,6 @@ const updateReservationSchema = z.object({
     customerName: z.string().optional(),
     customerPhone: z.string().optional(),
     storeId: z.string().optional(),
-}).superRefine((value, ctx) => {
-    if (!(value.startsAt || (value.date && value.startTime))) {
-        ctx.addIssue({
-            code: z.ZodIssueCode.custom,
-            message: 'date/startTime または startsAt のいずれかを指定してください',
-            path: ['startsAt'],
-        });
-    }
 });
 
 
@@ -99,8 +76,6 @@ const updateReservationSchema = z.object({
             practitionerId,
             menuIds,
             optionIds,
-            date,
-            startTime,
             startsAt,
             timezone,
             customerNote,
@@ -135,11 +110,10 @@ const updateReservationSchema = z.object({
         const effectiveStoreId = storeId || tokenStoreId || (req as { storeId?: string }).storeId;
         const { store, policy } = await resolveStoreContext(tenantId, effectiveStoreId);
         const reservationService = createReservationService(tenantId);
-        const resolvedDateTime = reservationService.resolveDateTimeInput(
-            { date, startTime, startsAt, timezone },
-            policy.timezone
-        );
-        enforceAdvanceBookingPolicy(resolvedDateTime.date, policy);
+        const tz = timezone || policy.timezone || 'Asia/Tokyo';
+        const startsAtDate = new Date(startsAt);
+        const localDate = formatInTimeZone(startsAtDate, tz, 'yyyy-MM-dd');
+        enforceAdvanceBookingPolicy(localDate, policy);
 
         const customerRepo = createCustomerRepository(tenantId);
 
@@ -148,11 +122,7 @@ const updateReservationSchema = z.object({
         const effectiveIsNomination = tokenForcesNomination || (isNomination ?? false);
         const nominationFee = effectiveIsNomination ? (practitioner.nominationFee ?? 0) : 0;
         const totalPrice = resolved.menuPrice + resolved.optionPrice + nominationFee;
-        const endTime = reservationService.calcEndTime(resolvedDateTime.startTime, resolved.totalDuration);
-
-        await reservationService.assertNoConflict(practitionerId, resolvedDateTime.date, resolvedDateTime.startTime, endTime, {
-            timezone: resolvedDateTime.timezone,
-        });
+        const endsAt = new Date(startsAtDate.getTime() + resolved.totalDuration * 60 * 1000).toISOString();
 
         const customer = await customerRepo.findOrCreate(user.uid, user.name || 'ゲスト', user.picture);
         await customerRepo.update(customer.id, {
@@ -171,9 +141,9 @@ const updateReservationSchema = z.object({
                 practitionerName: practitioner.name,
                 menus: resolved.menus,
                 options: resolved.options,
-                date: resolvedDateTime.date,
-                startTime: resolvedDateTime.startTime,
-                endTime,
+                startsAt,
+                endsAt,
+                timezone: tz,
                 totalDuration: resolved.totalDuration,
                 totalPrice,
                 menuPrice: resolved.menuPrice,
@@ -186,7 +156,6 @@ const updateReservationSchema = z.object({
             { actorType: 'customer', actorId: user.uid, actorName: customerName || user.name },
             practitioner,
             customer,
-            resolvedDateTime.timezone,
             req
         );
 
@@ -219,11 +188,9 @@ const updateReservationSchema = z.object({
 
         const upcoming = await reservationRepo.findUpcomingByCustomer(customer.id);
         const past = await reservationRepo.findPastByCustomer(customer.id, 50);
-        const reservations = [...upcoming, ...past].sort((a, b) => {
-            const aKey = `${a.date} ${a.startTime}`;
-            const bKey = `${b.date} ${b.startTime}`;
-            return aKey.localeCompare(bKey);
-        });
+        const reservations = [...upcoming, ...past].sort((a, b) =>
+            new Date(a.startsAt).getTime() - new Date(b.startsAt).getTime()
+        );
 
 	        const response: ApiResponse<Reservation[]> = { success: true, data: reservations };
 	        res.json(response);
@@ -291,8 +258,6 @@ router.put(
             practitionerId,
             menuIds,
             optionIds,
-            date,
-            startTime,
             startsAt,
             timezone,
             customerNote,
@@ -306,16 +271,10 @@ router.put(
         const targetStoreId = storeId ?? existing.storeId ?? (req as { storeId?: string }).storeId;
         const { store, policy } = await resolveStoreContext(tenantId, targetStoreId);
         const reservationService = createReservationService(tenantId);
-        const resolvedDateTime = reservationService.resolveDateTimeInput(
-            {
-                date: date ?? existing.date,
-                startTime: startTime ?? existing.startTime,
-                startsAt,
-                timezone,
-            },
-            policy.timezone
-        );
-        enforceAdvanceBookingPolicy(resolvedDateTime.date, policy);
+        const tz = timezone || policy.timezone || 'Asia/Tokyo';
+        const resolvedStartsAt = startsAt ?? new Date(existing.startsAt).toISOString();
+        const startsAtDate = new Date(resolvedStartsAt);
+        enforceAdvanceBookingPolicy(formatInTimeZone(startsAtDate, tz, 'yyyy-MM-dd'), policy);
 
         const newPractitionerId = practitionerId ?? existing.practitionerId;
         const newMenuIds = menuIds ?? existing.menuIds ?? [];
@@ -327,12 +286,7 @@ router.put(
         const applyNomination = isNomination ?? ((existing.nominationFee ?? 0) > 0);
         const nominationFee = applyNomination ? (practitioner.nominationFee ?? 0) : 0;
         const totalPrice = resolved.menuPrice + resolved.optionPrice + nominationFee;
-        const endTime = reservationService.calcEndTime(resolvedDateTime.startTime, resolved.totalDuration);
-
-        await reservationService.assertNoConflict(newPractitionerId, resolvedDateTime.date, resolvedDateTime.startTime, endTime, {
-            excludeReservationId: id,
-            timezone: resolvedDateTime.timezone,
-        });
+        const resolvedEndsAt = new Date(startsAtDate.getTime() + resolved.totalDuration * 60 * 1000).toISOString();
 
         await customerRepo.update(customer.id, {
             name: customerName || customer.name,
@@ -351,9 +305,9 @@ router.put(
                 practitionerName: practitioner.name,
                 menus: resolved.menus,
                 options: resolved.options,
-                date: resolvedDateTime.date,
-                startTime: resolvedDateTime.startTime,
-                endTime,
+                startsAt: resolvedStartsAt,
+                endsAt: resolvedEndsAt,
+                timezone: tz,
                 totalDuration: resolved.totalDuration,
                 totalPrice,
                 menuPrice: resolved.menuPrice,
@@ -371,12 +325,11 @@ router.put(
             { actorType: 'customer', actorId: user.uid, actorName: customerName || user.name },
             practitioner,
             customer,
-            resolvedDateTime.timezone,
             req,
             {
                 changeType: '日時変更',
-                oldValue: `${existing.date} ${existing.startTime}`,
-                newValue: `${resolvedDateTime.date} ${resolvedDateTime.startTime}`,
+                oldValue: formatInTimeZone(new Date(existing.startsAt), tz, 'yyyy-MM-dd HH:mm'),
+                newValue: formatInTimeZone(startsAtDate, tz, 'yyyy-MM-dd HH:mm'),
             }
         );
 

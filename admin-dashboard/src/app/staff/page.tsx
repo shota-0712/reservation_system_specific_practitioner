@@ -7,7 +7,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogBody, DialogFooter, ConfirmDialog } from "@/components/ui/dialog";
 import { useToast } from "@/components/ui/toast";
 import { cn } from "@/lib/utils";
-import { bookingLinksApi, getActiveStoreId, practitionersApi, STORE_CHANGED_EVENT } from "@/lib/api";
+import { assignmentsApi, bookingLinksApi, getActiveStoreId, practitionersApi, STORE_CHANGED_EVENT } from "@/lib/api";
 import { logger } from "@/lib/logger";
 
 const DAYS = ["日", "月", "火", "水", "木", "金", "土"];
@@ -258,7 +258,23 @@ export default function StaffPage() {
                 setError(practitionerRes.error?.message || 'スタッフデータの取得に失敗しました');
                 return;
             }
-            setPractitioners(practitionerRes.data as Practitioner[]);
+            const practitionerList = practitionerRes.data as Practitioner[];
+            const practitionersWithAssignments = await Promise.all(
+                practitionerList.map(async (practitioner) => {
+                    const assignmentRes = await assignmentsApi.getPractitionerStores(practitioner.id);
+                    if (!assignmentRes.success || !assignmentRes.data) {
+                        throw new Error(
+                            assignmentRes.error?.message || `スタッフ所属店舗の取得に失敗しました: ${practitioner.name}`
+                        );
+                    }
+
+                    return {
+                        ...practitioner,
+                        storeIds: assignmentRes.data.storeIds || [],
+                    };
+                })
+            );
+            setPractitioners(practitionersWithAssignments);
 
             if (!bookingLinkRes.success || !bookingLinkRes.data) {
                 setError(bookingLinkRes.error?.message || '予約URLデータの取得に失敗しました');

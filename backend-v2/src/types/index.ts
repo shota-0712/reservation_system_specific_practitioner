@@ -232,15 +232,11 @@ export interface Reservation extends BaseEntity {
     optionIds: string[];
     optionNames: string[];       // 非正規化
 
-    // Canonical time fields (v3)
-    startsAt?: Timestamp;
-    endsAt?: Timestamp;
-    timezone?: string;
+    // v3 canonical time fields (required)
+    startsAt: Timestamp;
+    endsAt: Timestamp;
+    timezone: string;
 
-    // Backward-compatible derived fields
-    date: string;                // YYYY-MM-DD
-    startTime: string;           // HH:mm
-    endTime: string;             // HH:mm
     duration: number;            // 合計時間（分）
 
     totalPrice: number;
@@ -274,6 +270,51 @@ export interface Reservation extends BaseEntity {
         advanceBookingPassed?: boolean;
         cancelDeadlinePassed?: boolean;
     };
+}
+
+// ============================================
+// RFM
+// ============================================
+
+/** セグメント名（新体系）。旧: vip→champion, dormant→atRisk, lost→hibernating */
+export type RfmSegment = 'champion' | 'loyal' | 'new' | 'atRisk' | 'hibernating';
+
+/** テナントごとのRFM閾値設定。未保存時はサービス層のデフォルト値を使用。 */
+export interface RfmThresholds {
+    recency: {
+        score5: number;  // ≤ days → score 5（最高）
+        score4: number;
+        score3: number;
+        score2: number;
+    };
+    frequency: {
+        score5: number;  // ≥ visits → score 5
+        score4: number;
+        score3: number;
+        score2: number;
+    };
+    monetary: {
+        score5: number;  // ≥ yen → score 5
+        score4: number;
+        score3: number;
+        score2: number;
+    };
+    updatedAt?: Timestamp;
+    updatedBy?: string;
+}
+
+/** テナント単位の通知設定（管理画面: settings/notifications）。 */
+export interface TenantNotificationSettings {
+    emailNewReservation: boolean;
+    emailCancellation: boolean;
+    emailDailyReport: boolean;
+    lineReminder: boolean;
+    lineConfirmation: boolean;
+    lineReview: boolean;
+    pushNewReservation: boolean;
+    pushCancellation: boolean;
+    updatedAt?: Timestamp;
+    updatedBy?: string;
 }
 
 // ============================================

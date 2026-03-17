@@ -164,10 +164,11 @@ export default function DashboardPage() {
                     const item = row as Record<string, unknown>;
                     const menuNames = Array.isArray(item.menuNames) ? item.menuNames : [];
                     const firstMenu = typeof menuNames[0] === "string" ? menuNames[0] : null;
-                    const startTimeRaw = typeof item.startTime === "string" ? item.startTime : "--:--";
+                    const startsAt = typeof item.startsAt === "string" ? item.startsAt : "";
+                    const timezone = typeof item.timezone === "string" ? item.timezone : "Asia/Tokyo";
                     return {
                         id: typeof item.id === "string" ? item.id : "",
-                        time: startTimeRaw.slice(0, 5),
+                        time: startsAt ? new Intl.DateTimeFormat("en-US", { timeZone: timezone, hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date(startsAt)).replace(/^24/, "00") : "--:--",
                         customerName:
                             typeof item.customerName === "string" && item.customerName.trim()
                                 ? item.customerName

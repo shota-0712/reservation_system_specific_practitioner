@@ -13,8 +13,8 @@ export interface CreateAdminReservationRequest {
     practitionerId: string;
     menuIds: string[];
     optionIds?: string[];
-    date: string;        // YYYY-MM-DD
-    startTime: string;  // HH:mm
+    startsAt: string;    // ISO 8601 UTC datetime
+    timezone: string;    // IANA timezone, e.g. "Asia/Tokyo"
     status?: 'pending' | 'confirmed' | string;
     isNomination?: boolean;
     customerNote?: string | null;
@@ -62,7 +62,6 @@ export interface CreatePractitionerRequest {
     title?: string | null;
     description?: string | null;
     nominationFee?: number | null;
-    storeIds?: string[] | null;
     schedule?: PractitionerSchedule | null;
     displayOrder?: number;
     isActive?: boolean;
@@ -81,7 +80,6 @@ export interface CreateMenuRequest {
     duration: number;
     price: number;
     imageUrl?: string | null;
-    availablePractitionerIds?: string[] | null;
     displayOrder?: number | null;
     isActive?: boolean | null;
 }
@@ -97,7 +95,6 @@ export interface CreateOptionRequest {
     description?: string | null;
     duration: number;
     price: number;
-    applicableMenuIds?: string[] | null;
     displayOrder?: number | null;
     isActive?: boolean | null;
 }
@@ -211,4 +208,15 @@ export interface UpdateLineRequest {
     channelAccessToken?: string | null;
     liffId?: string | null;
     mode?: 'tenant' | 'store' | 'practitioner' | string | null;
+}
+
+export interface UpdateNotificationSettingsRequest {
+    emailNewReservation?: boolean;
+    emailCancellation?: boolean;
+    emailDailyReport?: boolean;
+    lineReminder?: boolean;
+    lineConfirmation?: boolean;
+    lineReview?: boolean;
+    pushNewReservation?: boolean;
+    pushCancellation?: boolean;
 }

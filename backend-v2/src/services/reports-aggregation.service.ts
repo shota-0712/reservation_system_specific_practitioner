@@ -1,5 +1,7 @@
 import { DatabaseService } from '../config/database.js';
 
+const DEFAULT_TIMEZONE = 'Asia/Tokyo';
+
 interface RankingRow {
     name: string;
     count: number;
@@ -35,6 +37,10 @@ function mapPractitionerRevenueRows(rows: Record<string, unknown>[]): Practition
         revenue: toInt(row.revenue),
         customers: toInt(row.customers),
     }));
+}
+
+function reservationLocalDateSql(alias: string): string {
+    return `(${alias}.starts_at AT TIME ZONE COALESCE(${alias}.timezone, '${DEFAULT_TIMEZONE}'))::date`;
 }
 
 async function queryMenuRankingFromDailyAnalytics(
@@ -81,6 +87,7 @@ async function queryMenuRankingFromReservations(
     tenantId: string,
     startDate: string
 ): Promise<RankingRow[]> {
+    const localDateSql = reservationLocalDateSql('r');
     const rows = await DatabaseService.query<Record<string, unknown>>(
         `SELECT
             rm.menu_name as name,
@@ -90,7 +97,7 @@ async function queryMenuRankingFromReservations(
          JOIN reservations r ON r.id = rm.reservation_id
          WHERE r.tenant_id = $1
            AND r.status = 'completed'
-           AND r.date >= $2
+           AND ${localDateSql} >= $2::date
          GROUP BY rm.menu_name
          ORDER BY revenue DESC
          LIMIT 10`,
@@ -159,15 +166,16 @@ async function queryPractitionerRevenueFromReservations(
     tenantId: string,
     startDate: string
 ): Promise<PractitionerRevenueRow[]> {
+    const localDateSql = reservationLocalDateSql('r');
     const rows = await DatabaseService.query<Record<string, unknown>>(
         `SELECT
-            practitioner_name as name,
-            COALESCE(SUM(total_price) FILTER (WHERE status = 'completed'), 0) as revenue,
-            COUNT(DISTINCT customer_id) as customers
-         FROM reservations
-         WHERE tenant_id = $1
-           AND date >= $2
-         GROUP BY practitioner_name
+            r.practitioner_name as name,
+            COALESCE(SUM(r.total_price) FILTER (WHERE r.status = 'completed'), 0) as revenue,
+            COUNT(DISTINCT r.customer_id) as customers
+         FROM reservations r
+         WHERE r.tenant_id = $1
+           AND ${localDateSql} >= $2::date
+         GROUP BY r.practitioner_name
          ORDER BY revenue DESC`,
         [tenantId, startDate],
         tenantId

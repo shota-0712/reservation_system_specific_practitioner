@@ -119,15 +119,6 @@ router.put(
             rightIds: ids,
         });
 
-        // Legacy compatibility
-        await DatabaseService.query(
-            `UPDATE practitioners
-             SET store_ids = $3::uuid[], updated_at = NOW()
-             WHERE tenant_id = $1 AND id = $2`,
-            [tenantId, practitionerId, ids],
-            tenantId
-        );
-
         const response: ApiResponse<{ practitionerId: string; storeIds: string[] }> = {
             success: true,
             data: { practitionerId, storeIds: ids },
@@ -184,15 +175,6 @@ router.put(
             leftId: menuId,
             rightIds: ids,
         });
-
-        // Legacy compatibility
-        await DatabaseService.query(
-            `UPDATE menus
-             SET practitioner_ids = $3::uuid[], updated_at = NOW()
-             WHERE tenant_id = $1 AND id = $2`,
-            [tenantId, menuId, ids],
-            tenantId
-        );
 
         const response: ApiResponse<{ menuId: string; practitionerIds: string[] }> = {
             success: true,
@@ -251,15 +233,6 @@ router.put(
             rightIds: ids,
         });
 
-        // Legacy compatibility
-        await DatabaseService.query(
-            `UPDATE menu_options
-             SET applicable_menu_ids = $3::uuid[], updated_at = NOW()
-             WHERE tenant_id = $1 AND id = $2`,
-            [tenantId, optionId, ids],
-            tenantId
-        );
-
         const response: ApiResponse<{ optionId: string; menuIds: string[] }> = {
             success: true,
             data: { optionId, menuIds: ids },
@@ -316,15 +289,6 @@ router.put(
             leftId: adminId,
             rightIds: ids,
         });
-
-        // Legacy compatibility
-        await DatabaseService.query(
-            `UPDATE admins
-             SET store_ids = $3::uuid[], updated_at = NOW()
-             WHERE tenant_id = $1 AND id = $2`,
-            [tenantId, adminId, ids],
-            tenantId
-        );
 
         const response: ApiResponse<{ adminId: string; storeIds: string[] }> = {
             success: true,

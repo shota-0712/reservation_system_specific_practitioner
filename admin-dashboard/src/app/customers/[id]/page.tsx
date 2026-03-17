@@ -8,6 +8,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { customersApi } from "@/lib/api";
 import { cn } from "@/lib/utils";
+import { getRfmSegmentDisplay } from "@/lib/rfm";
+import { toLocalDate, toLocalTime } from "@/lib/reservation-time";
 
 interface Customer {
     id: string;
@@ -23,13 +25,14 @@ interface Customer {
 
 interface Reservation {
     id: string;
-    date: string;
-    startTime: string;
-    endTime: string;
+    startsAt: string;
+    endsAt: string;
+    timezone: string;
     menuNames?: string[];
     practitionerName?: string;
     status: string;
 }
+
 
 export default function CustomerDetailPage() {
     const router = useRouter();
@@ -81,6 +84,8 @@ export default function CustomerDetailPage() {
         return <div className="p-8">Customer not found</div>;
     }
 
+    const segment = getRfmSegmentDisplay(customer.rfmSegment);
+
     return (
         <div className="space-y-6">
             {/* Header */}
@@ -120,7 +125,13 @@ export default function CustomerDetailPage() {
                                     <User className="h-5 w-5" />
                                 </div>
                                 <div>
-                                    <div className="font-medium">{customer.rfmSegment || "-"}</div>
+                                    {segment ? (
+                                        <span className={cn("inline-flex rounded-full px-2 py-1 text-xs font-medium", segment.color)}>
+                                            {segment.label}
+                                        </span>
+                                    ) : (
+                                        <div className="font-medium">-</div>
+                                    )}
                                     <div className="text-xs text-muted-foreground">ランク</div>
                                 </div>
                             </div>
@@ -236,14 +247,13 @@ export default function CustomerDetailPage() {
                                         {history.map((h) => (
                                             <div key={h.id} className="flex items-start gap-4 p-3 border rounded-lg hover:bg-gray-50 transition-colors">
                                                 <div className="bg-gray-100 p-2 rounded text-center min-w-[60px]">
-                                                    <div className="text-xs text-gray-500">{h.date.split('-')[0]}</div>
-                                                    <div className="font-bold text-gray-800">{h.date.split('-')[1]}/{h.date.split('-')[2]}</div>
+                                                    {(() => { const d = toLocalDate(h.startsAt, h.timezone).split('-'); return (<><div className="text-xs text-gray-500">{d[0]}</div><div className="font-bold text-gray-800">{d[1]}/{d[2]}</div></>); })()}
                                                 </div>
                                                 <div>
                                                     <div className="font-bold text-sm">{h.menuNames?.[0] || 'メニュー未定'}</div>
                                                     <div className="text-xs text-gray-500 mt-1">
                                                         <Clock className="inline-block h-3 w-3 mr-1" />
-                                                        {h.startTime} - {h.endTime}
+                                                        {toLocalTime(h.startsAt, h.timezone)} - {toLocalTime(h.endsAt, h.timezone)}
                                                     </div>
                                                     <div className="text-xs text-gray-500 mt-1">担当: {h.practitionerName || '-'}</div>
                                                 </div>

@@ -404,9 +404,9 @@ export class PractitionerRepository {
                 tenant_id, name, role, name_kana, title, image_url, description,
                 experience, pr_title, specialties, sns_instagram, sns_twitter,
                 google_calendar_id, salonboard_staff_id, nomination_fee,
-                work_schedule, store_ids, is_active, display_order, color,
+                work_schedule, is_active, display_order, color,
                 line_liff_id, line_channel_id, line_channel_access_token_encrypted, line_channel_secret_encrypted
-            ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24)
+            ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23)
             RETURNING *`,
             [
                 this.tenantId,
@@ -425,7 +425,6 @@ export class PractitionerRepository {
                 data.salonboardStaffId ?? null,
                 data.nominationFee ?? 0,
                 workSchedule,
-                data.storeIds ?? [],
                 data.isActive ?? true,
                 data.displayOrder ?? 0,
                 data.color ?? '#3b82f6',
@@ -464,14 +463,13 @@ export class PractitionerRepository {
                 salonboard_staff_id = COALESCE($15, salonboard_staff_id),
                 nomination_fee = COALESCE($16, nomination_fee),
                 work_schedule = COALESCE($17, work_schedule),
-                store_ids = COALESCE($18, store_ids),
-                is_active = COALESCE($19, is_active),
-                display_order = COALESCE($20, display_order),
-                color = COALESCE($21, color),
-                line_liff_id = COALESCE($22, line_liff_id),
-                line_channel_id = COALESCE($23, line_channel_id),
-                line_channel_access_token_encrypted = COALESCE($24, line_channel_access_token_encrypted),
-                line_channel_secret_encrypted = COALESCE($25, line_channel_secret_encrypted),
+                is_active = COALESCE($18, is_active),
+                display_order = COALESCE($19, display_order),
+                color = COALESCE($20, color),
+                line_liff_id = COALESCE($21, line_liff_id),
+                line_channel_id = COALESCE($22, line_channel_id),
+                line_channel_access_token_encrypted = COALESCE($23, line_channel_access_token_encrypted),
+                line_channel_secret_encrypted = COALESCE($24, line_channel_secret_encrypted),
                 updated_at = NOW()
              WHERE id = $1 AND tenant_id = $2
              RETURNING *`,
@@ -493,7 +491,6 @@ export class PractitionerRepository {
                 data.salonboardStaffId ?? null,
                 data.nominationFee ?? null,
                 workSchedule,
-                data.storeIds ?? null,
                 data.isActive ?? null,
                 data.displayOrder ?? null,
                 data.color ?? null,
