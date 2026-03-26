@@ -198,6 +198,35 @@ describe('resolveTenant — slug path', () => {
         );
         expect(storeFuncCalls).toHaveLength(0);
     });
+
+    it('bypasses store-code lookup for hyphenated auth/config tenant slugs', async () => {
+        queryOneMock.mockImplementation(async (sql: string, params?: unknown[]) => {
+            if (sql.includes('FROM tenants WHERE slug = $1')) {
+                expect(params).toEqual(['smoke-salon-1773680978']);
+                return makeTenantRow({ slug: 'smoke-salon-1773680978' });
+            }
+            return null;
+        });
+
+        const middleware = resolveTenant({ required: true });
+        const req: any = {
+            params: { tenantKey: 'smoke-salon-1773680978' },
+            headers: {},
+            query: {},
+            path: '/auth/config',
+        };
+        const res: any = {};
+        const next = vi.fn();
+
+        await middleware(req, res, next);
+
+        expect(next).toHaveBeenCalledWith();
+        expect(req.tenantId).toBe(TENANT_ID);
+        const storeFuncCalls = queryOneMock.mock.calls.filter((args: unknown[]) =>
+            typeof args[0] === 'string' && args[0].includes('resolve_active_store_context')
+        );
+        expect(storeFuncCalls).toHaveLength(0);
+    });
 });
 
 describe('resolveTenant — UUID path', () => {

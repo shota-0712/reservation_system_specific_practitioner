@@ -56,6 +56,7 @@ if [ -z "${CLOUD_SQL_PROXY_BIN}" ]; then
 fi
 
 DB_PASSWORD="$(gcloud secrets versions access latest --secret="${DB_PASSWORD_SECRET}")"
+export DB_PASSWORD
 export PGPASSWORD="${DB_PASSWORD}"
 
 CLOUDSQL_PROXY_PORT="${CLOUDSQL_PROXY_PORT:-9470}"
@@ -90,12 +91,6 @@ for _ in $(seq 1 30); do
   fi
   sleep 1
 done
-
-if ! grep -q "ready for new connections" "${proxy_log}" >/dev/null 2>&1; then
-  echo "Cloud SQL Proxy did not become ready in time"
-  cat "${proxy_log}" || true
-  exit 1
-fi
 
 for file in database/migrations/*.sql; do
   filename="$(basename "${file}")"
@@ -169,3 +164,18 @@ SQL
     exit 1
   fi
 done
+
+echo "Running post-migration verification via scripts/db_v3.sh status"
+if ! CLOUDSQL_INSTANCE="" \
+  DB_HOST=127.0.0.1 \
+  DB_PORT="${CLOUDSQL_PROXY_PORT}" \
+  DB_NAME="${DB_NAME}" \
+  DB_USER="${DB_USER}" \
+  DB_PASSWORD="${DB_PASSWORD}" \
+  bash scripts/db_v3.sh status; then
+  echo "Post-migration verification failed"
+  cat "${proxy_log}" || true
+  exit 1
+fi
+
+echo "Post-migration verification passed"

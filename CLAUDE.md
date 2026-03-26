@@ -2,7 +2,7 @@
 
 # プロジェクトメモ（正本）
 
-**最終更新日**: 2026-03-12（v3 fresh-DB real LINE smoke runbook）
+**最終更新日**: 2026-03-20（Firestore helper v3 / booking-link token-only / real LINE repo-fixed）
 **更新者**: Codex
 
 ## 1. このプロジェクトでやりたいこと
@@ -27,8 +27,8 @@
 
 ## 3. 触らない領域（Do NOT Touch）
 
-- **`booking-links/resolve` の token-only 経路**
-  `tenantKey` ヒントなしで呼ぶと strict RLS 下で `404` になり得る既知問題。恒久対応方針が未決定（§5 ブロッカー参照）。トークン解決ロジックを変更する前に必ずテナント分離テストを実施すること。
+- **`GET /api/platform/v1/booking-links/resolve` の公開契約**
+  `token` 単独で成功することが正。`tenantKey` は任意ヒントとしてのみ扱う。無効 token / inactive tenant / inactive practitioner / inactive store 以外を `404` に握りつぶしてはいけない。
 
 - **RLS ポリシー（migration ファイル内）**
   変更する場合は §11.6 の T1/T2 クロステナント SQL 検証を必ず実行すること。ポリシーを緩めると全テナントのデータが漏洩する。
@@ -39,7 +39,7 @@
 - **`resolve_active_store_context()` 関数（DB）**
   テナント解決の唯一の正規経路。この関数を経由しない `FROM stores` 直参照は廃止済み（MT-A2）。バイパスしてはいけない。
 
-## 4. 現在の実装状況（2026-03-07 時点）
+## 4. 現在の実装状況（2026-03-20 時点）
 
 ### backend-v2（Cloud SQL + RLS）
 - Phase A/B + P0 + OPS-001: **完了**。
@@ -59,11 +59,14 @@
   - `MT-A4`: migration既定ユーザー `migration_user` に統一（4ファイル）
   - `MT-A5`: 管理API経路 `/api/v1/admin` をドキュメント正本化（4ファイル）
   - 残件: staging migration適用後に §11.6 SQL検証（T1/T2）を実行して `Go` 確定
-- ローカル検証（2026-03-07 CRM-BE-001 gate）:
+- 2026-03-20:
+  - Firestore import helper を v3 clean schema 前提へ更新。`practitioners` / `menus` / `menu_options` / `admins` の legacy array write を廃止し、assignment table を delete-and-replace で同期。
+  - reservation import は `starts_at` / `ends_at` / `timezone` を正本化し、`startAt/endAt` 優先 + legacy `date/startTime/endTime/duration` 変換入力のみを許可。`reservation_menus` / `reservation_options` も rerun-safe に再投入。
+  - `GET /api/platform/v1/booking-links/resolve` は token-only を正式サポート。`tenantKey` は optional hint とし、schema/function/privilege regression (`42P01` / `42703` / `42501` / `42883`) は fail-fast で 5xx に寄せた。
+- ローカル検証（2026-03-20 gate）:
   - `npm --prefix backend-v2 run lint`: 成功
   - `npm --prefix backend-v2 run typecheck`: 成功
-  - `npm --prefix backend-v2 run test:ci -- tests/unit`: 成功（**96 tests**）
-  - `npm --prefix backend-v2 run build`: 成功
+  - `npm --prefix backend-v2 run test:ci`: 成功（**108 tests**, 6 skipped）
 
 ### admin-dashboard
 - Wave-A（`CRM-FE-001`〜`004`）: **完了**。
@@ -80,6 +83,8 @@
 - 2026-03-12:
   - 予約 create/update payload を `startsAt` / `timezone` ベースへ移行。
   - 予約一覧の read 側も `startsAt` / `endsAt` / `timezone` 表示へ移行。
+- 2026-03-20:
+  - booking token bootstrap は URL に明示された `tenant` / `tenantKey` のみを hint として送る。localStorage / config の stale tenant に依存せず、`?t=` だけでも初期化できる状態に修正。
 
 ### 運用/runbook
 - `QA-001`: **完了**（Wave-A 統合スモーク標準化）
@@ -91,6 +96,9 @@
 - `DOC-001`: **完了**（`DB_V3_HANDOFF_PLAN.md` を最新状態へ更新）
 - `DOC-002`: **完了**（`docs/runbooks/CUTOVER_EXECUTION_PLAN.md` 作成）
   - T-1 チェックリスト / T0 タイムライン / 当日コマンド / ロールバック手順 / 記録フォーマット を固定
+- 2026-03-20:
+  - real LINE smoke の findings sheet を repo 管理へ移行。テンプレートは `docs/runbooks/reserve-v3-findings.template.md`、展開と preflight/log watch/recovery 出力は `./scripts/prepare_real_line_e2e.sh` に固定。
+  - `docs/runbooks/REAL_LINE_E2E_REPO_FIXED.md` を追加し、token-only / tenant hint 両 resolve path を含む準備手順を文書化。
 
 ### v3 + Wave-1 fresh DB cycle（2026-03-12）
 - Foundation:
@@ -104,6 +112,10 @@
   - seeded tenant `smoke-salon-1773288454` では owner login / claims sync / admin context / tenant LINE config 注入を確認済み。残タスクは real LINE app での LIFF 実認証 smoke。
 
 ## 5. 直近で完了したこと（セッションログ）
+- 2026-03-20: Firestore helper を v3 clean schema 前提へ更新し、assignment table 同期・`starts_at/ends_at/timezone` 正本化・`migration_user` 既定化・reservation child row rerun-safe を実装した。
+- 2026-03-20: `booking-links/resolve` の token-only 経路を正式復旧し、`tenantKey` なしでも strict RLS 下で成功する正規経路へ統一した。schema/function/privilege regression は silent `404` ではなく 5xx に倒すよう是正した。
+- 2026-03-20: real LINE smoke 用 findings template を repo 管理へ移し、`./scripts/prepare_real_line_e2e.sh` で `/tmp/reserve-v3-findings.md` 展開、preflight curl、log watch、`auth/session 401 x2` recovery command を 1 回で出せるようにした。
+- 2026-03-20: integrator gate として `npm --prefix backend-v2 run lint` / `typecheck` / `test:ci`、`bash -n scripts/prepare_real_line_e2e.sh`、`./scripts/prepare_real_line_e2e.sh` を再実行し、すべて成功した。
 - 2026-03-12: dirty worktree から `codex/v3-wave1-baseline` baseline snapshot commit を作成し、Codex 専用 worktree (`codex/v3-foundation`, `codex/v3-ui`) を切り出し。
 - 2026-03-12: Foundation merge を取り込み、fresh v3 schema で壊れる backend fallback SQL を `starts_at` / `timezone` ベースへ統一。
 - 2026-03-12: UI merge を取り込み、customer-app の reservation 契約を `startsAt` / `timezone` へ移行し、admin-dashboard の assignment 依存を API 正本へ寄せた。
@@ -135,11 +147,17 @@
   - `DEPLOYMENT.md` / `DB_V3_PHASE_B_EXECUTION_LOG.md §13` に標準手順を記載。
 
 ## 6. これからやること（優先順）
-1. real LINE app で `reserve-customer-dev-v3` の root URL と booking token URL を開き、`LIFF init -> login -> reservation create -> my reservations -> cancel` を `/tmp/reserve-v3-findings.md` に記録しながら完走する。
-2. post-login auth が失敗した場合は、`channelSecret` / `channelAccessToken` が LIFF app と同じ `channelId=2008799804` の値かを最優先で切り分け、`reserve-api-dev-v3` の LINE token verification ログを確認する。
-3. `booking-links/resolve` の token-only 経路（tenantKey なし）の恒久対応方針を決定する。
+1. `./scripts/prepare_real_line_e2e.sh` を実行して `/tmp/reserve-v3-findings.md` を展開し、real LINE app で root URL と booking token URL の両方を `LIFF init -> login -> reservation create -> my reservations -> cancel` まで記録しながら完走する。
+2. post-login auth が失敗した場合は、helper script の recovery command と Cloud Run log watch を使って `channelSecret` / `channelAccessToken` が LIFF app と同じ `channelId=2008799804` の値かを最優先で切り分ける。
+3. Firestore helper の fixture smoke もしくは fresh v3 DB に対する `MIGRATE_DRY_RUN=true` 検証を追加実施し、rerun-safe を実データで確認して記録する。
 
-### real LINE app smoke 手順（2026-03-12 fixpoint）
+### real LINE app smoke 手順（2026-03-20 repo-fixed）
+
+Step -1: 実機操作の前に helper script を実行し、repo 管理テンプレートから findings sheet を `/tmp` へ展開する。
+
+```bash
+./scripts/prepare_real_line_e2e.sh
+```
 
 Step 0: Cloud Run ログ監視を別ターミナルで流し続ける。
 
@@ -152,17 +170,20 @@ gcloud logging read \
   --project=keyexpress-reserve
 ```
 
-Step 1: 実機前に preflight を打ち、`liffId` / `lineMode` / `lineConfigSource` と booking token resolve を確認する。
+Step 1: 実機前に preflight を打ち、`liffId` / `lineMode` / `lineConfigSource` と booking token resolve の token-only / hint あり両経路を確認する。
 
 ```bash
 curl -s "https://reserve-api-dev-v3-czjwiprc2q-an.a.run.app/api/v1/smoke-salon-1773288454/auth/config" \
   | jq '{liffId:.data.liffId, mode:.data.lineMode, source:.data.lineConfigSource, storeId:.data.storeId}'
 
+curl -s "https://reserve-api-dev-v3-czjwiprc2q-an.a.run.app/api/platform/v1/booking-links/resolve?token=YEJ2QHO-qMQZ4FkOO-sNKjJofKmU0R4y" \
+  | jq '{success:.success, tenantKey:.data.tenantKey, storeId:.data.storeId, practitionerId:.data.practitionerId}'
+
 curl -s "https://reserve-api-dev-v3-czjwiprc2q-an.a.run.app/api/platform/v1/booking-links/resolve?token=YEJ2QHO-qMQZ4FkOO-sNKjJofKmU0R4y&tenantKey=smoke-salon-1773288454" \
   | jq '{success:.success, tenantKey:.data.tenantKey, storeId:.data.storeId, practitionerId:.data.practitionerId}'
 ```
 
-Step 2: 実機テストは root URL を先に、booking token URL を後に開く。各ステップ結果は `/tmp/reserve-v3-findings.md` の表へ記録する。
+Step 2: 実機テストは root URL を先に、booking token URL を後に開く。各ステップ結果は `/tmp/reserve-v3-findings.md` の表へ記録する。テンプレート正本は `docs/runbooks/reserve-v3-findings.template.md`。
 
 - root URL: `https://reserve-customer-dev-v3-czjwiprc2q-an.a.run.app/`
 - booking token URL: `https://reserve-customer-dev-v3-czjwiprc2q-an.a.run.app/?t=YEJ2QHO-qMQZ4FkOO-sNKjJofKmU0R4y`
@@ -196,7 +217,7 @@ curl -s -X PUT \
 ## 7. ブロッカー / 保留中の意思決定
 - staging rehearsal 判定は **Go**（2026-03-06 JST 更新）。
 - MT Wave-1: ローカル **Go**、staging SQL検証（T1/T2）ペンディング。SQL検証コマンドは §11.6 に確定済み。
-- 保留事項: strict RLS 下での `booking-links/resolve` token-only 経路は `tenantKey` ヒントなしだと `404` になり得る。
+- `booking-links/resolve` の token-only 経路は 2026-03-20 に正式復旧済み。残課題は remote dev-v3 での実機 smoke 記録のみ。
 - 2026-03-12 時点の fresh-DB blocker:
   - local contract/gate と fresh dev-v3 remote bootstrap は解消済み。
   - seeded tenant `smoke-salon-1773288454` の owner login / claims sync / admin context / tenant LINE config 注入、および `channelId=2008799804` への整合は確認済み。

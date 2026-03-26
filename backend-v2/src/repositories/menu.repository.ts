@@ -6,13 +6,6 @@ import { DatabaseService } from '../config/database.js';
 import { NotFoundError } from '../utils/errors.js';
 import type { Menu } from '../types/index.js';
 
-function isUndefinedTableError(error: unknown): boolean {
-    return typeof error === 'object'
-        && error !== null
-        && 'code' in error
-        && (error as { code?: string }).code === '42P01';
-}
-
 function mapMenu(row: Record<string, any>): Menu {
     return {
         id: row.id,
@@ -23,7 +16,7 @@ function mapMenu(row: Record<string, any>): Menu {
         duration: row.duration,
         price: row.price,
         imageUrl: row.image_url ?? undefined,
-        availablePractitionerIds: row.practitioner_ids ?? [],
+        availablePractitionerIds: [],
         displayOrder: row.display_order ?? 0,
         isActive: row.is_active,
         createdAt: row.created_at,
@@ -38,36 +31,27 @@ export class MenuRepository {
         if (menus.length === 0) return menus;
         const menuIds = menus.map((menu) => menu.id);
 
-        try {
-            const rows = await DatabaseService.query<{ menu_id: string; practitioner_ids: string[] | null }>(
-                `SELECT
-                    menu_id,
-                    array_agg(practitioner_id ORDER BY practitioner_id) AS practitioner_ids
-                 FROM menu_practitioner_assignments
-                 WHERE tenant_id = $1
-                   AND menu_id = ANY($2)
-                 GROUP BY menu_id`,
-                [this.tenantId, menuIds],
-                this.tenantId
-            );
+        const rows = await DatabaseService.query<{ menu_id: string; practitioner_ids: string[] | null }>(
+            `SELECT
+                menu_id,
+                array_agg(practitioner_id ORDER BY practitioner_id) AS practitioner_ids
+             FROM menu_practitioner_assignments
+             WHERE tenant_id = $1
+               AND menu_id = ANY($2)
+             GROUP BY menu_id`,
+            [this.tenantId, menuIds],
+            this.tenantId
+        );
 
-            const map = new Map<string, string[]>();
-            for (const row of rows) {
-                map.set(row.menu_id, row.practitioner_ids ?? []);
-            }
-
-            return menus.map((menu) => ({
-                ...menu,
-                availablePractitionerIds: map.has(menu.id)
-                    ? (map.get(menu.id) ?? [])
-                    : (menu.availablePractitionerIds ?? []),
-            }));
-        } catch (error) {
-            if (isUndefinedTableError(error)) {
-                return menus;
-            }
-            throw error;
+        const map = new Map<string, string[]>();
+        for (const row of rows) {
+            map.set(row.menu_id, row.practitioner_ids ?? []);
         }
+
+        return menus.map((menu) => ({
+            ...menu,
+            availablePractitionerIds: map.get(menu.id) ?? [],
+        }));
     }
 
     private async replacePractitionerAssignments(
@@ -75,29 +59,22 @@ export class MenuRepository {
         practitionerIds: string[] | undefined
     ): Promise<void> {
         if (practitionerIds === undefined) return;
-        try {
-            await DatabaseService.transaction(async (client) => {
-                await client.query(
-                    `DELETE FROM menu_practitioner_assignments
-                     WHERE tenant_id = $1 AND menu_id = $2`,
-                    [this.tenantId, menuId]
-                );
+        await DatabaseService.transaction(async (client) => {
+            await client.query(
+                `DELETE FROM menu_practitioner_assignments
+                 WHERE tenant_id = $1 AND menu_id = $2`,
+                [this.tenantId, menuId]
+            );
 
-                for (const practitionerId of practitionerIds) {
-                    await client.query(
-                        `INSERT INTO menu_practitioner_assignments (tenant_id, menu_id, practitioner_id)
-                         VALUES ($1, $2, $3)
-                         ON CONFLICT DO NOTHING`,
-                        [this.tenantId, menuId, practitionerId]
-                    );
-                }
-            }, this.tenantId);
-        } catch (error) {
-            if (isUndefinedTableError(error)) {
-                return;
+            for (const practitionerId of practitionerIds) {
+                await client.query(
+                    `INSERT INTO menu_practitioner_assignments (tenant_id, menu_id, practitioner_id)
+                     VALUES ($1, $2, $3)
+                     ON CONFLICT DO NOTHING`,
+                    [this.tenantId, menuId, practitionerId]
+                );
             }
-            throw error;
-        }
+        }, this.tenantId);
     }
 
     async findById(id: string): Promise<Menu | null> {
@@ -152,46 +129,31 @@ export class MenuRepository {
     }
 
     async findByPractitionerId(practitionerId: string): Promise<Menu[]> {
-        try {
-            const rows = await DatabaseService.query(
-                `SELECT *
-                 FROM menus m
-                 WHERE m.tenant_id = $1
-                   AND m.is_active = true
-                   AND (
-                       EXISTS (
-                           SELECT 1
-                           FROM menu_practitioner_assignments mpa
-                           WHERE mpa.tenant_id = m.tenant_id
-                             AND mpa.menu_id = m.id
-                             AND mpa.practitioner_id = $2
-                       )
-                       OR NOT EXISTS (
-                           SELECT 1
-                           FROM menu_practitioner_assignments mpa_any
-                           WHERE mpa_any.tenant_id = m.tenant_id
-                             AND mpa_any.menu_id = m.id
-                       )
+        const rows = await DatabaseService.query(
+            `SELECT *
+             FROM menus m
+             WHERE m.tenant_id = $1
+               AND m.is_active = true
+               AND (
+                   EXISTS (
+                       SELECT 1
+                       FROM menu_practitioner_assignments mpa
+                       WHERE mpa.tenant_id = m.tenant_id
+                         AND mpa.menu_id = m.id
+                         AND mpa.practitioner_id = $2
                    )
-                 ORDER BY m.display_order ASC`,
-                [this.tenantId, practitionerId],
-                this.tenantId
-            );
-            return this.hydratePractitionerAssignments(rows.map(mapMenu));
-        } catch (error) {
-            if (!isUndefinedTableError(error)) {
-                throw error;
-            }
-            const rows = await DatabaseService.query(
-                `SELECT * FROM menus
-                 WHERE tenant_id = $1 AND is_active = true
-                   AND (cardinality(practitioner_ids) = 0 OR $2 = ANY(practitioner_ids))
-                 ORDER BY display_order ASC`,
-                [this.tenantId, practitionerId],
-                this.tenantId
-            );
-            return rows.map(mapMenu);
-        }
+                   OR NOT EXISTS (
+                       SELECT 1
+                       FROM menu_practitioner_assignments mpa_any
+                       WHERE mpa_any.tenant_id = m.tenant_id
+                         AND mpa_any.menu_id = m.id
+                   )
+               )
+             ORDER BY m.display_order ASC`,
+            [this.tenantId, practitionerId],
+            this.tenantId
+        );
+        return this.hydratePractitionerAssignments(rows.map(mapMenu));
     }
 
     async createMenu(data: Partial<Menu>): Promise<Menu> {

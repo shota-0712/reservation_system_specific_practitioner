@@ -7,13 +7,6 @@ import { DatabaseService } from '../config/database.js';
 import { NotFoundError } from '../utils/errors.js';
 import type { Option } from '../types/index.js';
 
-function isUndefinedTableError(error: unknown): boolean {
-    return typeof error === 'object'
-        && error !== null
-        && 'code' in error
-        && (error as { code?: string }).code === '42P01';
-}
-
 function mapOption(row: Record<string, any>): Option {
     return {
         id: row.id,
@@ -22,7 +15,7 @@ function mapOption(row: Record<string, any>): Option {
         description: row.description ?? undefined,
         duration: row.duration ?? 0,
         price: row.price ?? 0,
-        applicableMenuIds: row.applicable_menu_ids ?? [],
+        applicableMenuIds: [],
         displayOrder: row.display_order ?? 0,
         isActive: row.is_active,
         createdAt: row.created_at,
@@ -40,62 +33,46 @@ export class OptionRepository {
         if (options.length === 0) return options;
         const optionIds = options.map((option) => option.id);
 
-        try {
-            const rows = await DatabaseService.query<{ option_id: string; menu_ids: string[] | null }>(
-                `SELECT
-                    option_id,
-                    array_agg(menu_id ORDER BY menu_id) AS menu_ids
-                 FROM option_menu_assignments
-                 WHERE tenant_id = $1
-                   AND option_id = ANY($2)
-                 GROUP BY option_id`,
-                [this.tenantId, optionIds],
-                this.tenantId
-            );
+        const rows = await DatabaseService.query<{ option_id: string; menu_ids: string[] | null }>(
+            `SELECT
+                option_id,
+                array_agg(menu_id ORDER BY menu_id) AS menu_ids
+             FROM option_menu_assignments
+             WHERE tenant_id = $1
+               AND option_id = ANY($2)
+             GROUP BY option_id`,
+            [this.tenantId, optionIds],
+            this.tenantId
+        );
 
-            const map = new Map<string, string[]>();
-            for (const row of rows) {
-                map.set(row.option_id, row.menu_ids ?? []);
-            }
-
-            return options.map((option) => ({
-                ...option,
-                applicableMenuIds: map.has(option.id)
-                    ? (map.get(option.id) ?? [])
-                    : (option.applicableMenuIds ?? []),
-            }));
-        } catch (error) {
-            if (isUndefinedTableError(error)) {
-                return options;
-            }
-            throw error;
+        const map = new Map<string, string[]>();
+        for (const row of rows) {
+            map.set(row.option_id, row.menu_ids ?? []);
         }
+
+        return options.map((option) => ({
+            ...option,
+            applicableMenuIds: map.get(option.id) ?? [],
+        }));
     }
 
     private async replaceMenuAssignments(optionId: string, menuIds: string[] | undefined): Promise<void> {
         if (menuIds === undefined) return;
-        try {
-            await DatabaseService.transaction(async (client) => {
+        await DatabaseService.transaction(async (client) => {
+            await client.query(
+                `DELETE FROM option_menu_assignments
+                 WHERE tenant_id = $1 AND option_id = $2`,
+                [this.tenantId, optionId]
+            );
+            for (const menuId of menuIds) {
                 await client.query(
-                    `DELETE FROM option_menu_assignments
-                     WHERE tenant_id = $1 AND option_id = $2`,
-                    [this.tenantId, optionId]
+                    `INSERT INTO option_menu_assignments (tenant_id, option_id, menu_id)
+                     VALUES ($1, $2, $3)
+                     ON CONFLICT DO NOTHING`,
+                    [this.tenantId, optionId, menuId]
                 );
-                for (const menuId of menuIds) {
-                    await client.query(
-                        `INSERT INTO option_menu_assignments (tenant_id, option_id, menu_id)
-                         VALUES ($1, $2, $3)
-                         ON CONFLICT DO NOTHING`,
-                        [this.tenantId, optionId, menuId]
-                    );
-                }
-            }, this.tenantId);
-        } catch (error) {
-            if (isUndefinedTableError(error)) {
-                return;
             }
-            throw error;
-        }
+        }, this.tenantId);
     }
 
     /**
@@ -149,47 +126,31 @@ export class OptionRepository {
      * Find options applicable to a specific menu
      */
     async findByMenuId(menuId: string): Promise<Option[]> {
-        try {
-            const rows = await DatabaseService.query(
-                `SELECT *
-                 FROM menu_options o
-                 WHERE o.tenant_id = $1
-                   AND o.is_active = true
-                   AND (
-                       EXISTS (
-                           SELECT 1
-                           FROM option_menu_assignments oma
-                           WHERE oma.tenant_id = o.tenant_id
-                             AND oma.option_id = o.id
-                             AND oma.menu_id = $2
-                       )
-                       OR NOT EXISTS (
-                           SELECT 1
-                           FROM option_menu_assignments oma_any
-                           WHERE oma_any.tenant_id = o.tenant_id
-                             AND oma_any.option_id = o.id
-                       )
+        const rows = await DatabaseService.query(
+            `SELECT *
+             FROM menu_options o
+             WHERE o.tenant_id = $1
+               AND o.is_active = true
+               AND (
+                   EXISTS (
+                       SELECT 1
+                       FROM option_menu_assignments oma
+                       WHERE oma.tenant_id = o.tenant_id
+                         AND oma.option_id = o.id
+                         AND oma.menu_id = $2
                    )
-                 ORDER BY o.display_order ASC`,
-                [this.tenantId, menuId],
-                this.tenantId
-            );
-            return this.hydrateMenuAssignments(rows.map(mapOption));
-        } catch (error) {
-            if (!isUndefinedTableError(error)) {
-                throw error;
-            }
-            const rows = await DatabaseService.query(
-                `SELECT * FROM menu_options
-                 WHERE tenant_id = $1
-                   AND is_active = true
-                   AND (cardinality(applicable_menu_ids) = 0 OR $2 = ANY(applicable_menu_ids))
-                 ORDER BY display_order ASC`,
-                [this.tenantId, menuId],
-                this.tenantId
-            );
-            return rows.map(mapOption);
-        }
+                   OR NOT EXISTS (
+                       SELECT 1
+                       FROM option_menu_assignments oma_any
+                       WHERE oma_any.tenant_id = o.tenant_id
+                         AND oma_any.option_id = o.id
+                   )
+               )
+             ORDER BY o.display_order ASC`,
+            [this.tenantId, menuId],
+            this.tenantId
+        );
+        return this.hydrateMenuAssignments(rows.map(mapOption));
     }
 
     /**

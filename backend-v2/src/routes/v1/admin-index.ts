@@ -26,6 +26,7 @@ import { googleCalendarAdminRoutes } from './google-calendar.routes.js';
 import { exportAdminRoutes } from './export.admin.routes.js';
 import { assignmentAdminRoutes } from './assignment.admin.routes.js';
 import { rfmSettingsAdminRoutes } from './rfm-settings.admin.routes.js';
+import salonboardAdminRoutes from './salonboard.routes.js';
 
 const router = Router();
 
@@ -57,6 +58,7 @@ router.use('/exports', exportAdminRoutes);
 router.use('/kartes', karteAdminRoutes);
 router.use('/karte-templates', karteTemplateAdminRoutes);
 router.use('/integrations/google-calendar', googleCalendarAdminRoutes);
+router.use('/integrations/salonboard', salonboardAdminRoutes);
 router.use('/settings/rfm-thresholds', rfmSettingsAdminRoutes);
 
 export const adminV1Router = router;

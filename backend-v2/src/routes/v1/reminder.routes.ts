@@ -89,7 +89,7 @@ router.get(
     validateQuery(reminderLogsQuerySchema),
     asyncHandler(async (req: Request, res: Response): Promise<void> => {
         const tenant = getTenant(req);
-        const { limit } = req.query as unknown as z.infer<typeof reminderLogsQuerySchema>;
+        const { limit } = reminderLogsQuerySchema.parse(req.query);
 
         const logs = await DatabaseService.query(
             `SELECT id, reservation_id, message_type, status, error, sent_at

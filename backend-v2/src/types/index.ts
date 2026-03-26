@@ -1,6 +1,6 @@
 /**
  * Core Type Definitions for Multi-tenant Reservation System
- * Based on: docs/architecture/MULTI_TENANT_ARCHITECTURE.md
+ * Based on: docs/architecture/DB_V3_SCHEMA_DEFINITION.md
  */
 
 export type Timestamp = Date;
@@ -315,6 +315,18 @@ export interface TenantNotificationSettings {
     pushCancellation: boolean;
     updatedAt?: Timestamp;
     updatedBy?: string;
+}
+
+export type SalonboardSyncDirection = 'inbound' | 'outbound' | 'both';
+
+export interface SalonboardIntegrationStatus {
+    connected: boolean;
+    isEnabled: boolean;
+    syncDirection: SalonboardSyncDirection;
+    hasCredentials: boolean;
+    lastSyncAt?: string;
+    lastSyncStatus?: 'success' | 'partial' | 'failed';
+    lastSyncError?: string;
 }
 
 // ============================================

@@ -11,6 +11,7 @@ import { handleDayBeforeReminderRequest, handleSameDayReminderRequest } from '..
 import { handleDailyAnalyticsRequest } from '../../jobs/daily-analytics.job.js';
 import { getTenantId } from '../../middleware/tenant.js';
 import { createGoogleCalendarSyncQueueService } from '../../services/google-calendar-sync-queue.service.js';
+import { createSalonboardService } from '../../services/salonboard.service.js';
 import { logger } from '../../utils/logger.js';
 import { env } from '../../config/env.js';
 import { AuthenticationError } from '../../utils/errors.js';
@@ -128,6 +129,23 @@ router.post(
 
         const queue = createGoogleCalendarSyncQueueService(tenantId);
         const stats = await queue.processPending({ limit });
+        res.json({ success: true, stats });
+    })
+);
+
+/**
+ * Salonboard sync job
+ * POST /api/v1/:tenantKey/jobs/integrations/salonboard/sync
+ */
+router.post(
+    '/integrations/salonboard/sync',
+    requireJobSecret,
+    asyncHandler(async (req: Request, res: Response): Promise<void> => {
+        const tenantId = getTenantId(req);
+        logger.info('Received job request: salonboard sync');
+
+        const service = createSalonboardService(tenantId);
+        const stats = await service.sync('scheduler');
         res.json({ success: true, stats });
     })
 );

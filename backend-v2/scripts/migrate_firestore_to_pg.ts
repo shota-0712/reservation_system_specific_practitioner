@@ -1,6 +1,7 @@
 import 'dotenv/config';
 import crypto from 'crypto';
 import fs from 'fs';
+import { formatInTimeZone, fromZonedTime } from 'date-fns-tz';
 import { initializeApp, applicationDefault, cert, getApps } from 'firebase-admin/app';
 import { getFirestore, Timestamp, Firestore } from 'firebase-admin/firestore';
 import { Pool, PoolClient } from 'pg';
@@ -20,10 +21,15 @@ const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY || 'development-key-32-bytes-l
 const pool = new Pool({
     host: process.env.DB_HOST || '127.0.0.1',
     port: parseInt(process.env.DB_PORT || '5432', 10),
-    user: process.env.DB_USER || 'app_user',
+    user: process.env.DB_USER || 'migration_user',
     password: process.env.DB_PASSWORD || 'change_me',
     database: process.env.DB_NAME || 'reservation_system',
 });
+
+interface StoreContext {
+    id: string;
+    timezone: string;
+}
 
 function initFirestore(): Firestore {
     if (getApps().length > 0) {
@@ -85,12 +91,9 @@ function toDate(value: any): Date | null {
     return null;
 }
 
-function formatDate(date: Date): string {
-    return date.toISOString().split('T')[0];
-}
-
-function formatTime(date: Date): string {
-    return date.toISOString().split('T')[1].slice(0, 5);
+function normalizeTimezone(value: any, fallback = 'Asia/Tokyo'): string {
+    const timezone = typeof value === 'string' ? value.trim() : '';
+    return timezone || fallback;
 }
 
 function generateStoreCode(): string {
@@ -120,6 +123,89 @@ function ensureUuid(id: string, map: Map<string, string>): string {
     const generated = uuidv4();
     map.set(id, generated);
     return generated;
+}
+
+function mapStringIds(value: any, mapFn: (id: string) => string): string[] {
+    if (!Array.isArray(value)) return [];
+    return value
+        .map((id) => (typeof id === 'string' ? mapFn(id) : null))
+        .filter((id): id is string => Boolean(id));
+}
+
+function uniqueStrings(values: string[]): string[] {
+    return [...new Set(values.filter(Boolean))];
+}
+
+async function replaceAssignments(
+    client: PoolClient,
+    tableName: string,
+    entityColumn: string,
+    assignmentColumn: string,
+    tenantId: string,
+    entityId: string,
+    assignmentIds: string[]
+) {
+    await client.query(
+        `DELETE FROM ${tableName}
+         WHERE tenant_id = $1 AND ${entityColumn} = $2`,
+        [tenantId, entityId]
+    );
+
+    for (const assignmentId of uniqueStrings(assignmentIds)) {
+        await client.query(
+            `INSERT INTO ${tableName} (tenant_id, ${entityColumn}, ${assignmentColumn})
+             VALUES ($1, $2, $3)
+             ON CONFLICT DO NOTHING`,
+            [tenantId, entityId, assignmentId]
+        );
+    }
+}
+
+function resolveReservationTimestamps(
+    reservation: DocData,
+    timezone: string
+): { startsAt: Date; endsAt: Date; totalDuration: number } | null {
+    const canonicalStartsAt = toDate(reservation.startAt);
+    const canonicalEndsAt = toDate(reservation.endAt);
+
+    const legacyDate = reservation.date || (canonicalStartsAt ? formatInTimeZone(canonicalStartsAt, timezone, 'yyyy-MM-dd') : null);
+    const legacyStartTime = reservation.startTime || reservation.start_time || (canonicalStartsAt ? formatInTimeZone(canonicalStartsAt, timezone, 'HH:mm') : null);
+    const legacyEndTime = reservation.endTime || reservation.end_time || (canonicalEndsAt ? formatInTimeZone(canonicalEndsAt, timezone, 'HH:mm') : null);
+
+    let startsAt = canonicalStartsAt;
+    if (!startsAt && legacyDate && legacyStartTime) {
+        startsAt = fromZonedTime(`${legacyDate}T${legacyStartTime}:00`, timezone);
+    }
+
+    let endsAt = canonicalEndsAt;
+    if (!endsAt && legacyDate && legacyEndTime) {
+        endsAt = fromZonedTime(`${legacyDate}T${legacyEndTime}:00`, timezone);
+    }
+
+    const legacyDuration = typeof reservation.duration === 'number'
+        ? reservation.duration
+        : typeof reservation.totalDuration === 'number'
+            ? reservation.totalDuration
+            : null;
+
+    if (!endsAt && startsAt && legacyDuration !== null) {
+        endsAt = new Date(startsAt.getTime() + legacyDuration * 60_000);
+    }
+
+    if (!startsAt || !endsAt || endsAt.getTime() <= startsAt.getTime()) {
+        return null;
+    }
+
+    return {
+        startsAt,
+        endsAt,
+        totalDuration: Math.max(0, Math.round((endsAt.getTime() - startsAt.getTime()) / 60_000)),
+    };
+}
+
+function getStoreContext(storeId: string | null | undefined, storeMap: Map<string, StoreContext>): StoreContext | null {
+    if (!storeId) return null;
+    return storeMap.get(storeId) ?? null;
 }
 
 async function setTenant(client: PoolClient, tenantId: string) {
@@ -227,15 +313,18 @@ function scheduleToWorkSchedule(schedule: any): Record<string, any> {
     return output;
 }
 
-async function upsertStore(client: PoolClient, store: DocData, tenantId: string, storeId: string) {
+async function upsertStore(client: PoolClient, store: DocData, tenantId: string, storeId: string): Promise<StoreContext> {
     const storeCodeRaw = store.storeCode || store.store_code;
     const storeCode = (typeof storeCodeRaw === 'string' && /^[a-z0-9]{8,10}$/.test(storeCodeRaw))
         ? storeCodeRaw
         : generateStoreCode();
 
     const businessHours = store.businessHours || store.business_hours;
+    const timezone = normalizeTimezone(store.timezone);
 
-    if (DRY_RUN) return;
+    if (DRY_RUN) {
+        return { id: storeId, timezone };
+    }
 
     await client.query(
         `INSERT INTO stores (
@@ -280,7 +369,7 @@ async function upsertStore(client: PoolClient, store: DocData, tenantId: string,
             store.address || null,
             store.phone || null,
             store.email || null,
-            store.timezone || 'Asia/Tokyo',
+            timezone,
             businessHours || null,
             store.regularHolidays || [],
             store.temporaryHolidays || [],
@@ -296,6 +385,8 @@ async function upsertStore(client: PoolClient, store: DocData, tenantId: string,
             toDate(store.updatedAt) || new Date(),
         ]
     );
+
+    return { id: storeId, timezone };
 }
 
 async function upsertPractitioner(client: PoolClient, practitioner: DocData, tenantId: string, practitionerId: string, storeIds: string[]) {
@@ -309,14 +400,13 @@ async function upsertPractitioner(client: PoolClient, practitioner: DocData, ten
             id, tenant_id, name, role, name_kana, title, color, image_url, description, experience,
             pr_title, specialties, sns_instagram, sns_twitter,
             google_calendar_id, salonboard_staff_id,
-            nomination_fee, work_schedule, store_ids,
+            nomination_fee, work_schedule,
             is_active, display_order, created_at, updated_at
         ) VALUES (
             $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,
             $11,$12,$13,$14,
             $15,$16,
-            $17,$18,$19,
-            $20,$21,$22,$23
+            $17,$18,$19,$20,$21,$22
         )
         ON CONFLICT (id) DO UPDATE SET
             name = EXCLUDED.name,
@@ -335,7 +425,6 @@ async function upsertPractitioner(client: PoolClient, practitioner: DocData, ten
             salonboard_staff_id = EXCLUDED.salonboard_staff_id,
             nomination_fee = EXCLUDED.nomination_fee,
             work_schedule = EXCLUDED.work_schedule,
-            store_ids = EXCLUDED.store_ids,
             is_active = EXCLUDED.is_active,
             display_order = EXCLUDED.display_order,
             updated_at = EXCLUDED.updated_at`,
@@ -358,12 +447,21 @@ async function upsertPractitioner(client: PoolClient, practitioner: DocData, ten
             practitioner.salonboardStaffId || null,
             practitioner.nominationFee ?? 0,
             workSchedule,
-            storeIds,
             practitioner.isActive ?? true,
             practitioner.displayOrder ?? 0,
             toDate(practitioner.createdAt) || new Date(),
             toDate(practitioner.updatedAt) || new Date(),
         ]
+    );
+
+    await replaceAssignments(
+        client,
+        'practitioner_store_assignments',
+        'practitioner_id',
+        'store_id',
+        tenantId,
+        practitionerId,
+        storeIds
     );
 }
 
@@ -373,12 +471,12 @@ async function upsertMenu(client: PoolClient, menu: DocData, tenantId: string, m
     await client.query(
         `INSERT INTO menus (
             id, tenant_id, name, description, category,
-            price, duration, image_url, is_active, display_order, practitioner_ids,
+            price, duration, image_url, is_active, display_order,
             created_at, updated_at
         ) VALUES (
             $1,$2,$3,$4,$5,
-            $6,$7,$8,$9,$10,$11,
-            $12,$13
+            $6,$7,$8,$9,$10,
+            $11,$12
         )
         ON CONFLICT (id) DO UPDATE SET
             name = EXCLUDED.name,
@@ -389,7 +487,6 @@ async function upsertMenu(client: PoolClient, menu: DocData, tenantId: string, m
             image_url = EXCLUDED.image_url,
             is_active = EXCLUDED.is_active,
             display_order = EXCLUDED.display_order,
-            practitioner_ids = EXCLUDED.practitioner_ids,
             updated_at = EXCLUDED.updated_at`,
         [
             menuId,
@@ -402,10 +499,19 @@ async function upsertMenu(client: PoolClient, menu: DocData, tenantId: string, m
             menu.imageUrl || null,
             menu.isActive ?? true,
             menu.displayOrder ?? 0,
-            practitionerIds,
             toDate(menu.createdAt) || new Date(),
             toDate(menu.updatedAt) || new Date(),
         ]
+    );
+
+    await replaceAssignments(
+        client,
+        'menu_practitioner_assignments',
+        'menu_id',
+        'practitioner_id',
+        tenantId,
+        menuId,
+        practitionerIds
     );
 }
 
@@ -415,19 +521,18 @@ async function upsertMenuOption(client: PoolClient, option: DocData, tenantId: s
     await client.query(
         `INSERT INTO menu_options (
             id, tenant_id, name, description, price, duration,
-            applicable_menu_ids, is_active, display_order,
+            is_active, display_order,
             created_at, updated_at
         ) VALUES (
             $1,$2,$3,$4,$5,$6,
-            $7,$8,$9,
-            $10,$11
+            $7,$8,
+            $9,$10
         )
         ON CONFLICT (id) DO UPDATE SET
             name = EXCLUDED.name,
             description = EXCLUDED.description,
             price = EXCLUDED.price,
             duration = EXCLUDED.duration,
-            applicable_menu_ids = EXCLUDED.applicable_menu_ids,
             is_active = EXCLUDED.is_active,
             display_order = EXCLUDED.display_order,
             updated_at = EXCLUDED.updated_at`,
@@ -438,12 +543,21 @@ async function upsertMenuOption(client: PoolClient, option: DocData, tenantId: s
             option.description || null,
             option.price ?? 0,
             option.duration ?? 0,
-            applicableMenuIds,
             option.isActive ?? true,
             option.displayOrder ?? 0,
             toDate(option.createdAt) || new Date(),
             toDate(option.updatedAt) || new Date(),
         ]
+    );
+
+    await replaceAssignments(
+        client,
+        'option_menu_assignments',
+        'option_id',
+        'menu_id',
+        tenantId,
+        optionId,
+        applicableMenuIds
     );
 }
 
@@ -523,32 +637,22 @@ async function upsertCustomer(client: PoolClient, customer: DocData, tenantId: s
     );
 }
 
-function computeEndTime(startTime: string, duration: number): string {
-    const [hours, minutes] = startTime.split(':').map(Number);
-    const totalMinutes = hours * 60 + minutes + duration;
-    const endHour = Math.floor(totalMinutes / 60) % 24;
-    const endMin = totalMinutes % 60;
-    return `${String(endHour).padStart(2, '0')}:${String(endMin).padStart(2, '0')}`;
-}
-
 async function upsertReservation(client: PoolClient, reservation: DocData, tenantId: string, reservationId: string, maps: {
     customer: Map<string, string>;
     practitioner: Map<string, string>;
     menu: Map<string, string>;
     option: Map<string, string>;
-    store: Map<string, string>;
+    storeId: Map<string, string>;
+    store: Map<string, StoreContext>;
 }) {
-    const startAt = toDate(reservation.startAt || reservation.start_time || reservation.startTime);
-    const endAt = toDate(reservation.endAt || reservation.end_time || reservation.endTime);
-    const dateValue = reservation.date || (startAt ? formatDate(startAt) : null);
-    const startTimeValue = reservation.startTime || reservation.start_time || (startAt ? formatTime(startAt) : null);
+    const rawStoreId = reservation.storeId || reservation.store_id || null;
+    const storeContext = getStoreContext(rawStoreId, maps.store);
+    const timezone = normalizeTimezone(reservation.timezone, storeContext?.timezone);
+    const resolvedSchedule = resolveReservationTimestamps(reservation, timezone);
 
-    if (!dateValue || !startTimeValue) {
+    if (!resolvedSchedule) {
         return;
     }
-
-    const duration = reservation.duration ?? reservation.totalDuration ?? (startAt && endAt ? Math.max(0, Math.round((endAt.getTime() - startAt.getTime()) / 60000)) : 0);
-    const endTimeValue = reservation.endTime || reservation.end_time || (endAt ? formatTime(endAt) : computeEndTime(startTimeValue, duration));
 
     const rawCustomerId = reservation.customerId || reservation.customer_id;
     const rawPractitionerId = reservation.practitionerId || reservation.practitioner_id;
@@ -558,7 +662,7 @@ async function upsertReservation(client: PoolClient, reservation: DocData, tenan
 
     const customerId = ensureUuid(rawCustomerId, maps.customer);
     const practitionerId = ensureUuid(rawPractitionerId, maps.practitioner);
-    const storeId = reservation.storeId || reservation.store_id ? ensureUuid(reservation.storeId || reservation.store_id, maps.store) : null;
+    const storeId = rawStoreId ? ensureUuid(rawStoreId, maps.storeId) : null;
 
     const status = reservation.status || 'pending';
     const source = reservation.source || 'line';
@@ -576,7 +680,7 @@ async function upsertReservation(client: PoolClient, reservation: DocData, tenan
     const row = await client.query(
         `INSERT INTO reservations (
             id, tenant_id, store_id, customer_id, practitioner_id,
-            period, date, start_time, end_time,
+            starts_at, ends_at, timezone,
             status, source,
             subtotal, option_total, nomination_fee, discount, total_price,
             total_duration,
@@ -587,11 +691,6 @@ async function upsertReservation(client: PoolClient, reservation: DocData, tenan
             created_at, updated_at
         ) VALUES (
             $1,$2,$3,$4,$5,
-            tstzrange(
-                ($6::date || ' ' || $7 || ':00')::timestamptz AT TIME ZONE 'Asia/Tokyo',
-                ($6::date || ' ' || $8 || ':00')::timestamptz AT TIME ZONE 'Asia/Tokyo',
-                '[)'
-            ),
             $6,$7,$8,
             $9,$10,
             $11,$12,$13,$14,$15,
@@ -606,10 +705,9 @@ async function upsertReservation(client: PoolClient, reservation: DocData, tenan
             store_id = EXCLUDED.store_id,
             customer_id = EXCLUDED.customer_id,
             practitioner_id = EXCLUDED.practitioner_id,
-            period = EXCLUDED.period,
-            date = EXCLUDED.date,
-            start_time = EXCLUDED.start_time,
-            end_time = EXCLUDED.end_time,
+            starts_at = EXCLUDED.starts_at,
+            ends_at = EXCLUDED.ends_at,
+            timezone = EXCLUDED.timezone,
             status = EXCLUDED.status,
             source = EXCLUDED.source,
             subtotal = EXCLUDED.subtotal,
@@ -636,9 +734,9 @@ async function upsertReservation(client: PoolClient, reservation: DocData, tenan
             storeId,
             customerId,
             practitionerId,
-            dateValue,
-            startTimeValue,
-            endTimeValue,
+            resolvedSchedule.startsAt,
+            resolvedSchedule.endsAt,
+            timezone,
             status,
             source,
             subtotal,
@@ -646,7 +744,7 @@ async function upsertReservation(client: PoolClient, reservation: DocData, tenan
             nominationFee,
             discount,
             totalPrice,
-            duration,
+            resolvedSchedule.totalDuration,
             reservation.customerName || null,
             reservation.customerPhone || null,
             reservation.practitionerName || null,
@@ -772,10 +870,10 @@ async function upsertAdmin(client: PoolClient, admin: DocData, tenantId: string,
     await client.query(
         `INSERT INTO admins (
             id, tenant_id, firebase_uid, name, email, role, permissions,
-            store_ids, is_active, created_at, updated_at
+            is_active, created_at, updated_at
         ) VALUES (
             $1,$2,$3,$4,$5,$6,$7,
-            $8,$9,$10,$11
+            $8,$9,$10
         )
         ON CONFLICT (id) DO UPDATE SET
             firebase_uid = EXCLUDED.firebase_uid,
@@ -783,7 +881,6 @@ async function upsertAdmin(client: PoolClient, admin: DocData, tenantId: string,
             email = EXCLUDED.email,
             role = EXCLUDED.role,
             permissions = EXCLUDED.permissions,
-            store_ids = EXCLUDED.store_ids,
             is_active = EXCLUDED.is_active,
             updated_at = EXCLUDED.updated_at`,
         [
@@ -794,11 +891,20 @@ async function upsertAdmin(client: PoolClient, admin: DocData, tenantId: string,
             admin.email || null,
             admin.role || 'owner',
             admin.permissions || {},
-            admin.storeIds || [],
             admin.isActive ?? true,
             toDate(admin.createdAt) || new Date(),
             toDate(admin.updatedAt) || new Date(),
         ]
+    );
+
+    await replaceAssignments(
+        client,
+        'admin_store_assignments',
+        'admin_id',
+        'store_id',
+        tenantId,
+        adminId,
+        Array.isArray(admin.storeIds) ? admin.storeIds : []
     );
 }
 
@@ -887,16 +993,19 @@ async function migrateTenant(db: Firestore, tenantDoc: { id: string; data: DocDa
 
         const stores = await getDocsForTenant(db, tenantDoc.id, 'stores');
         const storeIds: string[] = [];
+        const storeContextMap = new Map<string, StoreContext>();
         for (const store of stores) {
             const storeId = ensureUuid(store.id, storeIdMap);
             storeIds.push(storeId);
-            await upsertStore(client, store.data, tenantId, storeId);
+            const storeContext = await upsertStore(client, store.data, tenantId, storeId);
+            storeContextMap.set(store.id, storeContext);
+            storeContextMap.set(storeId, storeContext);
         }
 
         const practitioners = await getDocsForTenant(db, tenantDoc.id, 'practitioners');
         for (const practitioner of practitioners) {
             const practitionerId = ensureUuid(practitioner.id, practitionerIdMap);
-            const mappedStoreIds = (practitioner.data.storeIds || []).map((id: string) => ensureUuid(id, storeIdMap));
+            const mappedStoreIds = mapStringIds(practitioner.data.storeIds || practitioner.data.store_ids, (id) => ensureUuid(id, storeIdMap));
             const fallbackStoreIds = mappedStoreIds.length > 0 ? mappedStoreIds : storeIds;
             await upsertPractitioner(client, practitioner.data, tenantId, practitionerId, fallbackStoreIds);
         }
@@ -904,7 +1013,7 @@ async function migrateTenant(db: Firestore, tenantDoc: { id: string; data: DocDa
         const menus = await getDocsForTenant(db, tenantDoc.id, 'menus');
         for (const menu of menus) {
             const menuId = ensureUuid(menu.id, menuIdMap);
-            const practitionerIds = (menu.data.availablePractitionerIds || menu.data.practitionerIds || []).map((id: string) => ensureUuid(id, practitionerIdMap));
+            const practitionerIds = mapStringIds(menu.data.availablePractitionerIds || menu.data.practitionerIds || menu.data.practitioner_ids, (id) => ensureUuid(id, practitionerIdMap));
             await upsertMenu(client, menu.data, tenantId, menuId, practitionerIds);
         }
 
@@ -913,7 +1022,7 @@ async function migrateTenant(db: Firestore, tenantDoc: { id: string; data: DocDa
         const menuOptions = options.length > 0 ? options : optionsAlt;
         for (const option of menuOptions) {
             const optionId = ensureUuid(option.id, optionIdMap);
-            const applicableMenuIds = (option.data.applicableMenuIds || option.data.applicable_menu_ids || []).map((id: string) => ensureUuid(id, menuIdMap));
+            const applicableMenuIds = mapStringIds(option.data.applicableMenuIds || option.data.applicable_menu_ids, (id) => ensureUuid(id, menuIdMap));
             await upsertMenuOption(client, option.data, tenantId, optionId, applicableMenuIds);
         }
 
@@ -931,14 +1040,15 @@ async function migrateTenant(db: Firestore, tenantDoc: { id: string; data: DocDa
                 practitioner: practitionerIdMap,
                 menu: menuIdMap,
                 option: optionIdMap,
-                store: storeIdMap,
+                storeId: storeIdMap,
+                store: storeContextMap,
             });
         }
 
         const admins = await getDocsForTenant(db, tenantDoc.id, 'admins');
         for (const admin of admins) {
             const adminId = ensureUuid(admin.id, adminIdMap);
-            const mappedStoreIds = (admin.data.storeIds || []).map((id: string) => ensureUuid(id, storeIdMap));
+            const mappedStoreIds = mapStringIds(admin.data.storeIds || admin.data.store_ids, (id) => ensureUuid(id, storeIdMap));
             await upsertAdmin(client, { ...admin.data, storeIds: mappedStoreIds }, tenantId, adminId);
         }
 

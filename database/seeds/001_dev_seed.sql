@@ -1,204 +1,1928 @@
 -- ============================================================
--- 開発用シードデータ
+-- Canonical non-prod base seed (v3-clean)
+-- - Re-runnable for the fixed tenant IDs below.
+-- - Covers demo / chain / onboarding archetypes.
+-- - Seeds current OLTP + CRM extension tables only.
 -- ============================================================
 
--- テナント作成
-INSERT INTO tenants (id, slug, name, plan, status)
-VALUES (
-    'a1b2c3d4-e5f6-7890-abcd-ef1234567890',
-    'demo-salon',
-    'デモサロン株式会社',
-    'pro',
-    'active'
+BEGIN;
+
+-- Reset the fixed non-prod tenants so the seed can be replayed deterministically.
+DELETE FROM tenants
+WHERE id IN (
+    '11111111-1111-4111-8111-111111111111', -- demo-salon
+    '22222222-2222-4222-8222-222222222222', -- chain-salon
+    '33333333-3333-4333-8333-333333333333'  -- onboarding-salon
 );
 
--- テナントIDを変数に設定
-DO $$
-DECLARE
-    v_tenant_id UUID := 'a1b2c3d4-e5f6-7890-abcd-ef1234567890';
-    v_store_id UUID;
-    v_practitioner1_id UUID;
-    v_practitioner2_id UUID;
-    v_practitioner3_id UUID;
-    v_menu1_id UUID;
-    v_menu2_id UUID;
-    v_menu3_id UUID;
-    v_menu4_id UUID;
-    v_menu5_id UUID;
-    v_menu6_id UUID;
-    v_customer1_id UUID;
-    v_customer2_id UUID;
-    v_customer3_id UUID;
-BEGIN
-    -- RLSをバイパスするためにテナント設定
-    PERFORM set_config('app.current_tenant', v_tenant_id::text, true);
-    
-    -- ============================================================
-    -- 店舗
-    -- ============================================================
-    v_store_id := uuid_generate_v4();
-    INSERT INTO stores (id, tenant_id, name, store_code, address, phone, email)
-    VALUES (
-        v_store_id,
-        v_tenant_id,
-        '渋谷本店',
-        'd3m0s4ln',
-        '東京都渋谷区渋谷1-1-1',
-        '03-1234-5678',
-        'shibuya@demo-salon.com'
+-- ============================================================
+-- Tenants
+-- ============================================================
+INSERT INTO tenants (
+    id,
+    slug,
+    name,
+    plan,
+    status,
+    onboarding_status,
+    onboarding_completed_at,
+    onboarding_payload,
+    line_mode,
+    branding_primary_color,
+    max_stores,
+    max_practitioners
+)
+VALUES
+    (
+        '11111111-1111-4111-8111-111111111111',
+        'demo-salon',
+        'デモサロン株式会社',
+        'pro',
+        'active',
+        'completed',
+        NOW() - INTERVAL '40 days',
+        '{"seedArchetype":"demo","publicBooking":true,"crmReady":true}'::jsonb,
+        'tenant',
+        '#B45309',
+        1,
+        10
+    ),
+    (
+        '22222222-2222-4222-8222-222222222222',
+        'chain-salon',
+        'チェーンサロンホールディングス',
+        'enterprise',
+        'active',
+        'completed',
+        NOW() - INTERVAL '75 days',
+        '{"seedArchetype":"chain","hqDashboard":true,"multiStore":true}'::jsonb,
+        'store',
+        '#0F766E',
+        8,
+        30
+    ),
+    (
+        '33333333-3333-4333-8333-333333333333',
+        'onboarding-salon',
+        'オンボーディングサロン',
+        'trial',
+        'trial',
+        'in_progress',
+        NULL,
+        '{"seedArchetype":"onboarding","step":"store-setup"}'::jsonb,
+        'tenant',
+        '#475569',
+        1,
+        3
     );
-    
-    -- ============================================================
-    -- 施術者
-    -- ============================================================
-    v_practitioner1_id := uuid_generate_v4();
-    v_practitioner2_id := uuid_generate_v4();
-    v_practitioner3_id := uuid_generate_v4();
-    
-    INSERT INTO practitioners (id, tenant_id, name, role, name_kana, title, description, nomination_fee, store_ids)
-    VALUES 
-        (v_practitioner1_id, v_tenant_id, '佐藤 美優', 'owner', 'サトウ ミユウ', 'オーナースタイリスト', '経験15年のベテランスタイリスト', 1100, ARRAY[v_store_id]),
-        (v_practitioner2_id, v_tenant_id, '田中 健一', 'stylist', 'タナカ ケンイチ', 'スタイリスト', 'カラーリングが得意です', 550, ARRAY[v_store_id]),
-        (v_practitioner3_id, v_tenant_id, '高橋 真由', 'assistant', 'タカハシ マユ', 'ジュニアスタイリスト', '丁寧な接客を心がけています', 0, ARRAY[v_store_id]);
-    
-    -- ============================================================
-    -- メニュー
-    -- ============================================================
-    v_menu1_id := uuid_generate_v4();
-    v_menu2_id := uuid_generate_v4();
-    v_menu3_id := uuid_generate_v4();
-    v_menu4_id := uuid_generate_v4();
-    v_menu5_id := uuid_generate_v4();
-    v_menu6_id := uuid_generate_v4();
-    
-    INSERT INTO menus (id, tenant_id, name, description, category, price, duration, display_order)
-    VALUES 
-        (v_menu1_id, v_tenant_id, 'カット', 'シャンプー・ブロー込み', 'カット', 5500, 60, 1),
-        (v_menu2_id, v_tenant_id, 'カラー', 'リタッチ・フルカラー対応', 'カラー', 8800, 90, 2),
-        (v_menu3_id, v_tenant_id, 'パーマ', 'デジタルパーマ・コールドパーマ', 'パーマ', 12000, 120, 3),
-        (v_menu4_id, v_tenant_id, 'カット + カラー', 'セットメニュー', 'セット', 12000, 120, 4),
-        (v_menu5_id, v_tenant_id, 'トリートメント', '集中ケアトリートメント', 'ケア', 3300, 30, 5),
-        (v_menu6_id, v_tenant_id, 'ヘッドスパ', 'リラクゼーションヘッドスパ', 'ケア', 4400, 45, 6);
-    
-    -- ============================================================
-    -- 顧客
-    -- ============================================================
-    v_customer1_id := uuid_generate_v4();
-    v_customer2_id := uuid_generate_v4();
-    v_customer3_id := uuid_generate_v4();
-    
-    INSERT INTO customers (id, tenant_id, name, name_kana, phone, email, total_visits, total_spend, rfm_segment, tags)
-    VALUES 
-        (v_customer1_id, v_tenant_id, '山田 花子', 'ヤマダ ハナコ', '090-1111-2222', 'yamada@example.com', 12, 156000, 'VIP', ARRAY['常連', 'カラー好き']),
-        (v_customer2_id, v_tenant_id, '鈴木 一郎', 'スズキ イチロウ', '090-3333-4444', 'suzuki@example.com', 5, 45000, 'Regular', ARRAY['ビジネスマン']),
-        (v_customer3_id, v_tenant_id, '伊藤 美咲', 'イトウ ミサキ', '090-5555-6666', 'ito@example.com', 2, 24000, 'New', ARRAY['新規', '紹介']);
-    
-    -- ============================================================
-    -- 予約（過去・今日・未来）
-    -- ============================================================
-    
-    -- 過去の予約（完了）
-    INSERT INTO reservations (
-        tenant_id, store_id, customer_id, practitioner_id,
-        period, date, start_time, end_time,
-        status, source, total_price, total_duration
-    )
-    VALUES (
-        v_tenant_id, v_store_id, v_customer1_id, v_practitioner1_id,
-        tstzrange(
-            (CURRENT_DATE - INTERVAL '7 days') + TIME '10:00',
-            (CURRENT_DATE - INTERVAL '7 days') + TIME '11:00'
-        ),
-        CURRENT_DATE - INTERVAL '7 days',
-        '10:00'::TIME,
-        '11:00'::TIME,
-        'completed', 'line', 5500, 60
+
+-- ============================================================
+-- demo-salon
+-- Expected counts:
+-- stores=1 / practitioners=4 / menus=6 / menu_options=3 / customers=4
+-- reservations=6 / admins=2 / practitioner_store_assignments=4
+-- menu_practitioner_assignments=10 / option_menu_assignments=7
+-- admin_store_assignments=2 / reservation_menus=6 / reservation_options=5
+-- settings=1 / booking_link_tokens=3 / tenant_rfm_settings=1 / tenant_notification_settings=1
+-- ============================================================
+SELECT set_config('app.current_tenant', '11111111-1111-4111-8111-111111111111', true);
+
+INSERT INTO stores (
+    id,
+    tenant_id,
+    name,
+    store_code,
+    address,
+    phone,
+    email,
+    timezone,
+    slot_duration,
+    advance_booking_days,
+    require_phone,
+    require_email,
+    display_order
+)
+VALUES (
+    '11111111-1111-4111-8111-000000000101',
+    '11111111-1111-4111-8111-111111111111',
+    '渋谷本店',
+    'demo0001',
+    '東京都渋谷区渋谷1-1-1',
+    '03-1234-5678',
+    'shibuya@demo-salon.example',
+    'Asia/Tokyo',
+    30,
+    45,
+    true,
+    true,
+    1
+);
+
+INSERT INTO practitioners (
+    id,
+    tenant_id,
+    name,
+    role,
+    name_kana,
+    title,
+    color,
+    description,
+    experience,
+    pr_title,
+    specialties,
+    nomination_fee,
+    work_schedule,
+    is_active,
+    display_order
+)
+VALUES
+    (
+        '11111111-1111-4111-8111-000000000201',
+        '11111111-1111-4111-8111-111111111111',
+        '佐藤 美優',
+        'owner',
+        'サトウ ミユウ',
+        'オーナースタイリスト',
+        '#B45309',
+        'カットと提案型カウンセリングが得意なオーナー。',
+        '15年',
+        '再来率No.1オーナー',
+        ARRAY['カット', 'カラー', '髪質改善'],
+        1100,
+        '{"workDays":[1,2,3,4,5],"workHours":{"start":"10:00","end":"19:00"}}'::jsonb,
+        true,
+        1
+    ),
+    (
+        '11111111-1111-4111-8111-000000000202',
+        '11111111-1111-4111-8111-111111111111',
+        '田中 健一',
+        'stylist',
+        'タナカ ケンイチ',
+        'スタイリスト',
+        '#2563EB',
+        'カラー提案とメンズスタイルを担当。',
+        '9年',
+        'カラーリピート担当',
+        ARRAY['カラー', 'メンズカット', 'ヘッドスパ'],
+        550,
+        '{"workDays":[0,1,3,4,6],"workHours":{"start":"11:00","end":"20:00"}}'::jsonb,
+        true,
+        2
+    ),
+    (
+        '11111111-1111-4111-8111-000000000203',
+        '11111111-1111-4111-8111-111111111111',
+        '高橋 真由',
+        'stylist',
+        'タカハシ マユ',
+        'ジュニアスタイリスト',
+        '#EC4899',
+        '丁寧な接客で新規指名を伸ばしているスタイリスト。',
+        '4年',
+        '新規支持率上昇中',
+        ARRAY['前髪カット', 'トリートメント', 'ヘッドスパ'],
+        0,
+        '{"workDays":[1,2,4,5,6],"workHours":{"start":"09:30","end":"18:30"}}'::jsonb,
+        true,
+        3
+    ),
+    (
+        '11111111-1111-4111-8111-000000000204',
+        '11111111-1111-4111-8111-111111111111',
+        '伊藤 葵',
+        'assistant',
+        'イトウ アオイ',
+        'アシスタント',
+        '#7C3AED',
+        'ケア系メニューと接客フォローを担当。',
+        '2年',
+        'ケア施術担当',
+        ARRAY['シャンプー', 'トリートメント'],
+        0,
+        '{"workDays":[1,2,3,4,5,6],"workHours":{"start":"10:00","end":"18:00"}}'::jsonb,
+        true,
+        4
     );
-    
-    -- 今日の予約
-    INSERT INTO reservations (
-        tenant_id, store_id, customer_id, practitioner_id,
-        period, date, start_time, end_time,
-        status, source, total_price, total_duration
-    )
-    VALUES 
-        (
-            v_tenant_id, v_store_id, v_customer1_id, v_practitioner1_id,
-            tstzrange(
-                CURRENT_DATE + TIME '10:00',
-                CURRENT_DATE + TIME '11:00'
-            ),
-            CURRENT_DATE,
-            '10:00'::TIME,
-            '11:00'::TIME,
-            'confirmed', 'line', 5500, 60
-        ),
-        (
-            v_tenant_id, v_store_id, v_customer2_id, v_practitioner2_id,
-            tstzrange(
-                CURRENT_DATE + TIME '14:00',
-                CURRENT_DATE + TIME '15:30'
-            ),
-            CURRENT_DATE,
-            '14:00'::TIME,
-            '15:30'::TIME,
-            'confirmed', 'phone', 8800, 90
-        ),
-        (
-            v_tenant_id, v_store_id, v_customer3_id, v_practitioner3_id,
-            tstzrange(
-                CURRENT_DATE + TIME '16:00',
-                CURRENT_DATE + TIME '18:00'
-            ),
-            CURRENT_DATE,
-            '16:00'::TIME,
-            '18:00'::TIME,
-            'pending', 'line', 12000, 120
-        );
-    
-    -- 明日の予約
-    INSERT INTO reservations (
-        tenant_id, store_id, customer_id, practitioner_id,
-        period, date, start_time, end_time,
-        status, source, total_price, total_duration
-    )
-    VALUES (
-        v_tenant_id, v_store_id, v_customer1_id, v_practitioner1_id,
-        tstzrange(
-            (CURRENT_DATE + INTERVAL '1 day') + TIME '11:00',
-            (CURRENT_DATE + INTERVAL '1 day') + TIME '11:30'
-        ),
-        CURRENT_DATE + INTERVAL '1 day',
-        '11:00'::TIME,
-        '11:30'::TIME,
-        'confirmed', 'line', 3300, 30
+
+INSERT INTO practitioner_store_assignments (tenant_id, practitioner_id, store_id)
+VALUES
+    ('11111111-1111-4111-8111-111111111111', '11111111-1111-4111-8111-000000000201', '11111111-1111-4111-8111-000000000101'),
+    ('11111111-1111-4111-8111-111111111111', '11111111-1111-4111-8111-000000000202', '11111111-1111-4111-8111-000000000101'),
+    ('11111111-1111-4111-8111-111111111111', '11111111-1111-4111-8111-000000000203', '11111111-1111-4111-8111-000000000101'),
+    ('11111111-1111-4111-8111-111111111111', '11111111-1111-4111-8111-000000000204', '11111111-1111-4111-8111-000000000101');
+
+INSERT INTO menus (
+    id,
+    tenant_id,
+    name,
+    description,
+    category,
+    price,
+    duration,
+    is_active,
+    display_order,
+    attributes
+)
+VALUES
+    (
+        '11111111-1111-4111-8111-000000000301',
+        '11111111-1111-4111-8111-111111111111',
+        'カット',
+        'シャンプー・ブロー込み。',
+        'カット',
+        5500,
+        60,
+        true,
+        1,
+        '{"public":true}'::jsonb
+    ),
+    (
+        '11111111-1111-4111-8111-000000000302',
+        '11111111-1111-4111-8111-111111111111',
+        'カラー',
+        'リタッチ・フルカラー対応。',
+        'カラー',
+        8800,
+        90,
+        true,
+        2,
+        '{"public":true}'::jsonb
+    ),
+    (
+        '11111111-1111-4111-8111-000000000303',
+        '11111111-1111-4111-8111-111111111111',
+        'カット + カラー',
+        '定番のセットメニュー。',
+        'セット',
+        13200,
+        150,
+        true,
+        3,
+        '{"bundle":true}'::jsonb
+    ),
+    (
+        '11111111-1111-4111-8111-000000000304',
+        '11111111-1111-4111-8111-111111111111',
+        'ヘッドスパ',
+        '短時間でも満足度の高いリラクゼーション。',
+        'ケア',
+        4400,
+        45,
+        true,
+        4,
+        '{"public":true}'::jsonb
+    ),
+    (
+        '11111111-1111-4111-8111-000000000305',
+        '11111111-1111-4111-8111-111111111111',
+        'トリートメント',
+        '集中補修ケア。',
+        'ケア',
+        3300,
+        30,
+        true,
+        5,
+        '{"globalPractitioner":true}'::jsonb
+    ),
+    (
+        '11111111-1111-4111-8111-000000000306',
+        '11111111-1111-4111-8111-111111111111',
+        '前髪カット',
+        '短時間のメンテナンス用メニュー。',
+        'カット',
+        1650,
+        20,
+        true,
+        6,
+        '{"quickMenu":true}'::jsonb
     );
-    
-    -- ============================================================
-    -- 設定
-    -- ============================================================
-    INSERT INTO settings (tenant_id, store_id, shop_name, shop_description)
-    VALUES (
-        v_tenant_id,
-        v_store_id,
-        'デモサロン渋谷本店',
-        'お客様の「なりたい」を叶えるサロンです。'
+
+INSERT INTO menu_practitioner_assignments (tenant_id, menu_id, practitioner_id)
+VALUES
+    ('11111111-1111-4111-8111-111111111111', '11111111-1111-4111-8111-000000000301', '11111111-1111-4111-8111-000000000201'),
+    ('11111111-1111-4111-8111-111111111111', '11111111-1111-4111-8111-000000000301', '11111111-1111-4111-8111-000000000202'),
+    ('11111111-1111-4111-8111-111111111111', '11111111-1111-4111-8111-000000000301', '11111111-1111-4111-8111-000000000203'),
+    ('11111111-1111-4111-8111-111111111111', '11111111-1111-4111-8111-000000000302', '11111111-1111-4111-8111-000000000201'),
+    ('11111111-1111-4111-8111-111111111111', '11111111-1111-4111-8111-000000000302', '11111111-1111-4111-8111-000000000202'),
+    ('11111111-1111-4111-8111-111111111111', '11111111-1111-4111-8111-000000000303', '11111111-1111-4111-8111-000000000201'),
+    ('11111111-1111-4111-8111-111111111111', '11111111-1111-4111-8111-000000000303', '11111111-1111-4111-8111-000000000202'),
+    ('11111111-1111-4111-8111-111111111111', '11111111-1111-4111-8111-000000000304', '11111111-1111-4111-8111-000000000202'),
+    ('11111111-1111-4111-8111-111111111111', '11111111-1111-4111-8111-000000000304', '11111111-1111-4111-8111-000000000203'),
+    ('11111111-1111-4111-8111-111111111111', '11111111-1111-4111-8111-000000000306', '11111111-1111-4111-8111-000000000203');
+
+-- menu 305 intentionally has no assignment rows and is treated as available to all practitioners.
+
+INSERT INTO menu_options (
+    id,
+    tenant_id,
+    name,
+    description,
+    price,
+    duration,
+    is_active,
+    display_order
+)
+VALUES
+    (
+        '11111111-1111-4111-8111-000000000401',
+        '11111111-1111-4111-8111-111111111111',
+        '炭酸シャンプー',
+        '頭皮クレンジング付き。',
+        1100,
+        10,
+        true,
+        1
+    ),
+    (
+        '11111111-1111-4111-8111-000000000402',
+        '11111111-1111-4111-8111-111111111111',
+        'プレミアムトリートメント',
+        '集中補修ケア。',
+        2200,
+        15,
+        true,
+        2
+    ),
+    (
+        '11111111-1111-4111-8111-000000000403',
+        '11111111-1111-4111-8111-111111111111',
+        '眉カット',
+        '短時間で印象を整えるオプション。',
+        550,
+        10,
+        true,
+        3
     );
-    
-    -- ============================================================
-    -- 管理者
-    -- ============================================================
-    INSERT INTO admins (tenant_id, firebase_uid, name, email, role)
-    VALUES (
-        v_tenant_id,
-        'demo-firebase-uid-owner',
+
+INSERT INTO option_menu_assignments (tenant_id, option_id, menu_id)
+VALUES
+    ('11111111-1111-4111-8111-111111111111', '11111111-1111-4111-8111-000000000401', '11111111-1111-4111-8111-000000000301'),
+    ('11111111-1111-4111-8111-111111111111', '11111111-1111-4111-8111-000000000401', '11111111-1111-4111-8111-000000000302'),
+    ('11111111-1111-4111-8111-111111111111', '11111111-1111-4111-8111-000000000401', '11111111-1111-4111-8111-000000000303'),
+    ('11111111-1111-4111-8111-111111111111', '11111111-1111-4111-8111-000000000401', '11111111-1111-4111-8111-000000000304'),
+    ('11111111-1111-4111-8111-111111111111', '11111111-1111-4111-8111-000000000402', '11111111-1111-4111-8111-000000000302'),
+    ('11111111-1111-4111-8111-111111111111', '11111111-1111-4111-8111-000000000402', '11111111-1111-4111-8111-000000000303'),
+    ('11111111-1111-4111-8111-111111111111', '11111111-1111-4111-8111-000000000402', '11111111-1111-4111-8111-000000000305');
+
+-- option 403 intentionally has no assignment rows and is treated as available to all menus.
+
+INSERT INTO customers (
+    id,
+    tenant_id,
+    name,
+    name_kana,
+    email,
+    phone,
+    total_visits,
+    total_spend,
+    average_spend,
+    cancel_count,
+    no_show_count,
+    first_visit_at,
+    last_visit_at,
+    favorite_menu_id,
+    favorite_practitioner_id,
+    rfm_recency_score,
+    rfm_frequency_score,
+    rfm_monetary_score,
+    rfm_segment,
+    tags,
+    notes,
+    is_active
+)
+VALUES
+    (
+        '11111111-1111-4111-8111-000000000501',
+        '11111111-1111-4111-8111-111111111111',
+        '山田 花子',
+        'ヤマダ ハナコ',
+        'yamada@example.com',
+        '090-1111-2222',
+        12,
+        156000,
+        13000,
+        0,
+        0,
+        NOW() - INTERVAL '14 months',
+        NOW() - INTERVAL '14 days',
+        '11111111-1111-4111-8111-000000000303',
+        '11111111-1111-4111-8111-000000000201',
+        5,
+        5,
+        5,
+        'VIP',
+        ARRAY['常連', 'カラー好き'],
+        '指名予約が多い顧客。',
+        true
+    ),
+    (
+        '11111111-1111-4111-8111-000000000502',
+        '11111111-1111-4111-8111-111111111111',
+        '鈴木 一郎',
+        'スズキ イチロウ',
+        'suzuki@example.com',
+        '090-3333-4444',
+        5,
+        45000,
+        9000,
+        1,
+        0,
+        NOW() - INTERVAL '9 months',
+        NOW() - INTERVAL '7 days',
+        '11111111-1111-4111-8111-000000000302',
+        '11111111-1111-4111-8111-000000000202',
+        4,
+        3,
+        3,
+        'Regular',
+        ARRAY['ビジネスマン'],
+        '電話予約中心。',
+        true
+    ),
+    (
+        '11111111-1111-4111-8111-000000000503',
+        '11111111-1111-4111-8111-111111111111',
+        '伊藤 美咲',
+        'イトウ ミサキ',
+        'ito@example.com',
+        '090-5555-6666',
+        2,
+        24000,
+        12000,
+        0,
+        1,
+        NOW() - INTERVAL '4 months',
+        NOW() - INTERVAL '1 day',
+        '11111111-1111-4111-8111-000000000304',
+        '11111111-1111-4111-8111-000000000203',
+        2,
+        2,
+        3,
+        'New',
+        ARRAY['紹介'],
+        'SNS経由で流入。',
+        true
+    ),
+    (
+        '11111111-1111-4111-8111-000000000504',
+        '11111111-1111-4111-8111-111111111111',
+        '中村 玲奈',
+        'ナカムラ レイナ',
+        'nakamura@example.com',
+        '090-7777-8888',
+        3,
+        19800,
+        6600,
+        1,
+        0,
+        NOW() - INTERVAL '6 months',
+        NOW() - INTERVAL '20 days',
+        '11111111-1111-4111-8111-000000000301',
+        '11111111-1111-4111-8111-000000000202',
+        2,
+        2,
+        2,
+        'AtRisk',
+        ARRAY['仕事帰り'],
+        '平日夕方の予約が多い。',
+        true
+    );
+
+INSERT INTO reservations (
+    id,
+    tenant_id,
+    store_id,
+    customer_id,
+    practitioner_id,
+    starts_at,
+    ends_at,
+    timezone,
+    status,
+    source,
+    subtotal,
+    option_total,
+    nomination_fee,
+    discount,
+    total_price,
+    total_duration,
+    customer_name,
+    customer_phone,
+    practitioner_name,
+    notes,
+    internal_note,
+    attributes,
+    canceled_at,
+    cancel_reason,
+    canceled_by
+)
+VALUES
+    (
+        '11111111-1111-4111-8111-000000000601',
+        '11111111-1111-4111-8111-111111111111',
+        '11111111-1111-4111-8111-000000000101',
+        '11111111-1111-4111-8111-000000000501',
+        '11111111-1111-4111-8111-000000000201',
+        ((CURRENT_DATE - INTERVAL '14 days')::date + TIME '10:00') AT TIME ZONE 'Asia/Tokyo',
+        ((CURRENT_DATE - INTERVAL '14 days')::date + TIME '11:10') AT TIME ZONE 'Asia/Tokyo',
+        'Asia/Tokyo',
+        'completed',
+        'line',
+        5500,
+        1100,
+        1100,
+        0,
+        7700,
+        70,
+        '山田 花子',
+        '090-1111-2222',
+        '佐藤 美優',
+        'LINEからの再来予約。',
+        'seed:demo-completed-line',
+        '{"seedScenario":"demo-completed-line"}'::jsonb,
+        NULL,
+        NULL,
+        NULL
+    ),
+    (
+        '11111111-1111-4111-8111-000000000602',
+        '11111111-1111-4111-8111-111111111111',
+        '11111111-1111-4111-8111-000000000101',
+        '11111111-1111-4111-8111-000000000502',
+        '11111111-1111-4111-8111-000000000202',
+        ((CURRENT_DATE - INTERVAL '7 days')::date + TIME '15:00') AT TIME ZONE 'Asia/Tokyo',
+        ((CURRENT_DATE - INTERVAL '7 days')::date + TIME '17:30') AT TIME ZONE 'Asia/Tokyo',
+        'Asia/Tokyo',
+        'canceled',
+        'web',
+        13200,
+        0,
+        550,
+        0,
+        13750,
+        150,
+        '鈴木 一郎',
+        '090-3333-4444',
+        '田中 健一',
+        'Web予約後に都合が合わずキャンセル。',
+        'seed:demo-canceled-web',
+        '{"seedScenario":"demo-canceled-web"}'::jsonb,
+        NOW() - INTERVAL '7 days' + INTERVAL '2 hours',
+        '予定変更',
+        'customer'
+    ),
+    (
+        '11111111-1111-4111-8111-000000000603',
+        '11111111-1111-4111-8111-111111111111',
+        '11111111-1111-4111-8111-000000000101',
+        '11111111-1111-4111-8111-000000000504',
+        '11111111-1111-4111-8111-000000000202',
+        (CURRENT_DATE + TIME '11:00') AT TIME ZONE 'Asia/Tokyo',
+        (CURRENT_DATE + TIME '12:45') AT TIME ZONE 'Asia/Tokyo',
+        'Asia/Tokyo',
+        'confirmed',
+        'phone',
+        8800,
+        2200,
+        0,
+        0,
+        11000,
+        105,
+        '中村 玲奈',
+        '090-7777-8888',
+        '田中 健一',
+        '電話で時間変更済み。',
+        'seed:demo-confirmed-phone',
+        '{"seedScenario":"demo-confirmed-phone"}'::jsonb,
+        NULL,
+        NULL,
+        NULL
+    ),
+    (
+        '11111111-1111-4111-8111-000000000604',
+        '11111111-1111-4111-8111-111111111111',
+        '11111111-1111-4111-8111-000000000101',
+        '11111111-1111-4111-8111-000000000503',
+        '11111111-1111-4111-8111-000000000201',
+        ((CURRENT_DATE + INTERVAL '2 days')::date + TIME '16:00') AT TIME ZONE 'Asia/Tokyo',
+        ((CURRENT_DATE + INTERVAL '2 days')::date + TIME '18:45') AT TIME ZONE 'Asia/Tokyo',
+        'Asia/Tokyo',
+        'pending',
+        'web',
+        13200,
+        2200,
+        1100,
+        0,
+        16500,
+        165,
+        '伊藤 美咲',
+        '090-5555-6666',
+        '佐藤 美優',
+        '新色相談あり。',
+        'seed:demo-pending-web',
+        '{"seedScenario":"demo-pending-web"}'::jsonb,
+        NULL,
+        NULL,
+        NULL
+    ),
+    (
+        '11111111-1111-4111-8111-000000000605',
+        '11111111-1111-4111-8111-111111111111',
+        '11111111-1111-4111-8111-000000000101',
+        '11111111-1111-4111-8111-000000000503',
+        '11111111-1111-4111-8111-000000000203',
+        ((CURRENT_DATE - INTERVAL '1 day')::date + TIME '13:00') AT TIME ZONE 'Asia/Tokyo',
+        ((CURRENT_DATE - INTERVAL '1 day')::date + TIME '13:55') AT TIME ZONE 'Asia/Tokyo',
+        'Asia/Tokyo',
+        'no_show',
+        'walk_in',
+        4400,
+        550,
+        0,
+        0,
+        4950,
+        55,
+        '伊藤 美咲',
+        '090-5555-6666',
+        '高橋 真由',
+        '飛び込み予約の no-show。',
+        'seed:demo-no-show',
+        '{"seedScenario":"demo-no-show"}'::jsonb,
+        NULL,
+        NULL,
+        NULL
+    ),
+    (
+        '11111111-1111-4111-8111-000000000606',
+        '11111111-1111-4111-8111-111111111111',
+        '11111111-1111-4111-8111-000000000101',
+        '11111111-1111-4111-8111-000000000501',
+        '11111111-1111-4111-8111-000000000203',
+        ((CURRENT_DATE + INTERVAL '5 days')::date + TIME '09:30') AT TIME ZONE 'Asia/Tokyo',
+        ((CURRENT_DATE + INTERVAL '5 days')::date + TIME '10:00') AT TIME ZONE 'Asia/Tokyo',
+        'Asia/Tokyo',
+        'confirmed',
+        'admin',
+        1650,
+        550,
+        0,
+        0,
+        2200,
+        30,
+        '山田 花子',
+        '090-1111-2222',
+        '高橋 真由',
+        '管理画面から枠調整。',
+        'seed:demo-confirmed-admin',
+        '{"seedScenario":"demo-confirmed-admin"}'::jsonb,
+        NULL,
+        NULL,
+        NULL
+    );
+
+INSERT INTO reservation_menus (
+    id,
+    tenant_id,
+    reservation_id,
+    menu_id,
+    menu_name,
+    menu_price,
+    menu_duration,
+    sort_order,
+    is_main,
+    quantity
+)
+VALUES
+    ('11111111-1111-4111-8111-000000001101', '11111111-1111-4111-8111-111111111111', '11111111-1111-4111-8111-000000000601', '11111111-1111-4111-8111-000000000301', 'カット', 5500, 60, 0, true, 1),
+    ('11111111-1111-4111-8111-000000001102', '11111111-1111-4111-8111-111111111111', '11111111-1111-4111-8111-000000000602', '11111111-1111-4111-8111-000000000303', 'カット + カラー', 13200, 150, 0, true, 1),
+    ('11111111-1111-4111-8111-000000001103', '11111111-1111-4111-8111-111111111111', '11111111-1111-4111-8111-000000000603', '11111111-1111-4111-8111-000000000302', 'カラー', 8800, 90, 0, true, 1),
+    ('11111111-1111-4111-8111-000000001104', '11111111-1111-4111-8111-111111111111', '11111111-1111-4111-8111-000000000604', '11111111-1111-4111-8111-000000000303', 'カット + カラー', 13200, 150, 0, true, 1),
+    ('11111111-1111-4111-8111-000000001105', '11111111-1111-4111-8111-111111111111', '11111111-1111-4111-8111-000000000605', '11111111-1111-4111-8111-000000000304', 'ヘッドスパ', 4400, 45, 0, true, 1),
+    ('11111111-1111-4111-8111-000000001106', '11111111-1111-4111-8111-111111111111', '11111111-1111-4111-8111-000000000606', '11111111-1111-4111-8111-000000000306', '前髪カット', 1650, 20, 0, true, 1);
+
+INSERT INTO reservation_options (
+    id,
+    tenant_id,
+    reservation_id,
+    option_id,
+    option_name,
+    option_price,
+    option_duration
+)
+VALUES
+    ('11111111-1111-4111-8111-000000001201', '11111111-1111-4111-8111-111111111111', '11111111-1111-4111-8111-000000000601', '11111111-1111-4111-8111-000000000401', '炭酸シャンプー', 1100, 10),
+    ('11111111-1111-4111-8111-000000001203', '11111111-1111-4111-8111-111111111111', '11111111-1111-4111-8111-000000000603', '11111111-1111-4111-8111-000000000402', 'プレミアムトリートメント', 2200, 15),
+    ('11111111-1111-4111-8111-000000001204', '11111111-1111-4111-8111-111111111111', '11111111-1111-4111-8111-000000000604', '11111111-1111-4111-8111-000000000402', 'プレミアムトリートメント', 2200, 15),
+    ('11111111-1111-4111-8111-000000001205', '11111111-1111-4111-8111-111111111111', '11111111-1111-4111-8111-000000000605', '11111111-1111-4111-8111-000000000403', '眉カット', 550, 10),
+    ('11111111-1111-4111-8111-000000001206', '11111111-1111-4111-8111-111111111111', '11111111-1111-4111-8111-000000000606', '11111111-1111-4111-8111-000000000403', '眉カット', 550, 10);
+
+INSERT INTO admins (
+    id,
+    tenant_id,
+    firebase_uid,
+    name,
+    email,
+    role,
+    permissions,
+    is_active
+)
+VALUES
+    (
+        '11111111-1111-4111-8111-000000000701',
+        '11111111-1111-4111-8111-111111111111',
+        'seed-demo-owner',
         '管理者 太郎',
-        'admin@demo-salon.com',
-        'owner'
+        'admin@demo-salon.example',
+        'owner',
+        '{"manageMenus":true,"manageReservations":true,"managePractitioners":true,"manageSettings":true,"viewAnalytics":true,"manageAdmins":true}'::jsonb,
+        true
+    ),
+    (
+        '11111111-1111-4111-8111-000000000702',
+        '11111111-1111-4111-8111-111111111111',
+        'seed-demo-manager',
+        '副店長 花',
+        'manager@demo-salon.example',
+        'manager',
+        '{"manageMenus":true,"manageReservations":true,"managePractitioners":true,"manageSettings":false,"viewAnalytics":true,"manageAdmins":false}'::jsonb,
+        true
     );
-    
-    RAISE NOTICE 'シードデータの作成が完了しました！';
-    RAISE NOTICE 'テナントID: %', v_tenant_id;
-    RAISE NOTICE '店舗ID: %', v_store_id;
-    
-END $$;
+
+INSERT INTO admin_store_assignments (tenant_id, admin_id, store_id)
+VALUES
+    ('11111111-1111-4111-8111-111111111111', '11111111-1111-4111-8111-000000000701', '11111111-1111-4111-8111-000000000101'),
+    ('11111111-1111-4111-8111-111111111111', '11111111-1111-4111-8111-000000000702', '11111111-1111-4111-8111-000000000101');
+
+INSERT INTO settings (
+    id,
+    tenant_id,
+    store_id,
+    shop_name,
+    shop_description,
+    notification_new_reservation,
+    notification_cancellation,
+    notification_reminder,
+    reminder_hours_before,
+    message_templates,
+    attributes
+)
+VALUES (
+    '11111111-1111-4111-8111-000000000801',
+    '11111111-1111-4111-8111-111111111111',
+    '11111111-1111-4111-8111-000000000101',
+    'デモサロン渋谷本店',
+    '公開予約・CRM・通知の基準検証用シード。',
+    true,
+    true,
+    true,
+    24,
+    '{"reservationConfirmed":"ご予約ありがとうございます","reminder":"明日のご予約をお知らせします"}'::jsonb,
+    '{"seedArchetype":"demo"}'::jsonb
+);
+
+INSERT INTO tenant_rfm_settings (
+    id,
+    tenant_id,
+    recency_score5,
+    recency_score4,
+    recency_score3,
+    recency_score2,
+    frequency_score5,
+    frequency_score4,
+    frequency_score3,
+    frequency_score2,
+    monetary_score5,
+    monetary_score4,
+    monetary_score3,
+    monetary_score2,
+    updated_by
+)
+VALUES (
+    '11111111-1111-4111-8111-000000000901',
+    '11111111-1111-4111-8111-111111111111',
+    30,
+    60,
+    90,
+    180,
+    10,
+    6,
+    3,
+    2,
+    100000,
+    60000,
+    30000,
+    10000,
+    'seed:demo'
+);
+
+INSERT INTO tenant_notification_settings (
+    id,
+    tenant_id,
+    email_new_reservation,
+    email_cancellation,
+    email_daily_report,
+    line_reminder,
+    line_confirmation,
+    line_review,
+    push_new_reservation,
+    push_cancellation,
+    updated_by
+)
+VALUES (
+    '11111111-1111-4111-8111-000000000902',
+    '11111111-1111-4111-8111-111111111111',
+    true,
+    true,
+    true,
+    true,
+    true,
+    false,
+    true,
+    true,
+    'seed:demo'
+);
+
+INSERT INTO booking_link_tokens (
+    id,
+    tenant_id,
+    store_id,
+    practitioner_id,
+    token,
+    status,
+    created_by,
+    last_used_at,
+    expires_at
+)
+VALUES
+    (
+        '11111111-1111-4111-8111-000000001001',
+        '11111111-1111-4111-8111-111111111111',
+        '11111111-1111-4111-8111-000000000101',
+        '11111111-1111-4111-8111-000000000201',
+        'demo-book-miyu',
+        'active',
+        'seed:demo-owner',
+        NOW() - INTERVAL '1 day',
+        NOW() + INTERVAL '90 days'
+    ),
+    (
+        '11111111-1111-4111-8111-000000001002',
+        '11111111-1111-4111-8111-111111111111',
+        '11111111-1111-4111-8111-000000000101',
+        '11111111-1111-4111-8111-000000000202',
+        'demo-book-kenichi',
+        'active',
+        'seed:demo-owner',
+        NULL,
+        NOW() + INTERVAL '45 days'
+    ),
+    (
+        '11111111-1111-4111-8111-000000001003',
+        '11111111-1111-4111-8111-111111111111',
+        '11111111-1111-4111-8111-000000000101',
+        '11111111-1111-4111-8111-000000000203',
+        'demo-book-mayu-old',
+        'revoked',
+        'seed:demo-manager',
+        NOW() - INTERVAL '30 days',
+        NOW() - INTERVAL '5 days'
+    );
+
+-- ============================================================
+-- chain-salon
+-- Expected counts:
+-- stores=2 / practitioners=4 / menus=5 / menu_options=4 / customers=5
+-- reservations=7 / admins=3 / practitioner_store_assignments=6
+-- menu_practitioner_assignments=9 / option_menu_assignments=6
+-- admin_store_assignments=4 / reservation_menus=7 / reservation_options=4
+-- settings=2 / booking_link_tokens=3 / tenant_rfm_settings=1 / tenant_notification_settings=1
+-- ============================================================
+SELECT set_config('app.current_tenant', '22222222-2222-4222-8222-222222222222', true);
+
+INSERT INTO stores (
+    id,
+    tenant_id,
+    name,
+    store_code,
+    address,
+    phone,
+    email,
+    timezone,
+    slot_duration,
+    advance_booking_days,
+    require_phone,
+    require_email,
+    display_order
+)
+VALUES
+    (
+        '22222222-2222-4222-8222-000000000101',
+        '22222222-2222-4222-8222-222222222222',
+        '銀座店',
+        'chain001',
+        '東京都中央区銀座2-2-2',
+        '03-7777-1111',
+        'ginza@chain-salon.example',
+        'Asia/Tokyo',
+        30,
+        60,
+        true,
+        true,
+        1
+    ),
+    (
+        '22222222-2222-4222-8222-000000000102',
+        '22222222-2222-4222-8222-222222222222',
+        '横浜店',
+        'chain002',
+        '神奈川県横浜市西区みなとみらい3-3-3',
+        '045-777-2222',
+        'yokohama@chain-salon.example',
+        'Asia/Tokyo',
+        30,
+        60,
+        true,
+        true,
+        2
+    );
+
+INSERT INTO practitioners (
+    id,
+    tenant_id,
+    name,
+    role,
+    name_kana,
+    title,
+    color,
+    description,
+    experience,
+    pr_title,
+    specialties,
+    nomination_fee,
+    work_schedule,
+    is_active,
+    display_order
+)
+VALUES
+    (
+        '22222222-2222-4222-8222-000000000201',
+        '22222222-2222-4222-8222-222222222222',
+        '黒田 玲',
+        'owner',
+        'クロダ レイ',
+        'HQディレクター',
+        '#0F766E',
+        '全店横断の高単価メニューを担当。',
+        '18年',
+        'HQディレクター',
+        ARRAY['ブライダル', 'カット', '教育'],
+        2200,
+        '{"workDays":[1,2,4,5],"workHours":{"start":"10:00","end":"18:00"}}'::jsonb,
+        true,
+        1
+    ),
+    (
+        '22222222-2222-4222-8222-000000000202',
+        '22222222-2222-4222-8222-222222222222',
+        '森本 亮',
+        'stylist',
+        'モリモト リョウ',
+        '銀座店リーダー',
+        '#14B8A6',
+        '銀座店の主力スタイリスト。',
+        '11年',
+        '銀座店リーダー',
+        ARRAY['プレミアムカット', 'カラー', 'キッズ'],
+        1100,
+        '{"workDays":[1,2,3,4,5],"workHours":{"start":"11:00","end":"20:00"}}'::jsonb,
+        true,
+        2
+    ),
+    (
+        '22222222-2222-4222-8222-000000000203',
+        '22222222-2222-4222-8222-222222222222',
+        '藤井 美咲',
+        'stylist',
+        'フジイ ミサキ',
+        '横浜店リーダー',
+        '#06B6D4',
+        '横浜店の指名比率が高いスタイリスト。',
+        '8年',
+        '横浜店リーダー',
+        ARRAY['カラー', 'スパ', 'キッズ'],
+        1100,
+        '{"workDays":[0,1,3,4,6],"workHours":{"start":"10:30","end":"19:30"}}'::jsonb,
+        true,
+        3
+    ),
+    (
+        '22222222-2222-4222-8222-000000000204',
+        '22222222-2222-4222-8222-222222222222',
+        '青木 悠',
+        'stylist',
+        'アオキ ハルカ',
+        'フロートスタイリスト',
+        '#2DD4BF',
+        '店舗を跨いで稼働するフロート要員。',
+        '6年',
+        'フロートスタイリスト',
+        ARRAY['キッズ', 'スパ'],
+        550,
+        '{"workDays":[2,3,4,5,6],"workHours":{"start":"10:00","end":"19:00"}}'::jsonb,
+        true,
+        4
+    );
+
+INSERT INTO practitioner_store_assignments (tenant_id, practitioner_id, store_id)
+VALUES
+    ('22222222-2222-4222-8222-222222222222', '22222222-2222-4222-8222-000000000201', '22222222-2222-4222-8222-000000000101'),
+    ('22222222-2222-4222-8222-222222222222', '22222222-2222-4222-8222-000000000201', '22222222-2222-4222-8222-000000000102'),
+    ('22222222-2222-4222-8222-222222222222', '22222222-2222-4222-8222-000000000202', '22222222-2222-4222-8222-000000000101'),
+    ('22222222-2222-4222-8222-222222222222', '22222222-2222-4222-8222-000000000203', '22222222-2222-4222-8222-000000000102'),
+    ('22222222-2222-4222-8222-222222222222', '22222222-2222-4222-8222-000000000204', '22222222-2222-4222-8222-000000000101'),
+    ('22222222-2222-4222-8222-222222222222', '22222222-2222-4222-8222-000000000204', '22222222-2222-4222-8222-000000000102');
+
+INSERT INTO menus (
+    id,
+    tenant_id,
+    name,
+    description,
+    category,
+    price,
+    duration,
+    is_active,
+    display_order,
+    attributes
+)
+VALUES
+    (
+        '22222222-2222-4222-8222-000000000301',
+        '22222222-2222-4222-8222-222222222222',
+        'プレミアムカット',
+        '全店共通の高単価カットメニュー。',
+        'カット',
+        7700,
+        75,
+        true,
+        1,
+        '{"hqMenu":true}'::jsonb
+    ),
+    (
+        '22222222-2222-4222-8222-000000000302',
+        '22222222-2222-4222-8222-222222222222',
+        'カラーリタッチ',
+        '店舗ごとの定番メニュー。',
+        'カラー',
+        9900,
+        90,
+        true,
+        2,
+        '{"hqMenu":false}'::jsonb
+    ),
+    (
+        '22222222-2222-4222-8222-000000000303',
+        '22222222-2222-4222-8222-222222222222',
+        'ラグジュアリースパ',
+        '店舗横断で販売するスパメニュー。',
+        'ケア',
+        6600,
+        60,
+        true,
+        3,
+        '{"globalPractitioner":true}'::jsonb
+    ),
+    (
+        '22222222-2222-4222-8222-000000000304',
+        '22222222-2222-4222-8222-222222222222',
+        'ブライダルセット',
+        'HQディレクター担当の長時間メニュー。',
+        'ブライダル',
+        27500,
+        180,
+        true,
+        4,
+        '{"hqOnly":true}'::jsonb
+    ),
+    (
+        '22222222-2222-4222-8222-000000000305',
+        '22222222-2222-4222-8222-222222222222',
+        'キッズカット',
+        'ファミリー向けメニュー。',
+        'カット',
+        3300,
+        30,
+        true,
+        5,
+        '{"family":true}'::jsonb
+    );
+
+INSERT INTO menu_practitioner_assignments (tenant_id, menu_id, practitioner_id)
+VALUES
+    ('22222222-2222-4222-8222-222222222222', '22222222-2222-4222-8222-000000000301', '22222222-2222-4222-8222-000000000201'),
+    ('22222222-2222-4222-8222-222222222222', '22222222-2222-4222-8222-000000000301', '22222222-2222-4222-8222-000000000202'),
+    ('22222222-2222-4222-8222-222222222222', '22222222-2222-4222-8222-000000000301', '22222222-2222-4222-8222-000000000203'),
+    ('22222222-2222-4222-8222-222222222222', '22222222-2222-4222-8222-000000000302', '22222222-2222-4222-8222-000000000202'),
+    ('22222222-2222-4222-8222-222222222222', '22222222-2222-4222-8222-000000000302', '22222222-2222-4222-8222-000000000203'),
+    ('22222222-2222-4222-8222-222222222222', '22222222-2222-4222-8222-000000000304', '22222222-2222-4222-8222-000000000201'),
+    ('22222222-2222-4222-8222-222222222222', '22222222-2222-4222-8222-000000000305', '22222222-2222-4222-8222-000000000202'),
+    ('22222222-2222-4222-8222-222222222222', '22222222-2222-4222-8222-000000000305', '22222222-2222-4222-8222-000000000203'),
+    ('22222222-2222-4222-8222-222222222222', '22222222-2222-4222-8222-000000000305', '22222222-2222-4222-8222-000000000204');
+
+-- menu 303 intentionally has no assignment rows and is treated as available to all practitioners.
+
+INSERT INTO menu_options (
+    id,
+    tenant_id,
+    name,
+    description,
+    price,
+    duration,
+    is_active,
+    display_order
+)
+VALUES
+    (
+        '22222222-2222-4222-8222-000000000401',
+        '22222222-2222-4222-8222-222222222222',
+        'ロング料金',
+        'カラー・ブライダル向け追加料金。',
+        2200,
+        0,
+        true,
+        1
+    ),
+    (
+        '22222222-2222-4222-8222-000000000402',
+        '22222222-2222-4222-8222-222222222222',
+        'ケラチンブースト',
+        '高単価客向けの補修オプション。',
+        3300,
+        20,
+        true,
+        2
+    ),
+    (
+        '22222222-2222-4222-8222-000000000403',
+        '22222222-2222-4222-8222-222222222222',
+        'スカルプセラム',
+        'スパメニューと相性の良い追加ケア。',
+        1100,
+        10,
+        true,
+        3
+    ),
+    (
+        '22222222-2222-4222-8222-000000000404',
+        '22222222-2222-4222-8222-222222222222',
+        '早朝料金',
+        '特別時間帯の追加料金。',
+        5500,
+        0,
+        true,
+        4
+    );
+
+INSERT INTO option_menu_assignments (tenant_id, option_id, menu_id)
+VALUES
+    ('22222222-2222-4222-8222-222222222222', '22222222-2222-4222-8222-000000000401', '22222222-2222-4222-8222-000000000302'),
+    ('22222222-2222-4222-8222-222222222222', '22222222-2222-4222-8222-000000000401', '22222222-2222-4222-8222-000000000304'),
+    ('22222222-2222-4222-8222-222222222222', '22222222-2222-4222-8222-000000000402', '22222222-2222-4222-8222-000000000301'),
+    ('22222222-2222-4222-8222-222222222222', '22222222-2222-4222-8222-000000000402', '22222222-2222-4222-8222-000000000302'),
+    ('22222222-2222-4222-8222-222222222222', '22222222-2222-4222-8222-000000000402', '22222222-2222-4222-8222-000000000304'),
+    ('22222222-2222-4222-8222-222222222222', '22222222-2222-4222-8222-000000000404', '22222222-2222-4222-8222-000000000304');
+
+-- option 403 intentionally has no assignment rows and is treated as available to all menus.
+
+INSERT INTO customers (
+    id,
+    tenant_id,
+    name,
+    name_kana,
+    email,
+    phone,
+    total_visits,
+    total_spend,
+    average_spend,
+    cancel_count,
+    no_show_count,
+    first_visit_at,
+    last_visit_at,
+    favorite_menu_id,
+    favorite_practitioner_id,
+    rfm_recency_score,
+    rfm_frequency_score,
+    rfm_monetary_score,
+    rfm_segment,
+    tags,
+    notes,
+    is_active
+)
+VALUES
+    (
+        '22222222-2222-4222-8222-000000000501',
+        '22222222-2222-4222-8222-222222222222',
+        '佐々木 綾',
+        'ササキ アヤ',
+        'sasaki@example.com',
+        '080-1111-1111',
+        14,
+        220000,
+        15714,
+        1,
+        0,
+        NOW() - INTERVAL '20 months',
+        NOW() - INTERVAL '21 days',
+        '22222222-2222-4222-8222-000000000304',
+        '22222222-2222-4222-8222-000000000201',
+        5,
+        5,
+        5,
+        'VIP',
+        ARRAY['ブライダル'],
+        'HQ指名。',
+        true
+    ),
+    (
+        '22222222-2222-4222-8222-000000000502',
+        '22222222-2222-4222-8222-222222222222',
+        '川口 翼',
+        'カワグチ ツバサ',
+        'kawaguchi@example.com',
+        '080-2222-2222',
+        7,
+        68000,
+        9714,
+        0,
+        1,
+        NOW() - INTERVAL '11 months',
+        NOW() - INTERVAL '2 days',
+        '22222222-2222-4222-8222-000000000303',
+        '22222222-2222-4222-8222-000000000204',
+        4,
+        4,
+        3,
+        'Regular',
+        ARRAY['メンズ'],
+        'walk-in 率が高い。',
+        true
+    ),
+    (
+        '22222222-2222-4222-8222-000000000503',
+        '22222222-2222-4222-8222-222222222222',
+        '小野寺 華',
+        'オノデラ ハナ',
+        'onodera@example.com',
+        '080-3333-3333',
+        3,
+        45200,
+        15066,
+        0,
+        0,
+        NOW() - INTERVAL '5 months',
+        NOW() - INTERVAL '1 day',
+        '22222222-2222-4222-8222-000000000304',
+        '22222222-2222-4222-8222-000000000201',
+        3,
+        2,
+        4,
+        'Potential',
+        ARRAY['イベント前'],
+        '高単価メニューの見込み客。',
+        true
+    ),
+    (
+        '22222222-2222-4222-8222-000000000504',
+        '22222222-2222-4222-8222-222222222222',
+        '井上 裕子',
+        'イノウエ ユウコ',
+        'inoue@example.com',
+        '080-4444-4444',
+        4,
+        41000,
+        10250,
+        0,
+        0,
+        NOW() - INTERVAL '8 months',
+        NOW() - INTERVAL '10 days',
+        '22222222-2222-4222-8222-000000000302',
+        '22222222-2222-4222-8222-000000000203',
+        3,
+        3,
+        3,
+        'Active',
+        ARRAY['カラー'],
+        '横浜店中心。',
+        true
+    ),
+    (
+        '22222222-2222-4222-8222-000000000505',
+        '22222222-2222-4222-8222-222222222222',
+        '松田 颯太',
+        'マツダ ソウタ',
+        'matsuda@example.com',
+        '080-5555-5555',
+        2,
+        9900,
+        4950,
+        1,
+        0,
+        NOW() - INTERVAL '3 months',
+        NOW() - INTERVAL '7 days',
+        '22222222-2222-4222-8222-000000000305',
+        '22222222-2222-4222-8222-000000000202',
+        2,
+        2,
+        1,
+        'New',
+        ARRAY['ファミリー'],
+        'キッズ同伴来店。',
+        true
+    );
+
+INSERT INTO reservations (
+    id,
+    tenant_id,
+    store_id,
+    customer_id,
+    practitioner_id,
+    starts_at,
+    ends_at,
+    timezone,
+    status,
+    source,
+    subtotal,
+    option_total,
+    nomination_fee,
+    discount,
+    total_price,
+    total_duration,
+    customer_name,
+    customer_phone,
+    practitioner_name,
+    notes,
+    internal_note,
+    attributes,
+    canceled_at,
+    cancel_reason,
+    canceled_by
+)
+VALUES
+    (
+        '22222222-2222-4222-8222-000000000601',
+        '22222222-2222-4222-8222-222222222222',
+        '22222222-2222-4222-8222-000000000101',
+        '22222222-2222-4222-8222-000000000501',
+        '22222222-2222-4222-8222-000000000202',
+        ((CURRENT_DATE - INTERVAL '21 days')::date + TIME '10:00') AT TIME ZONE 'Asia/Tokyo',
+        ((CURRENT_DATE - INTERVAL '21 days')::date + TIME '11:35') AT TIME ZONE 'Asia/Tokyo',
+        'Asia/Tokyo',
+        'completed',
+        'web',
+        7700,
+        3300,
+        0,
+        0,
+        11000,
+        95,
+        '佐々木 綾',
+        '080-1111-1111',
+        '森本 亮',
+        '銀座店の高単価既存予約。',
+        'seed:chain-completed-web',
+        '{"seedScenario":"chain-completed-web"}'::jsonb,
+        NULL,
+        NULL,
+        NULL
+    ),
+    (
+        '22222222-2222-4222-8222-000000000602',
+        '22222222-2222-4222-8222-222222222222',
+        '22222222-2222-4222-8222-000000000102',
+        '22222222-2222-4222-8222-000000000502',
+        '22222222-2222-4222-8222-000000000203',
+        ((CURRENT_DATE - INTERVAL '10 days')::date + TIME '13:00') AT TIME ZONE 'Asia/Tokyo',
+        ((CURRENT_DATE - INTERVAL '10 days')::date + TIME '14:30') AT TIME ZONE 'Asia/Tokyo',
+        'Asia/Tokyo',
+        'completed',
+        'phone',
+        9900,
+        2200,
+        0,
+        0,
+        12100,
+        90,
+        '川口 翼',
+        '080-2222-2222',
+        '藤井 美咲',
+        '横浜店の電話予約。',
+        'seed:chain-completed-phone',
+        '{"seedScenario":"chain-completed-phone"}'::jsonb,
+        NULL,
+        NULL,
+        NULL
+    ),
+    (
+        '22222222-2222-4222-8222-000000000603',
+        '22222222-2222-4222-8222-222222222222',
+        '22222222-2222-4222-8222-000000000101',
+        '22222222-2222-4222-8222-000000000503',
+        '22222222-2222-4222-8222-000000000201',
+        (CURRENT_DATE + TIME '15:00') AT TIME ZONE 'Asia/Tokyo',
+        (CURRENT_DATE + TIME '18:00') AT TIME ZONE 'Asia/Tokyo',
+        'Asia/Tokyo',
+        'confirmed',
+        'admin',
+        27500,
+        5500,
+        2200,
+        0,
+        35200,
+        180,
+        '小野寺 華',
+        '080-3333-3333',
+        '黒田 玲',
+        'HQが確定したイベント予約。',
+        'seed:chain-confirmed-admin',
+        '{"seedScenario":"chain-confirmed-admin"}'::jsonb,
+        NULL,
+        NULL,
+        NULL
+    ),
+    (
+        '22222222-2222-4222-8222-000000000604',
+        '22222222-2222-4222-8222-222222222222',
+        '22222222-2222-4222-8222-000000000102',
+        '22222222-2222-4222-8222-000000000504',
+        '22222222-2222-4222-8222-000000000204',
+        ((CURRENT_DATE + INTERVAL '3 days')::date + TIME '11:00') AT TIME ZONE 'Asia/Tokyo',
+        ((CURRENT_DATE + INTERVAL '3 days')::date + TIME '12:10') AT TIME ZONE 'Asia/Tokyo',
+        'Asia/Tokyo',
+        'pending',
+        'web',
+        6600,
+        1100,
+        0,
+        0,
+        7700,
+        70,
+        '井上 裕子',
+        '080-4444-4444',
+        '青木 悠',
+        'スパ予約の仮押さえ。',
+        'seed:chain-pending-web',
+        '{"seedScenario":"chain-pending-web"}'::jsonb,
+        NULL,
+        NULL,
+        NULL
+    ),
+    (
+        '22222222-2222-4222-8222-000000000605',
+        '22222222-2222-4222-8222-222222222222',
+        '22222222-2222-4222-8222-000000000101',
+        '22222222-2222-4222-8222-000000000505',
+        '22222222-2222-4222-8222-000000000202',
+        ((CURRENT_DATE + INTERVAL '7 days')::date + TIME '10:00') AT TIME ZONE 'Asia/Tokyo',
+        ((CURRENT_DATE + INTERVAL '7 days')::date + TIME '10:30') AT TIME ZONE 'Asia/Tokyo',
+        'Asia/Tokyo',
+        'confirmed',
+        'line',
+        3300,
+        0,
+        0,
+        0,
+        3300,
+        30,
+        '松田 颯太',
+        '080-5555-5555',
+        '森本 亮',
+        'LINEでの家族予約。',
+        'seed:chain-confirmed-line',
+        '{"seedScenario":"chain-confirmed-line"}'::jsonb,
+        NULL,
+        NULL,
+        NULL
+    ),
+    (
+        '22222222-2222-4222-8222-000000000606',
+        '22222222-2222-4222-8222-222222222222',
+        '22222222-2222-4222-8222-000000000102',
+        '22222222-2222-4222-8222-000000000501',
+        '22222222-2222-4222-8222-000000000203',
+        ((CURRENT_DATE + INTERVAL '1 day')::date + TIME '14:00') AT TIME ZONE 'Asia/Tokyo',
+        ((CURRENT_DATE + INTERVAL '1 day')::date + TIME '15:30') AT TIME ZONE 'Asia/Tokyo',
+        'Asia/Tokyo',
+        'canceled',
+        'phone',
+        9900,
+        0,
+        1100,
+        0,
+        11000,
+        90,
+        '佐々木 綾',
+        '080-1111-1111',
+        '藤井 美咲',
+        '前日にキャンセル。',
+        'seed:chain-canceled-phone',
+        '{"seedScenario":"chain-canceled-phone"}'::jsonb,
+        NOW() + INTERVAL '12 hours',
+        '体調不良',
+        'customer'
+    ),
+    (
+        '22222222-2222-4222-8222-000000000607',
+        '22222222-2222-4222-8222-222222222222',
+        '22222222-2222-4222-8222-000000000101',
+        '22222222-2222-4222-8222-000000000502',
+        '22222222-2222-4222-8222-000000000204',
+        ((CURRENT_DATE - INTERVAL '2 days')::date + TIME '17:00') AT TIME ZONE 'Asia/Tokyo',
+        ((CURRENT_DATE - INTERVAL '2 days')::date + TIME '18:00') AT TIME ZONE 'Asia/Tokyo',
+        'Asia/Tokyo',
+        'no_show',
+        'walk_in',
+        6600,
+        0,
+        550,
+        0,
+        7150,
+        60,
+        '川口 翼',
+        '080-2222-2222',
+        '青木 悠',
+        'walk-in の no-show ケース。',
+        'seed:chain-no-show',
+        '{"seedScenario":"chain-no-show"}'::jsonb,
+        NULL,
+        NULL,
+        NULL
+    );
+
+INSERT INTO reservation_menus (
+    id,
+    tenant_id,
+    reservation_id,
+    menu_id,
+    menu_name,
+    menu_price,
+    menu_duration,
+    sort_order,
+    is_main,
+    quantity
+)
+VALUES
+    ('22222222-2222-4222-8222-000000001101', '22222222-2222-4222-8222-222222222222', '22222222-2222-4222-8222-000000000601', '22222222-2222-4222-8222-000000000301', 'プレミアムカット', 7700, 75, 0, true, 1),
+    ('22222222-2222-4222-8222-000000001102', '22222222-2222-4222-8222-222222222222', '22222222-2222-4222-8222-000000000602', '22222222-2222-4222-8222-000000000302', 'カラーリタッチ', 9900, 90, 0, true, 1),
+    ('22222222-2222-4222-8222-000000001103', '22222222-2222-4222-8222-222222222222', '22222222-2222-4222-8222-000000000603', '22222222-2222-4222-8222-000000000304', 'ブライダルセット', 27500, 180, 0, true, 1),
+    ('22222222-2222-4222-8222-000000001104', '22222222-2222-4222-8222-222222222222', '22222222-2222-4222-8222-000000000604', '22222222-2222-4222-8222-000000000303', 'ラグジュアリースパ', 6600, 60, 0, true, 1),
+    ('22222222-2222-4222-8222-000000001105', '22222222-2222-4222-8222-222222222222', '22222222-2222-4222-8222-000000000605', '22222222-2222-4222-8222-000000000305', 'キッズカット', 3300, 30, 0, true, 1),
+    ('22222222-2222-4222-8222-000000001106', '22222222-2222-4222-8222-222222222222', '22222222-2222-4222-8222-000000000606', '22222222-2222-4222-8222-000000000302', 'カラーリタッチ', 9900, 90, 0, true, 1),
+    ('22222222-2222-4222-8222-000000001107', '22222222-2222-4222-8222-222222222222', '22222222-2222-4222-8222-000000000607', '22222222-2222-4222-8222-000000000303', 'ラグジュアリースパ', 6600, 60, 0, true, 1);
+
+INSERT INTO reservation_options (
+    id,
+    tenant_id,
+    reservation_id,
+    option_id,
+    option_name,
+    option_price,
+    option_duration
+)
+VALUES
+    ('22222222-2222-4222-8222-000000001201', '22222222-2222-4222-8222-222222222222', '22222222-2222-4222-8222-000000000601', '22222222-2222-4222-8222-000000000402', 'ケラチンブースト', 3300, 20),
+    ('22222222-2222-4222-8222-000000001202', '22222222-2222-4222-8222-222222222222', '22222222-2222-4222-8222-000000000602', '22222222-2222-4222-8222-000000000401', 'ロング料金', 2200, 0),
+    ('22222222-2222-4222-8222-000000001203', '22222222-2222-4222-8222-222222222222', '22222222-2222-4222-8222-000000000603', '22222222-2222-4222-8222-000000000404', '早朝料金', 5500, 0),
+    ('22222222-2222-4222-8222-000000001204', '22222222-2222-4222-8222-222222222222', '22222222-2222-4222-8222-000000000604', '22222222-2222-4222-8222-000000000403', 'スカルプセラム', 1100, 10);
+
+INSERT INTO admins (
+    id,
+    tenant_id,
+    firebase_uid,
+    name,
+    email,
+    role,
+    permissions,
+    is_active
+)
+VALUES
+    (
+        '22222222-2222-4222-8222-000000000701',
+        '22222222-2222-4222-8222-222222222222',
+        'seed-chain-owner',
+        'HQ 管理者',
+        'owner@chain-salon.example',
+        'owner',
+        '{"manageMenus":true,"manageReservations":true,"managePractitioners":true,"manageSettings":true,"viewAnalytics":true,"manageAdmins":true}'::jsonb,
+        true
+    ),
+    (
+        '22222222-2222-4222-8222-000000000702',
+        '22222222-2222-4222-8222-222222222222',
+        'seed-chain-ginza',
+        '銀座店 マネージャー',
+        'ginza-manager@chain-salon.example',
+        'manager',
+        '{"manageMenus":true,"manageReservations":true,"managePractitioners":true,"manageSettings":false,"viewAnalytics":true,"manageAdmins":false}'::jsonb,
+        true
+    ),
+    (
+        '22222222-2222-4222-8222-000000000703',
+        '22222222-2222-4222-8222-222222222222',
+        'seed-chain-yokohama',
+        '横浜店 マネージャー',
+        'yokohama-manager@chain-salon.example',
+        'manager',
+        '{"manageMenus":true,"manageReservations":true,"managePractitioners":true,"manageSettings":false,"viewAnalytics":true,"manageAdmins":false}'::jsonb,
+        true
+    );
+
+INSERT INTO admin_store_assignments (tenant_id, admin_id, store_id)
+VALUES
+    ('22222222-2222-4222-8222-222222222222', '22222222-2222-4222-8222-000000000701', '22222222-2222-4222-8222-000000000101'),
+    ('22222222-2222-4222-8222-222222222222', '22222222-2222-4222-8222-000000000701', '22222222-2222-4222-8222-000000000102'),
+    ('22222222-2222-4222-8222-222222222222', '22222222-2222-4222-8222-000000000702', '22222222-2222-4222-8222-000000000101'),
+    ('22222222-2222-4222-8222-222222222222', '22222222-2222-4222-8222-000000000703', '22222222-2222-4222-8222-000000000102');
+
+INSERT INTO settings (
+    id,
+    tenant_id,
+    store_id,
+    shop_name,
+    shop_description,
+    notification_new_reservation,
+    notification_cancellation,
+    notification_reminder,
+    reminder_hours_before,
+    message_templates,
+    attributes
+)
+VALUES
+    (
+        '22222222-2222-4222-8222-000000000801',
+        '22222222-2222-4222-8222-222222222222',
+        '22222222-2222-4222-8222-000000000101',
+        'チェーンサロン銀座店',
+        'HQ集計と店舗権限差分の確認用。',
+        true,
+        true,
+        true,
+        24,
+        '{"reservationConfirmed":"銀座店でご予約を承りました"}'::jsonb,
+        '{"seedArchetype":"chain","store":"ginza"}'::jsonb
+    ),
+    (
+        '22222222-2222-4222-8222-000000000802',
+        '22222222-2222-4222-8222-222222222222',
+        '22222222-2222-4222-8222-000000000102',
+        'チェーンサロン横浜店',
+        '店舗別の通知文面を保持。',
+        true,
+        true,
+        true,
+        12,
+        '{"reservationConfirmed":"横浜店でご予約を承りました"}'::jsonb,
+        '{"seedArchetype":"chain","store":"yokohama"}'::jsonb
+    );
+
+INSERT INTO tenant_rfm_settings (
+    id,
+    tenant_id,
+    recency_score5,
+    recency_score4,
+    recency_score3,
+    recency_score2,
+    frequency_score5,
+    frequency_score4,
+    frequency_score3,
+    frequency_score2,
+    monetary_score5,
+    monetary_score4,
+    monetary_score3,
+    monetary_score2,
+    updated_by
+)
+VALUES (
+    '22222222-2222-4222-8222-000000000901',
+    '22222222-2222-4222-8222-222222222222',
+    21,
+    45,
+    75,
+    150,
+    12,
+    8,
+    5,
+    2,
+    150000,
+    80000,
+    40000,
+    20000,
+    'seed:chain'
+);
+
+INSERT INTO tenant_notification_settings (
+    id,
+    tenant_id,
+    email_new_reservation,
+    email_cancellation,
+    email_daily_report,
+    line_reminder,
+    line_confirmation,
+    line_review,
+    push_new_reservation,
+    push_cancellation,
+    updated_by
+)
+VALUES (
+    '22222222-2222-4222-8222-000000000902',
+    '22222222-2222-4222-8222-222222222222',
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    'seed:chain'
+);
+
+INSERT INTO booking_link_tokens (
+    id,
+    tenant_id,
+    store_id,
+    practitioner_id,
+    token,
+    status,
+    created_by,
+    last_used_at,
+    expires_at
+)
+VALUES
+    (
+        '22222222-2222-4222-8222-000000001001',
+        '22222222-2222-4222-8222-222222222222',
+        '22222222-2222-4222-8222-000000000101',
+        '22222222-2222-4222-8222-000000000202',
+        'chain-ginza-book',
+        'active',
+        'seed:chain-owner',
+        NOW() - INTERVAL '3 days',
+        NOW() + INTERVAL '60 days'
+    ),
+    (
+        '22222222-2222-4222-8222-000000001002',
+        '22222222-2222-4222-8222-222222222222',
+        '22222222-2222-4222-8222-000000000102',
+        '22222222-2222-4222-8222-000000000203',
+        'chain-yokohama-book',
+        'active',
+        'seed:chain-owner',
+        NOW() - INTERVAL '5 days',
+        NOW() + INTERVAL '60 days'
+    ),
+    (
+        '22222222-2222-4222-8222-000000001003',
+        '22222222-2222-4222-8222-222222222222',
+        '22222222-2222-4222-8222-000000000101',
+        '22222222-2222-4222-8222-000000000204',
+        'chain-floater-old',
+        'revoked',
+        'seed:chain-ginza',
+        NOW() - INTERVAL '40 days',
+        NOW() - INTERVAL '10 days'
+    );
+
+-- ============================================================
+-- onboarding-salon
+-- Expected counts:
+-- stores=1 / practitioners=0 / menus=0 / menu_options=0 / customers=0
+-- reservations=0 / admins=1 / practitioner_store_assignments=0
+-- menu_practitioner_assignments=0 / option_menu_assignments=0
+-- admin_store_assignments=1 / reservation_menus=0 / reservation_options=0
+-- settings=1 / booking_link_tokens=0 / tenant_rfm_settings=1 / tenant_notification_settings=1
+-- ============================================================
+SELECT set_config('app.current_tenant', '33333333-3333-4333-8333-333333333333', true);
+
+INSERT INTO stores (
+    id,
+    tenant_id,
+    name,
+    store_code,
+    address,
+    phone,
+    email,
+    timezone,
+    slot_duration,
+    advance_booking_days,
+    require_phone,
+    require_email,
+    status,
+    display_order
+)
+VALUES (
+    '33333333-3333-4333-8333-000000000101',
+    '33333333-3333-4333-8333-333333333333',
+    '準備中店舗',
+    'trial001',
+    '東京都品川区サンプル1-2-3',
+    '03-9999-0000',
+    'setup@onboarding-salon.example',
+    'Asia/Tokyo',
+    30,
+    14,
+    true,
+    false,
+    'active',
+    1
+);
+
+INSERT INTO admins (
+    id,
+    tenant_id,
+    firebase_uid,
+    name,
+    email,
+    role,
+    permissions,
+    is_active
+)
+VALUES (
+    '33333333-3333-4333-8333-000000000701',
+    '33333333-3333-4333-8333-333333333333',
+    'seed-onboarding-owner',
+    'セットアップ担当',
+    'owner@onboarding-salon.example',
+    'owner',
+    '{"manageMenus":true,"manageReservations":true,"managePractitioners":true,"manageSettings":true,"viewAnalytics":false,"manageAdmins":true}'::jsonb,
+    true
+);
+
+INSERT INTO admin_store_assignments (tenant_id, admin_id, store_id)
+VALUES
+    ('33333333-3333-4333-8333-333333333333', '33333333-3333-4333-8333-000000000701', '33333333-3333-4333-8333-000000000101');
+
+INSERT INTO settings (
+    id,
+    tenant_id,
+    store_id,
+    shop_name,
+    shop_description,
+    notification_new_reservation,
+    notification_cancellation,
+    notification_reminder,
+    reminder_hours_before,
+    message_templates,
+    attributes
+)
+VALUES (
+    '33333333-3333-4333-8333-000000000801',
+    '33333333-3333-4333-8333-333333333333',
+    '33333333-3333-4333-8333-000000000101',
+    'オンボーディングサロン（設定中）',
+    '空状態UI・設定不足ケース確認用。',
+    true,
+    true,
+    false,
+    24,
+    '{}'::jsonb,
+    '{"seedArchetype":"onboarding","emptyState":true}'::jsonb
+);
+
+INSERT INTO tenant_rfm_settings (
+    id,
+    tenant_id,
+    updated_by
+)
+VALUES (
+    '33333333-3333-4333-8333-000000000901',
+    '33333333-3333-4333-8333-333333333333',
+    'seed:onboarding'
+);
+
+INSERT INTO tenant_notification_settings (
+    id,
+    tenant_id,
+    email_new_reservation,
+    email_cancellation,
+    email_daily_report,
+    line_reminder,
+    line_confirmation,
+    line_review,
+    push_new_reservation,
+    push_cancellation,
+    updated_by
+)
+VALUES (
+    '33333333-3333-4333-8333-000000000902',
+    '33333333-3333-4333-8333-333333333333',
+    true,
+    true,
+    false,
+    false,
+    true,
+    false,
+    false,
+    false,
+    'seed:onboarding'
+);
+
+COMMIT;

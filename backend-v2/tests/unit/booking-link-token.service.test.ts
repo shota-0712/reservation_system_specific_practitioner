@@ -25,6 +25,13 @@ function buildClient(queryImpl: (sql: string, params?: unknown[]) => Promise<unk
     } as unknown as PoolClient;
 }
 
+const resolvedTokenRow = {
+    id: 'id-1',
+    tenant_id: 'tenant-1',
+    store_id: '95eca622-38e5-4c91-b2a0-51c46243fc6a',
+    practitioner_id: '9f7dbab5-f815-4b8e-a00b-552b62993c62',
+};
+
 describe('booking-link-token.service', () => {
     it('returns null for invalid token format', async () => {
         const service = createBookingLinkTokenService();
@@ -75,29 +82,40 @@ describe('booking-link-token.service', () => {
         expect(created.token.length).toBeGreaterThanOrEqual(16);
     });
 
-    it('resolves token and returns practitioner-source line config metadata', async () => {
-        vi.spyOn(DatabaseService, 'queryOne').mockImplementation(async (sql) => {
-            if (sql.includes('resolve_booking_link_token')) {
-                return {
-                    id: 'id-1',
-                    tenant_id: 'tenant-1',
-                    store_id: '95eca622-38e5-4c91-b2a0-51c46243fc6a',
-                    practitioner_id: '9f7dbab5-f815-4b8e-a00b-552b62993c62',
-                    token: 'A23456789012345678901234567890',
-                    status: 'active',
-                    created_by: 'uid-1',
-                    created_at: new Date('2026-02-13T00:00:00.000Z'),
-                    last_used_at: null,
-                    expires_at: null,
-                };
+    it('resolves token-only by retrying tenant-scoped lookups across active and trial tenants', async () => {
+        const queryOneSpy = vi.spyOn(DatabaseService, 'queryOne').mockImplementation(async (sql, _params, tenantId) => {
+            if (sql.includes('FROM booking_link_tokens')) {
+                if (tenantId === 'tenant-1') {
+                    return null;
+                }
+                if (tenantId === 'tenant-2') {
+                    return {
+                        ...resolvedTokenRow,
+                        tenant_id: 'tenant-2',
+                        token: 'A23456789012345678901234567890',
+                        status: 'active',
+                        created_by: 'uid-1',
+                        created_at: new Date('2026-02-13T00:00:00.000Z'),
+                        last_used_at: null,
+                        expires_at: null,
+                    };
+                }
             }
             return null;
         });
-        const querySpy = vi.spyOn(DatabaseService, 'query').mockResolvedValue([]);
+        const querySpy = vi.spyOn(DatabaseService, 'query').mockImplementation(async (sql) => {
+            if (sql.includes('FROM tenants')) {
+                return [
+                    { id: 'tenant-1' },
+                    { id: 'tenant-2' },
+                ] as any;
+            }
+            return [];
+        });
 
         vi.spyOn(repositories, 'createTenantRepository').mockReturnValue({
             findById: vi.fn().mockResolvedValue({
-                id: 'tenant-1',
+                id: 'tenant-2',
                 slug: 'default',
                 name: 'Tenant',
                 plan: 'trial',
@@ -114,7 +132,7 @@ describe('booking-link-token.service', () => {
         vi.spyOn(repositories, 'createStoreRepository').mockReturnValue({
             findById: vi.fn().mockResolvedValue({
                 id: '95eca622-38e5-4c91-b2a0-51c46243fc6a',
-                tenantId: 'tenant-1',
+                tenantId: 'tenant-2',
                 storeCode: 'default000',
                 name: 'Main Store',
                 status: 'active',
@@ -129,7 +147,7 @@ describe('booking-link-token.service', () => {
         vi.spyOn(repositories, 'createPractitionerRepository').mockReturnValue({
             findById: vi.fn().mockResolvedValue({
                 id: '9f7dbab5-f815-4b8e-a00b-552b62993c62',
-                tenantId: 'tenant-1',
+                tenantId: 'tenant-2',
                 name: '担当者',
                 role: 'stylist',
                 color: '#3b82f6',
@@ -152,71 +170,140 @@ describe('booking-link-token.service', () => {
         const resolved = await service.resolve('A23456789012345678901234567890');
 
         expect(resolved).toMatchObject({
-            tenantId: 'tenant-1',
+            tenantId: 'tenant-2',
             tenantKey: 'default',
             practitionerId: '9f7dbab5-f815-4b8e-a00b-552b62993c62',
             lineMode: 'practitioner',
             lineConfigSource: 'practitioner',
         });
+        expect(querySpy).toHaveBeenNthCalledWith(
+            1,
+            expect.stringContaining("FROM tenants")
+        );
+        expect(queryOneSpy.mock.calls.filter(([, , tenantId]) => tenantId === 'tenant-1')).toHaveLength(1);
+        expect(queryOneSpy.mock.calls.filter(([, , tenantId]) => tenantId === 'tenant-2')).toHaveLength(1);
         expect(querySpy).toHaveBeenCalledWith(
             expect.stringContaining('UPDATE booking_link_tokens SET last_used_at = NOW()'),
-            ['id-1', 'tenant-1'],
-            'tenant-1'
+            ['id-1', 'tenant-2'],
+            'tenant-2'
         );
     });
 
-    it('falls back to legacy token lookup when resolve function is unavailable', async () => {
-        const undefinedFunctionError = Object.assign(new Error('function resolve_booking_link_token does not exist'), {
-            code: '42883',
-        });
-
-        vi.spyOn(DatabaseService, 'queryOne').mockImplementation(async (sql) => {
-            if (sql.includes('resolve_booking_link_token')) {
-                throw undefinedFunctionError;
-            }
-            if (sql.includes('FROM booking_link_tokens')) {
-                return {
-                    id: 'id-2',
-                    tenant_id: 'tenant-1',
-                    store_id: null,
-                    practitioner_id: '9f7dbab5-f815-4b8e-a00b-552b62993c62',
-                };
+    it('returns the same payload with and without tenant hint', async () => {
+        const queryOneSpy = vi.spyOn(DatabaseService, 'queryOne').mockImplementation(async (sql, _params, tenantId) => {
+            if (sql.includes('WHERE tenant_id = $1')) {
+                if (tenantId === 'tenant-1') {
+                    return null;
+                }
+                if (tenantId === 'tenant-2') {
+                    return {
+                        ...resolvedTokenRow,
+                        tenant_id: 'tenant-2',
+                        token: 'A23456789012345678901234567890',
+                        status: 'active',
+                        created_by: 'uid-1',
+                        created_at: new Date('2026-02-13T00:00:00.000Z'),
+                        last_used_at: null,
+                        expires_at: null,
+                    };
+                }
             }
             return null;
         });
-        vi.spyOn(DatabaseService, 'query').mockResolvedValue([]);
+        vi.spyOn(DatabaseService, 'query').mockImplementation(async (sql) => {
+            if (sql.includes('FROM tenants')) {
+                return [
+                    { id: 'tenant-1' },
+                    { id: 'tenant-2' },
+                ] as any;
+            }
+            return [];
+        });
 
         vi.spyOn(repositories, 'createTenantRepository').mockReturnValue({
             findById: vi.fn().mockResolvedValue({
-                id: 'tenant-1',
+                id: 'tenant-2',
                 slug: 'default',
+                name: 'Tenant',
+                plan: 'trial',
                 status: 'active',
                 lineConfig: {
-                    mode: 'tenant',
+                    mode: 'practitioner',
                     liffId: 'tenant-liff',
                     channelId: 'tenant-channel',
                 },
+                createdAt: new Date(),
+                updatedAt: new Date(),
             }),
         } as any);
         vi.spyOn(repositories, 'createStoreRepository').mockReturnValue({
-            findById: vi.fn().mockResolvedValue(null),
+            findById: vi.fn().mockResolvedValue({
+                id: '95eca622-38e5-4c91-b2a0-51c46243fc6a',
+                tenantId: 'tenant-2',
+                storeCode: 'default000',
+                name: 'Main Store',
+                status: 'active',
+                lineConfig: {
+                    liffId: 'store-liff',
+                    channelId: 'store-channel',
+                },
+                createdAt: new Date(),
+                updatedAt: new Date(),
+            }),
         } as any);
         vi.spyOn(repositories, 'createPractitionerRepository').mockReturnValue({
             findById: vi.fn().mockResolvedValue({
                 id: '9f7dbab5-f815-4b8e-a00b-552b62993c62',
-                tenantId: 'tenant-1',
+                tenantId: 'tenant-2',
+                name: '担当者',
+                role: 'stylist',
+                color: '#3b82f6',
+                schedule: {
+                    workDays: [1, 2, 3, 4, 5],
+                    workHours: { start: '10:00', end: '19:00' },
+                },
+                displayOrder: 0,
                 isActive: true,
+                lineConfig: {
+                    liffId: 'practitioner-liff',
+                    channelId: 'practitioner-channel',
+                },
+                createdAt: new Date(),
+                updatedAt: new Date(),
             }),
         } as any);
 
-        const service = createBookingLinkTokenService();
-        const resolved = await service.resolve('A23456789012345678901234567890');
+        const withoutTenantHint = await createBookingLinkTokenService().resolve('A23456789012345678901234567890');
+        const withTenantHint = await createBookingLinkTokenService('tenant-1').resolve('A23456789012345678901234567890');
 
-        expect(resolved).toMatchObject({
-            tenantId: 'tenant-1',
-            tenantKey: 'default',
-            practitionerId: '9f7dbab5-f815-4b8e-a00b-552b62993c62',
+        expect(withTenantHint).toEqual(withoutTenantHint);
+        expect(queryOneSpy.mock.calls.some(([, , tenantId]) => tenantId === 'tenant-1')).toBe(true);
+        expect(queryOneSpy.mock.calls.some(([, , tenantId]) => tenantId === 'tenant-2')).toBe(true);
+    });
+
+    it('propagates unexpected database errors during tenant-scoped fallback lookup', async () => {
+        const pgError = Object.assign(new Error('database regression'), { code: '42P01' });
+        vi.spyOn(DatabaseService, 'query').mockResolvedValue([{ id: 'tenant-2' }] as any);
+        vi.spyOn(DatabaseService, 'queryOne').mockImplementation(async (sql, _params, tenantId) => {
+            if (sql.includes('FROM booking_link_tokens') && tenantId === 'tenant-2') {
+                throw pgError;
+            }
+            return null;
         });
+
+        const service = createBookingLinkTokenService();
+        await expect(service.resolve('A23456789012345678901234567890')).rejects.toMatchObject({ code: '42P01' });
+    });
+
+    it('returns null when no active token exists in any active or trial tenant', async () => {
+        vi.spyOn(DatabaseService, 'query').mockResolvedValue([
+            { id: 'tenant-1' },
+            { id: 'tenant-2' },
+        ] as any);
+        vi.spyOn(DatabaseService, 'queryOne').mockResolvedValue(null);
+
+        const service = createBookingLinkTokenService();
+        await expect(service.resolve('A23456789012345678901234567890')).resolves.toBeNull();
     });
 
     it('lists booking links with filters and creator metadata', async () => {

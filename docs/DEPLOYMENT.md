@@ -375,6 +375,7 @@ _LANDING_INGRESS=all
 - 施術者別予約URLは `?t=<token>` を正式形式とする。
 - 予約URLトークン解決 API:
   - `GET /api/platform/v1/booking-links/resolve?token=...`
+  - `tenantKey` は optional hint。token-only でも同一 payload を返すことが正で、schema/function/privilege regression は `404` に握りつぶさない。
 - 管理API（テナントはJWT Custom Claims解決、`:tenantKey` はURLに含まない）:
   - `POST /api/v1/admin/booking-links`
   - `GET /api/v1/admin/booking-links`
@@ -422,6 +423,8 @@ CUSTOMER_URL="https://reserve-customer-xxxxx.run.app" \
 対象:
 - Wave-B 以降の毎タスク統合（`main` マージ後）
 - 担当者交代時の再現確認
+
+dev-v3 で real LINE app を使う場合は、`./scripts/prepare_real_line_e2e.sh` を先に実行し、`docs/runbooks/REAL_LINE_E2E_REPO_FIXED.md` を正本 runbook とする。
 
 #### トークン運用ルール（固定）
 

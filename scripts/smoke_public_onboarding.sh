@@ -5,6 +5,7 @@ set -euo pipefail
 : "${FIREBASE_API_KEY:?FIREBASE_API_KEY is required (Firebase Web API key)}"
 
 RUN_RESERVATION_TEST="${RUN_RESERVATION_TEST:-true}"
+OUTPUT_JSON="${OUTPUT_JSON:-}"
 
 timestamp="$(date +%s)"
 TENANT_NAME="${TENANT_NAME:-Smoke Salon ${timestamp}}"
@@ -148,6 +149,8 @@ register_response="$(api_request POST "${API_URL}/api/platform/v1/onboarding/reg
 expect_success "${register_response}" "onboarding/register"
 tenant_key="$(echo "${register_response}" | jq -r '.data.tenantKey')"
 tenant_id="$(echo "${register_response}" | jq -r '.data.tenantId')"
+store_id="$(echo "${register_response}" | jq -r '.data.storeId // empty')"
+admin_id="$(echo "${register_response}" | jq -r '.data.adminId // empty')"
 if [ -z "${tenant_key}" ] || [ "${tenant_key}" = "null" ]; then
   echo "ERROR: register response is missing tenantKey"
   echo "${register_response}"
@@ -157,6 +160,10 @@ fi
 echo "== 4) tenant public auth config check =="
 auth_config="$(api_request GET "${API_URL}/api/v1/${tenant_key}/auth/config")"
 expect_success "${auth_config}" "auth/config"
+auth_config_store_id="$(echo "${auth_config}" | jq -r '.data.store.id // .data.storeId // empty')"
+if [ -z "${store_id}" ] && [ -n "${auth_config_store_id}" ] && [ "${auth_config_store_id}" != "null" ]; then
+  store_id="${auth_config_store_id}"
+fi
 
 echo "== 5) sync admin claims and refresh token =="
 claims_sync_response="$(api_request POST "${API_URL}/api/platform/v1/admin/claims/sync" "" "${id_token}")"
@@ -222,6 +229,10 @@ fi
 
 reservation_id=""
 booking_link_token=""
+menu_id=""
+practitioner_id=""
+reservation_date=""
+reservation_starts_at=""
 if [ "${RUN_RESERVATION_TEST}" = "true" ]; then
   echo "== 7) admin reservation flow smoke =="
   menu_payload='{"name":"スモークカット","category":"カット","duration":60,"price":5500,"description":"smoke test menu"}'
@@ -257,12 +268,22 @@ if [ "${RUN_RESERVATION_TEST}" = "true" ]; then
     exit 1
   fi
 
+  booking_link_resolve_token_only="$(api_request GET "${API_URL}/api/platform/v1/booking-links/resolve?token=${booking_link_token}")"
+  expect_success "${booking_link_resolve_token_only}" "platform/booking-links/resolve(token-only)"
+  resolved_tenant_key="$(echo "${booking_link_resolve_token_only}" | jq -r '.data.tenantKey')"
+  resolved_practitioner_id="$(echo "${booking_link_resolve_token_only}" | jq -r '.data.practitionerId')"
+  if [ "${resolved_tenant_key}" != "${tenant_key}" ] || [ "${resolved_practitioner_id}" != "${practitioner_id}" ]; then
+    echo "ERROR: token-only booking link resolve mismatch"
+    echo "${booking_link_resolve_token_only}"
+    exit 1
+  fi
+
   booking_link_resolve="$(api_request GET "${API_URL}/api/platform/v1/booking-links/resolve?token=${booking_link_token}&tenantKey=${tenant_key}")"
-  expect_success "${booking_link_resolve}" "platform/booking-links/resolve"
+  expect_success "${booking_link_resolve}" "platform/booking-links/resolve(tenant-scoped)"
   resolved_tenant_key="$(echo "${booking_link_resolve}" | jq -r '.data.tenantKey')"
   resolved_practitioner_id="$(echo "${booking_link_resolve}" | jq -r '.data.practitionerId')"
   if [ "${resolved_tenant_key}" != "${tenant_key}" ] || [ "${resolved_practitioner_id}" != "${practitioner_id}" ]; then
-    echo "ERROR: booking link resolve mismatch"
+    echo "ERROR: tenant-scoped booking link resolve mismatch"
     echo "${booking_link_resolve}"
     exit 1
   fi
@@ -326,9 +347,60 @@ if [ -n "${booking_link_token}" ]; then
   echo "bookingLinkToken: ${booking_link_token}"
 fi
 echo "customerUrl: ${CUSTOMER_URL:-<set CUSTOMER_URL to print tenant URL>}"
+customer_tenant_url=""
+customer_token_url=""
 if [ -n "${CUSTOMER_URL:-}" ]; then
-  echo "customerTenantUrl: ${CUSTOMER_URL}/?tenant=${tenant_key}"
+  customer_tenant_url="${CUSTOMER_URL}/?tenant=${tenant_key}"
+  echo "customerTenantUrl: ${customer_tenant_url}"
   if [ -n "${booking_link_token}" ]; then
-    echo "customerTokenUrl: ${CUSTOMER_URL}/?t=${booking_link_token}"
+    customer_token_url="${CUSTOMER_URL}/?t=${booking_link_token}"
+    echo "customerTokenUrl: ${customer_token_url}"
   fi
+fi
+if [ -n "${OUTPUT_JSON}" ]; then
+  mkdir -p "$(dirname "${OUTPUT_JSON}")"
+  jq -n \
+    --arg generatedAt "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+    --arg apiUrl "${API_URL}" \
+    --arg customerUrl "${CUSTOMER_URL:-}" \
+    --arg tenantName "${TENANT_NAME}" \
+    --arg tenantKey "${tenant_key}" \
+    --arg tenantId "${tenant_id}" \
+    --arg storeId "${store_id:-}" \
+    --arg adminId "${admin_id:-}" \
+    --arg ownerEmail "${OWNER_EMAIL}" \
+    --arg ownerName "${OWNER_NAME}" \
+    --arg idToken "${id_token}" \
+    --arg refreshToken "${refresh_token}" \
+    --arg reservationId "${reservation_id}" \
+    --arg reservationDate "${reservation_date}" \
+    --arg reservationStartsAt "${reservation_starts_at}" \
+    --arg menuId "${menu_id}" \
+    --arg practitionerId "${practitioner_id}" \
+    --arg bookingLinkToken "${booking_link_token}" \
+    --arg customerTenantUrl "${customer_tenant_url}" \
+    --arg customerTokenUrl "${customer_token_url}" \
+    '{
+      generatedAt: $generatedAt,
+      apiUrl: $apiUrl,
+      customerUrl: $customerUrl,
+      tenantName: $tenantName,
+      tenantKey: $tenantKey,
+      tenantId: $tenantId,
+      storeId: ($storeId | select(length > 0)),
+      adminId: ($adminId | select(length > 0)),
+      ownerEmail: $ownerEmail,
+      ownerName: $ownerName,
+      idToken: $idToken,
+      refreshToken: $refreshToken,
+      reservationId: ($reservationId | select(length > 0)),
+      reservationDate: ($reservationDate | select(length > 0)),
+      reservationStartsAt: ($reservationStartsAt | select(length > 0)),
+      menuId: ($menuId | select(length > 0)),
+      practitionerId: ($practitionerId | select(length > 0)),
+      bookingLinkToken: ($bookingLinkToken | select(length > 0)),
+      customerTenantUrl: ($customerTenantUrl | select(length > 0)),
+      customerTokenUrl: ($customerTokenUrl | select(length > 0))
+    }' >"${OUTPUT_JSON}"
+  echo "artifactJson: ${OUTPUT_JSON}"
 fi

@@ -20,6 +20,7 @@
 **/build/**
 **/coverage/
 **/coverage/**
+scripts/out/
 
 # ========================================
 # Env files (keep examples)

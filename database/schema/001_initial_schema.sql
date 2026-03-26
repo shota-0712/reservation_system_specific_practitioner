@@ -112,6 +112,11 @@ CREATE TABLE tenant_google_calendar_oauth (
 );
 
 CREATE INDEX idx_tenant_google_calendar_oauth_status ON tenant_google_calendar_oauth (tenant_id, status);
+ALTER TABLE tenant_google_calendar_oauth ENABLE ROW LEVEL SECURITY;
+ALTER TABLE tenant_google_calendar_oauth FORCE ROW LEVEL SECURITY;
+CREATE POLICY tenant_isolation ON tenant_google_calendar_oauth FOR ALL
+    USING (tenant_id = current_setting('app.current_tenant', true)::UUID)
+    WITH CHECK (tenant_id = current_setting('app.current_tenant', true)::UUID);
 
 -- ============================================================
 -- 3. テナントサロンボード連携設定
@@ -135,6 +140,12 @@ CREATE TABLE tenant_salonboard_config (
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+ALTER TABLE tenant_salonboard_config ENABLE ROW LEVEL SECURITY;
+ALTER TABLE tenant_salonboard_config FORCE ROW LEVEL SECURITY;
+CREATE POLICY tenant_isolation ON tenant_salonboard_config FOR ALL
+    USING (tenant_id = current_setting('app.current_tenant', true)::UUID)
+    WITH CHECK (tenant_id = current_setting('app.current_tenant', true)::UUID);
 
 -- ============================================================
 -- 4. 店舗テーブル
@@ -494,7 +505,9 @@ CREATE INDEX idx_reservations_status ON reservations (tenant_id, status, starts_
 CREATE INDEX idx_reservations_tenant_starts_at ON reservations (tenant_id, starts_at);
 CREATE INDEX idx_reservations_tenant_store_starts_at ON reservations (tenant_id, store_id, starts_at);
 CREATE INDEX idx_reservations_google_calendar ON reservations (tenant_id, google_calendar_event_id);
-CREATE INDEX idx_reservations_salonboard ON reservations (tenant_id, salonboard_reservation_id);
+CREATE UNIQUE INDEX idx_reservations_salonboard
+    ON reservations (tenant_id, salonboard_reservation_id)
+    WHERE salonboard_reservation_id IS NOT NULL;
 
 -- RLS
 ALTER TABLE reservations ENABLE ROW LEVEL SECURITY;
@@ -1448,7 +1461,7 @@ BEGIN
     RAISE NOTICE '====================================================';
     RAISE NOTICE 'v3.0.0 schema created (v3+Wave-1 canonical)';
     RAISE NOTICE '====================================================';
-    RAISE NOTICE 'Tables: 25 (no legacy date columns, no array FK columns)';
+    RAISE NOTICE 'Tables: 28 total (26 tenant-scoped RLS tables; no legacy date columns, no array FK columns)';
     RAISE NOTICE 'FORCE RLS: all tenant-scoped tables';
     RAISE NOTICE 'Assignment tables: practitioner_store, menu_practitioner,';
     RAISE NOTICE '                   option_menu, admin_store';
