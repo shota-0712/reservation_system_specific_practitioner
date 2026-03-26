@@ -139,7 +139,7 @@ echo "BACKEND_URL=${BACKEND_URL}"
 # _NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=<project>.firebaseapp.com
 # _NEXT_PUBLIC_FIREBASE_PROJECT_ID=keyexpress-reserve
 # _GOOGLE_OAUTH_CLIENT_ID=<oauth-client-id>
-# _GOOGLE_OAUTH_REDIRECT_URI=<backend-url>/auth/google/callback
+# _GOOGLE_OAUTH_REDIRECT_URI=<BACKEND_URL>/api/platform/v1/integrations/google-calendar/oauth/callback
 ```
 
 ### 5-1. Phase 2 — Build A（マイグレーションなし）
@@ -167,7 +167,7 @@ _NEXT_PUBLIC_FIREBASE_API_KEY=<FIREBASE_API_KEY>,\
 _NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=<FIREBASE_AUTH_DOMAIN>,\
 _NEXT_PUBLIC_FIREBASE_PROJECT_ID=keyexpress-reserve,\
 _GOOGLE_OAUTH_CLIENT_ID=<OAUTH_CLIENT_ID>,\
-_GOOGLE_OAUTH_REDIRECT_URI=<BACKEND_URL>/auth/google/callback
+_GOOGLE_OAUTH_REDIRECT_URI=<BACKEND_URL>/api/platform/v1/integrations/google-calendar/oauth/callback
 ```
 
 **Build A Gate 確認:**
@@ -250,7 +250,7 @@ _NEXT_PUBLIC_FIREBASE_API_KEY=<FIREBASE_API_KEY>,\
 _NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=<FIREBASE_AUTH_DOMAIN>,\
 _NEXT_PUBLIC_FIREBASE_PROJECT_ID=keyexpress-reserve,\
 _GOOGLE_OAUTH_CLIENT_ID=<OAUTH_CLIENT_ID>,\
-_GOOGLE_OAUTH_REDIRECT_URI=<BACKEND_URL>/auth/google/callback
+_GOOGLE_OAUTH_REDIRECT_URI=<BACKEND_URL>/api/platform/v1/integrations/google-calendar/oauth/callback
 ```
 
 **Build B ロールバック（PITR 必要な場合）:**

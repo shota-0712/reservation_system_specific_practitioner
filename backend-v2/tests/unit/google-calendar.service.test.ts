@@ -161,4 +161,26 @@ describe('google-calendar.service', () => {
             'tenant-a'
         );
     });
+
+    it('maps google invalid_grant to a validation error with redirect-uri guidance', async () => {
+        vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce({
+            ok: false,
+            text: async () => JSON.stringify({
+                error: 'invalid_grant',
+                error_description: 'Bad Request',
+            }),
+        } as any);
+
+        const service = createGoogleCalendarService('tenant-a');
+
+        await expect(service.exchangeCodeAndSave('auth-code-1')).rejects.toMatchObject({
+            name: 'ValidationError',
+            message: 'Google OAuth の認可コードが無効です。もう一度連携してください',
+            details: {
+                service: 'google-oauth',
+                reason: 'invalid_grant',
+                redirectUri: 'https://example.com/oauth/callback',
+            },
+        });
+    });
 });

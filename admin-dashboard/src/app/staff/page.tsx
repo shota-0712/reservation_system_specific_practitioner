@@ -102,7 +102,13 @@ export default function StaffPage() {
 
         if (typeof window === "undefined") return "";
 
-        const origin = window.location.origin;
+        const { hostname, origin } = window.location;
+        // Cloud Run exposes multiple default hostnames for the same service. In production,
+        // require NEXT_PUBLIC_CUSTOMER_URL so generated booking links stay on the LIFF host.
+        if (hostname.endsWith(".run.app")) {
+            return "";
+        }
+
         if (origin.includes("reserve-admin")) {
             return origin.replace("reserve-admin", "reserve-customer");
         }

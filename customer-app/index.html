@@ -632,6 +632,46 @@
       return (value || '').trim().replace(/\/+$/, '');
     }
 
+    function resolveLiffStateQueryParams() {
+      const liffState = queryParams.get('liff.state');
+      if (!liffState) {
+        return new URLSearchParams();
+      }
+
+      try {
+        if (liffState.startsWith('http://') || liffState.startsWith('https://')) {
+          return new URL(liffState).searchParams;
+        }
+
+        if (liffState.startsWith('?')) {
+          return new URLSearchParams(liffState.slice(1));
+        }
+
+        if (liffState.startsWith('/')) {
+          return new URL(liffState, window.location.origin).searchParams;
+        }
+
+        return new URLSearchParams(liffState);
+      } catch (error) {
+        console.warn('Failed to parse liff.state:', error);
+        return new URLSearchParams();
+      }
+    }
+
+    const liffStateQueryParams = resolveLiffStateQueryParams();
+
+    function getNestedQueryParam(...keys) {
+      for (const key of keys) {
+        const directValue = queryParams.get(key);
+        if (directValue !== null) return directValue;
+
+        const liffStateValue = liffStateQueryParams.get(key);
+        if (liffStateValue !== null) return liffStateValue;
+      }
+
+      return '';
+    }
+
     function isTenantKeyValid(value) {
       return TENANT_KEY_REGEX.test(String(value || '').trim());
     }
@@ -649,7 +689,7 @@
     }
 
     function resolveTenantKey() {
-      const fromQuery = (queryParams.get('tenant') || queryParams.get('tenantKey') || '').trim().toLowerCase();
+      const fromQuery = getNestedQueryParam('tenant', 'tenantKey').trim().toLowerCase();
       if (isTenantKeyValid(fromQuery)) {
         try {
           window.localStorage.setItem(TENANT_STORAGE_KEY, fromQuery);
@@ -677,7 +717,7 @@
     }
 
     function resolveApiBaseUrl() {
-      const fromQuery = normalizeApiBaseUrl(queryParams.get('apiUrl') || queryParams.get('api'));
+      const fromQuery = normalizeApiBaseUrl(getNestedQueryParam('apiUrl', 'api'));
       if (fromQuery) return fromQuery;
 
       const fromConfig = normalizeApiBaseUrl(window.RESERVATION_API_URL);
@@ -687,7 +727,7 @@
     }
 
     function resolvePreselectedPractitionerId() {
-      const fromQuery = (queryParams.get('practitionerId') || queryParams.get('staff') || '').trim();
+      const fromQuery = getNestedQueryParam('practitionerId', 'staff').trim();
       if (isPractitionerIdValid(fromQuery)) {
         return fromQuery;
       }
@@ -695,7 +735,7 @@
     }
 
     function resolveStoreId() {
-      const fromQuery = (queryParams.get('storeId') || '').trim();
+      const fromQuery = getNestedQueryParam('storeId').trim();
       if (isStoreIdValid(fromQuery)) {
         return fromQuery;
       }
@@ -703,7 +743,7 @@
     }
 
     function resolveBookingLinkToken() {
-      const fromQuery = (queryParams.get('t') || queryParams.get('token') || '').trim();
+      const fromQuery = getNestedQueryParam('t', 'token').trim();
       if (isBookingLinkTokenValid(fromQuery)) {
         return fromQuery;
       }
@@ -712,7 +752,7 @@
 
     function resolveBookingLinkTenantHint() {
       // Token-only resolve must not depend on stale localStorage/config tenant state.
-      const fromQuery = (queryParams.get('tenant') || queryParams.get('tenantKey') || '').trim().toLowerCase();
+      const fromQuery = getNestedQueryParam('tenant', 'tenantKey').trim().toLowerCase();
       return isTenantKeyValid(fromQuery) ? fromQuery : '';
     }
 
@@ -722,9 +762,19 @@
 
     const API_BASE_URL = resolveApiBaseUrl();
     const BOOKING_LINK_TOKEN = resolveBookingLinkToken();
+    const LIFF_LOGIN_TRANSIENT_QUERY_KEYS = [
+      'code',
+      'state',
+      'liffClientId',
+      'liffRedirectUri',
+      'access_token',
+      'id_token',
+      'error',
+      'error_description',
+    ];
     // URL クエリに明示された tenantKey のみ保持（localStorage/config 由来は含めない）
     const TENANT_KEY_FROM_URL = (() => {
-      const v = (queryParams.get('tenant') || queryParams.get('tenantKey') || '').trim().toLowerCase();
+      const v = getNestedQueryParam('tenant', 'tenantKey').trim().toLowerCase();
       return isTenantKeyValid(v) ? v : '';
     })();
     let TENANT_KEY = resolveTenantKey();
@@ -929,6 +979,18 @@
       container.classList.remove('hidden');
     }
 
+    function buildLiffRedirectUrl() {
+      const redirectUrl = new URL(window.location.href);
+      LIFF_LOGIN_TRANSIENT_QUERY_KEYS.forEach((key) => {
+        redirectUrl.searchParams.delete(key);
+      });
+      return redirectUrl.toString();
+    }
+
+    function startLiffLogin() {
+      liff.login({ redirectUri: buildLiffRedirectUrl() });
+    }
+
     async function resolveBookingLinkContext() {
       if (!BOOKING_LINK_TOKEN) {
         return;
@@ -1013,7 +1075,7 @@
         if (response.status === 401 && !sessionStorage.getItem('liff_auth_retried')) {
           sessionStorage.setItem('liff_auth_retried', '1');
           liff.logout();
-          liff.login();
+          startLiffLogin();
           return;
         }
         const body = await response.json().catch(() => ({}));
@@ -1163,7 +1225,7 @@
 
         if (!liff.isLoggedIn()) {
           console.log('LIFF not logged in. Logging in...');
-          liff.login();
+          startLiffLogin();
           return;
         }
 

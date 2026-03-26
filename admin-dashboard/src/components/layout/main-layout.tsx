@@ -17,7 +17,7 @@ interface MainLayoutProps {
 export function MainLayout({ children }: MainLayoutProps) {
     const [isSidebarOpen, setIsSidebarOpen] = useState(false);
     const [onboardingStatus, setOnboardingStatus] = useState<'pending' | 'in_progress' | 'completed' | 'error' | null>(null);
-    const [onboardingLoading, setOnboardingLoading] = useState(false);
+    const [onboardingLoading, setOnboardingLoading] = useState(true);
     const [claimsError, setClaimsError] = useState<string | null>(null);
     const pathname = usePathname();
     const router = useRouter();
@@ -42,6 +42,12 @@ export function MainLayout({ children }: MainLayoutProps) {
 
     const isPublicAuthRoute = pathname === "/login" || pathname === "/signup" || pathname === "/register";
     const isOnboardingRoute = pathname === "/onboarding";
+    const shouldRedirectToOnboarding =
+        onboardingStatus !== null
+        && onboardingStatus !== 'completed'
+        && onboardingStatus !== 'error'
+        && !isOnboardingRoute;
+    const shouldRedirectToDashboard = onboardingStatus === 'completed' && isOnboardingRoute;
 
     // Redirect to login if not authenticated
     useEffect(() => {
@@ -126,12 +132,12 @@ export function MainLayout({ children }: MainLayoutProps) {
         if (onboardingStatus === 'error') return;
 
         if (onboardingStatus !== 'completed' && !isOnboardingRoute) {
-            router.push('/onboarding');
+            router.replace('/onboarding');
             return;
         }
 
         if (onboardingStatus === 'completed' && isOnboardingRoute) {
-            router.push('/');
+            router.replace('/');
         }
     }, [isOnboardingRoute, isPublicAuthRoute, loading, onboardingLoading, onboardingStatus, router, user]);
 
@@ -188,6 +194,17 @@ export function MainLayout({ children }: MainLayoutProps) {
                 <div className="flex flex-col items-center gap-4">
                     <Loader2 className="h-8 w-8 animate-spin text-primary" />
                     <p className="text-sm text-muted-foreground">初期設定状態を確認中...</p>
+                </div>
+            </div>
+        );
+    }
+
+    if (shouldRedirectToOnboarding || shouldRedirectToDashboard) {
+        return (
+            <div className="flex h-screen items-center justify-center bg-gray-50">
+                <div className="flex flex-col items-center gap-4">
+                    <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                    <p className="text-sm text-muted-foreground">画面を移動中...</p>
                 </div>
             </div>
         );

@@ -22,6 +22,11 @@ interface OAuthTokenResponse {
     id_token?: string;
 }
 
+interface OAuthErrorResponse {
+    error?: string;
+    error_description?: string;
+}
+
 export interface GoogleIntegrationStatus {
     connected: boolean;
     status: 'active' | 'expired' | 'revoked' | 'not_connected';
@@ -36,6 +41,14 @@ function normalizeStoredRefreshToken(token: string): string {
     } catch {
         // Backward compatibility: allow legacy/dev rows that still store plaintext.
         return token;
+    }
+}
+
+function parseOAuthErrorResponse(body: string): OAuthErrorResponse {
+    try {
+        return JSON.parse(body) as OAuthErrorResponse;
+    } catch {
+        return {};
     }
 }
 
@@ -110,6 +123,23 @@ export class GoogleCalendarService {
 
         if (!tokenResponse.ok) {
             const body = await tokenResponse.text();
+            const oauthError = parseOAuthErrorResponse(body);
+            if (oauthError.error === 'invalid_grant') {
+                logger.warn('Google OAuth token exchange rejected with invalid_grant', {
+                    tenantId: this.tenantId,
+                    redirectUri: env.GOOGLE_OAUTH_REDIRECT_URI,
+                    errorDescription: oauthError.error_description,
+                });
+                throw new ValidationError(
+                    'Google OAuth の認可コードが無効です。もう一度連携してください',
+                    {
+                        service: 'google-oauth',
+                        reason: 'invalid_grant',
+                        hint: '認可コードの期限切れ・再利用、または GOOGLE_OAUTH_REDIRECT_URI の不一致が考えられます',
+                        redirectUri: env.GOOGLE_OAUTH_REDIRECT_URI,
+                    }
+                );
+            }
             throw new ExternalServiceError('google-oauth', new Error(body));
         }
 
