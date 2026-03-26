@@ -65,4 +65,4 @@ graph TD
     SETTINGS --> STORES
 ```
 
-この DAG は core masters → transactional → extension/integration に向かう依存方向を示し、legacy arrays から assignment テーブルへの cleanup 境界（`LEGACY_ARRAYS`）を注記している。全体は `DB_V3_SCHEMA_DEFINITION.md` で定義された canonical schema に対応する。
+この DAG は core masters → transactional → extension/integration に向かう主要依存方向を示し、legacy arrays から assignment テーブルへの cleanup 境界（`LEGACY_ARRAYS`）を注記している。全 table inventory と検証ステータスは `DB_V3_CAPABILITY_MATRIX.md` を正本とする。

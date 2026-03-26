@@ -1,6 +1,6 @@
 # DB V3 ER図（Cloud SQL OLTP）
 
-この ER 図は `database/schema/001_initial_schema.sql` + `20260312_v3_hard_cleanup.sql` による v3-clean スキーマ全体を示す。CRM 拡張・assignment テーブル・booking link・settings を含め、欠落なく再解釈された図を提供する。
+この ER 図は v3-clean schema の主要業務テーブルと主要依存を示す overview である。全 28 tables の網羅表ではなく、exhaustive feature/table coverage と検証ステータスは `docs/architecture/DB_V3_CAPABILITY_MATRIX.md` を正本とする。
 
 ```mermaid
 erDiagram

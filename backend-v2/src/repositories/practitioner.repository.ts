@@ -249,6 +249,17 @@ export class PractitionerRepository {
         return p;
     }
 
+    async findBySalonboardStaffId(salonboardStaffId: string): Promise<Practitioner | null> {
+        const row = await DatabaseService.queryOne(
+            'SELECT * FROM practitioners WHERE tenant_id = $1 AND salonboard_staff_id = $2 LIMIT 1',
+            [this.tenantId, salonboardStaffId],
+            this.tenantId
+        );
+        if (!row) return null;
+        const [practitioner] = await this.hydrateAssignments([mapPractitioner(row as Record<string, any>)]);
+        return practitioner ?? null;
+    }
+
     async findAllActive(): Promise<Practitioner[]> {
         const rows = await DatabaseService.query(
             'SELECT * FROM practitioners WHERE tenant_id = $1 AND is_active = true ORDER BY display_order ASC',

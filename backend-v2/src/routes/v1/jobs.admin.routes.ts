@@ -13,6 +13,7 @@ import { handleDayBeforeReminderRequest, handleSameDayReminderRequest } from '..
 import { handleDailyAnalyticsRequest } from '../../jobs/daily-analytics.job.js';
 import { createGoogleCalendarSyncQueueService } from '../../services/google-calendar-sync-queue.service.js';
 import { recalculateRfmForTenant } from '../../services/rfm-thresholds.service.js';
+import { createSalonboardService } from '../../services/salonboard.service.js';
 
 const router = Router();
 const retryGoogleSyncSchema = z.object({
@@ -80,6 +81,22 @@ router.post(
 
         const queue = createGoogleCalendarSyncQueueService(tenantId);
         const stats = await queue.processPending({ limit });
+        res.json({ success: true, stats });
+    })
+);
+
+/**
+ * Salonboard sync (manual)
+ * POST /api/v1/admin/jobs/integrations/salonboard/sync
+ */
+router.post(
+    '/integrations/salonboard/sync',
+    requireFirebaseAuth(),
+    requireRole('manager', 'owner'),
+    asyncHandler(async (req: Request, res: Response): Promise<void> => {
+        const tenantId = getTenantId(req);
+        const service = createSalonboardService(tenantId);
+        const stats = await service.sync('manual');
         res.json({ success: true, stats });
     })
 );

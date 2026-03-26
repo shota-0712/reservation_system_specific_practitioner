@@ -1,7 +1,8 @@
 -- ============================================================
 -- Firestoreからのデータマイグレーション用スクリプト
--- Version: 1.0.1
+-- Version: 1.1.0
 -- Created: 2026-01-31
+-- Updated: 2026-03-20
 -- ============================================================
 
 -- このスクリプトはFirestoreのデータをPostgreSQLに移行する際に使用します。
@@ -42,8 +43,9 @@ CREATE TABLE IF NOT EXISTS migration_errors (
 -- 2. Firestore ID → PostgreSQL UUID マッピング
 -- ============================================================
 
--- Firestore document ID と PostgreSQL UUID のマッピングを保存
--- これにより、リレーション再構築時に参照可能
+-- Upgrade-only retained artifact.
+-- Fresh bootstrap の canonical 28 tables には含めないが、
+-- upgraded/live DB では履歴参照用に残してよい。
 CREATE TABLE IF NOT EXISTS id_mappings (
     id SERIAL PRIMARY KEY,
     entity_type VARCHAR(50) NOT NULL,
@@ -115,28 +117,7 @@ END;
 $$ LANGUAGE plpgsql;
 
 -- ============================================================
--- 5. 予約期間作成関数
--- ============================================================
-
--- 日付と開始・終了時刻からTSTZRANGEを作成
-CREATE OR REPLACE FUNCTION create_reservation_period(
-    p_date DATE,
-    p_start_time VARCHAR(5),  -- "10:00"
-    p_end_time VARCHAR(5)      -- "11:30"
-) RETURNS TSTZRANGE AS $$
-DECLARE
-    v_start TIMESTAMPTZ;
-    v_end TIMESTAMPTZ;
-BEGIN
-    v_start := (p_date::text || ' ' || p_start_time || ':00')::TIMESTAMPTZ AT TIME ZONE 'Asia/Tokyo';
-    v_end := (p_date::text || ' ' || p_end_time || ':00')::TIMESTAMPTZ AT TIME ZONE 'Asia/Tokyo';
-    
-    RETURN tstzrange(v_start, v_end, '[)');
-END;
-$$ LANGUAGE plpgsql;
-
--- ============================================================
--- 6. マイグレーション進捗更新関数
+-- 5. マイグレーション進捗更新関数
 -- ============================================================
 
 CREATE OR REPLACE FUNCTION update_migration_progress(
@@ -162,7 +143,7 @@ END;
 $$ LANGUAGE plpgsql;
 
 -- ============================================================
--- 7. マイグレーション検証クエリ
+-- 6. マイグレーション検証クエリ
 -- ============================================================
 
 -- マイグレーション後のデータ検証用ビュー
@@ -183,6 +164,8 @@ FROM migration_progress
 ORDER BY started_at DESC;
 
 -- テーブルごとのレコード数確認
+-- canonical 28 tables を対象にし、upgrade-only retained artifacts
+-- (例: id_mappings) はここに含めない。
 CREATE OR REPLACE VIEW table_counts AS
 SELECT 'tenants' as table_name, COUNT(*) as count FROM tenants
 UNION ALL SELECT 'stores', COUNT(*) FROM stores
@@ -198,7 +181,7 @@ UNION ALL SELECT 'settings', COUNT(*) FROM settings
 ORDER BY table_name;
 
 -- ============================================================
--- 8. クリーンアップ関数（マイグレーション完了後）
+-- 7. クリーンアップ関数（マイグレーション完了後）
 -- ============================================================
 
 CREATE OR REPLACE FUNCTION cleanup_migration_tables()
@@ -207,13 +190,13 @@ BEGIN
     -- マイグレーション用テーブルを削除
     DROP TABLE IF EXISTS migration_progress CASCADE;
     DROP TABLE IF EXISTS migration_errors CASCADE;
-    -- id_mappingsは念のため残す（将来の参照用）
+    -- id_mappings は upgrade-only retained artifact として残す。
+    -- fresh bootstrap の canonical scope ではなく、upgraded/live DB 参照用。
     
     -- 関数の削除
     DROP FUNCTION IF EXISTS get_postgres_id;
     DROP FUNCTION IF EXISTS register_id_mapping;
     DROP FUNCTION IF EXISTS firestore_timestamp_to_timestamptz;
-    DROP FUNCTION IF EXISTS create_reservation_period;
     DROP FUNCTION IF EXISTS update_migration_progress;
     
     -- ビューの削除

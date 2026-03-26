@@ -32,6 +32,58 @@ const dashboardActivityQuerySchema = z.object({
     limit: z.coerce.number().int().min(1).max(100).default(20),
 });
 
+interface DashboardAnalyticsRow {
+    row_count: number | string;
+    revenue: number | string;
+    bookings: number | string;
+    completed_count: number | string;
+    new_customers: number | string;
+}
+
+interface DashboardAnalyticsSummary {
+    rowCount: number;
+    revenue: number;
+    bookings: number;
+    completedCount: number;
+    newCustomers: number;
+}
+
+const toInt = (value: unknown): number => {
+    if (typeof value === 'number') return Number.isFinite(value) ? Math.trunc(value) : 0;
+    if (typeof value === 'string') {
+        const parsed = Number(value);
+        return Number.isFinite(parsed) ? Math.trunc(parsed) : 0;
+    }
+    return 0;
+};
+
+async function fetchDashboardSummaryFromDailyAnalytics(
+    tenantId: string,
+    date: string
+): Promise<DashboardAnalyticsSummary> {
+    const row = await DatabaseService.queryOne<DashboardAnalyticsRow>(
+        `SELECT
+            COUNT(*) as row_count,
+            COALESCE(SUM(total_revenue), 0) as revenue,
+            COALESCE(SUM(reservation_count), 0) as bookings,
+            COALESCE(SUM(completed_count), 0) as completed_count,
+            COALESCE(SUM(new_customers), 0) as new_customers
+         FROM daily_analytics
+         WHERE tenant_id = $1
+           AND date = $2`,
+        [tenantId, date],
+        tenantId
+    );
+
+    return {
+        rowCount: toInt(row?.row_count),
+        revenue: toInt(row?.revenue),
+        bookings: toInt(row?.bookings),
+        completedCount: toInt(row?.completed_count),
+        newCustomers: toInt(row?.new_customers),
+    };
+}
+
 /**
  * ダッシュボード KPI 取得
  * @route GET /v1/:storeCode/admin/dashboard/kpi
@@ -52,61 +104,88 @@ router.get(
         const yesterdayStr = formatDate(yesterday);
         const localDateSql = reservationLocalDateSql('r');
 
-        const [todayStats, yesterdayStats] = await Promise.all([
-            DatabaseService.queryOne(
-                `SELECT
-                    COALESCE(SUM(total_price) FILTER (WHERE status = 'completed'), 0) as revenue,
-                    COUNT(*) FILTER (WHERE status IN ('confirmed','pending','completed')) as bookings,
-                    COUNT(*) FILTER (WHERE status = 'completed') as completed_count
-                 FROM reservations r
-                 WHERE r.tenant_id = $1 AND ${localDateSql} = $2::date`,
-                [tenantId, todayStr],
-                tenantId
-            ),
-            DatabaseService.queryOne(
-                `SELECT
-                    COALESCE(SUM(total_price) FILTER (WHERE status = 'completed'), 0) as revenue,
-                    COUNT(*) FILTER (WHERE status IN ('confirmed','pending','completed')) as bookings,
-                    COUNT(*) FILTER (WHERE status = 'completed') as completed_count
-                 FROM reservations r
-                 WHERE r.tenant_id = $1 AND ${localDateSql} = $2::date`,
-                [tenantId, yesterdayStr],
-                tenantId
-            ),
+        const [todayAnalytics, yesterdayAnalytics] = await Promise.all([
+            fetchDashboardSummaryFromDailyAnalytics(tenantId, todayStr),
+            fetchDashboardSummaryFromDailyAnalytics(tenantId, yesterdayStr),
         ]);
 
-        const todayRevenue = parseInt(todayStats?.revenue || '0', 10);
-        const yesterdayRevenue = parseInt(yesterdayStats?.revenue || '0', 10);
-        const todayBookings = parseInt(todayStats?.bookings || '0', 10);
-        const yesterdayBookings = parseInt(yesterdayStats?.bookings || '0', 10);
-        const completedToday = parseInt(todayStats?.completed_count || '0', 10);
-        const completedYesterday = parseInt(yesterdayStats?.completed_count || '0', 10);
+        let todayRevenue = todayAnalytics.revenue;
+        let yesterdayRevenue = yesterdayAnalytics.revenue;
+        let todayBookings = todayAnalytics.bookings;
+        let yesterdayBookings = yesterdayAnalytics.bookings;
+        let completedToday = todayAnalytics.completedCount;
+        let completedYesterday = yesterdayAnalytics.completedCount;
+        let newCustomersToday = todayAnalytics.newCustomers;
+        let newCustomersYesterday = yesterdayAnalytics.newCustomers;
 
-        // 新規顧客
-        const todayStart = new Date(todayStr);
-        const tomorrowStart = new Date(todayStart);
-        tomorrowStart.setDate(tomorrowStart.getDate() + 1);
-        const yesterdayStart = new Date(yesterdayStr);
+        if (todayAnalytics.rowCount === 0 || yesterdayAnalytics.rowCount === 0) {
+            const [todayStats, yesterdayStats] = await Promise.all([
+                todayAnalytics.rowCount === 0
+                    ? DatabaseService.queryOne(
+                        `SELECT
+                            COALESCE(SUM(total_price) FILTER (WHERE status = 'completed'), 0) as revenue,
+                            COUNT(*) FILTER (WHERE status IN ('confirmed','pending','completed')) as bookings,
+                            COUNT(*) FILTER (WHERE status = 'completed') as completed_count
+                         FROM reservations r
+                         WHERE r.tenant_id = $1 AND ${localDateSql} = $2::date`,
+                        [tenantId, todayStr],
+                        tenantId
+                    )
+                    : Promise.resolve(null),
+                yesterdayAnalytics.rowCount === 0
+                    ? DatabaseService.queryOne(
+                        `SELECT
+                            COALESCE(SUM(total_price) FILTER (WHERE status = 'completed'), 0) as revenue,
+                            COUNT(*) FILTER (WHERE status IN ('confirmed','pending','completed')) as bookings,
+                            COUNT(*) FILTER (WHERE status = 'completed') as completed_count
+                         FROM reservations r
+                         WHERE r.tenant_id = $1 AND ${localDateSql} = $2::date`,
+                        [tenantId, yesterdayStr],
+                        tenantId
+                    )
+                    : Promise.resolve(null),
+            ]);
 
-        const [newCustomersTodayRow, newCustomersYesterdayRow] = await Promise.all([
-            DatabaseService.queryOne(
-                `SELECT COUNT(*) as count
-                 FROM customers
-                 WHERE tenant_id = $1 AND created_at >= $2 AND created_at < $3`,
-                [tenantId, todayStart, tomorrowStart],
-                tenantId
-            ),
-            DatabaseService.queryOne(
-                `SELECT COUNT(*) as count
-                 FROM customers
-                 WHERE tenant_id = $1 AND created_at >= $2 AND created_at < $3`,
-                [tenantId, yesterdayStart, todayStart],
-                tenantId
-            ),
-        ]);
+            const todayStart = new Date(todayStr);
+            const tomorrowStart = new Date(todayStart);
+            tomorrowStart.setDate(tomorrowStart.getDate() + 1);
+            const yesterdayStart = new Date(yesterdayStr);
 
-        const newCustomersToday = parseInt(newCustomersTodayRow?.count || '0', 10);
-        const newCustomersYesterday = parseInt(newCustomersYesterdayRow?.count || '0', 10);
+            const [newCustomersTodayRow, newCustomersYesterdayRow] = await Promise.all([
+                todayAnalytics.rowCount === 0
+                    ? DatabaseService.queryOne(
+                        `SELECT COUNT(*) as count
+                         FROM customers
+                         WHERE tenant_id = $1 AND created_at >= $2 AND created_at < $3`,
+                        [tenantId, todayStart, tomorrowStart],
+                        tenantId
+                    )
+                    : Promise.resolve(null),
+                yesterdayAnalytics.rowCount === 0
+                    ? DatabaseService.queryOne(
+                        `SELECT COUNT(*) as count
+                         FROM customers
+                         WHERE tenant_id = $1 AND created_at >= $2 AND created_at < $3`,
+                        [tenantId, yesterdayStart, todayStart],
+                        tenantId
+                    )
+                    : Promise.resolve(null),
+            ]);
+
+            if (todayAnalytics.rowCount === 0) {
+                todayRevenue = toInt(todayStats?.revenue);
+                todayBookings = toInt(todayStats?.bookings);
+                completedToday = toInt(todayStats?.completed_count);
+                newCustomersToday = toInt(newCustomersTodayRow?.count);
+            }
+
+            if (yesterdayAnalytics.rowCount === 0) {
+                yesterdayRevenue = toInt(yesterdayStats?.revenue);
+                yesterdayBookings = toInt(yesterdayStats?.bookings);
+                completedYesterday = toInt(yesterdayStats?.completed_count);
+                newCustomersYesterday = toInt(newCustomersYesterdayRow?.count);
+            }
+        }
 
         const avgSpendToday = completedToday > 0 ? todayRevenue / completedToday : 0;
         const avgSpendYesterday = completedYesterday > 0 ? yesterdayRevenue / completedYesterday : 0;
@@ -309,7 +388,7 @@ router.get(
     validateQuery(dashboardActivityQuerySchema),
     asyncHandler(async (req: Request, res: Response): Promise<void> => {
         const tenantId = getTenantId(req);
-        const { limit } = req.query as unknown as z.infer<typeof dashboardActivityQuerySchema>;
+        const { limit } = dashboardActivityQuerySchema.parse(req.query);
         const data = await getDashboardActivity(tenantId, limit);
 
         res.json({ success: true, data });

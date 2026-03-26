@@ -16,7 +16,7 @@ const createKarteSchema = z.object({
     practitionerId: z.string().uuid(),
     customerName: z.string().optional(),
     customerPictureUrl: z.string().url().optional(),
-    visitDate: z.string(),
+    visitDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, '日付はYYYY-MM-DD形式で入力してください'),
     menuIds: z.array(z.string().uuid()).default([]),
     menuNames: z.array(z.string()).default([]),
     optionIds: z.array(z.string().uuid()).default([]),

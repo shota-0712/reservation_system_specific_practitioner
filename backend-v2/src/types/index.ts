@@ -317,6 +317,18 @@ export interface TenantNotificationSettings {
     updatedBy?: string;
 }
 
+export type SalonboardSyncDirection = 'inbound' | 'outbound' | 'both';
+
+export interface SalonboardIntegrationStatus {
+    connected: boolean;
+    isEnabled: boolean;
+    syncDirection: SalonboardSyncDirection;
+    hasCredentials: boolean;
+    lastSyncAt?: string;
+    lastSyncStatus?: 'success' | 'partial' | 'failed';
+    lastSyncError?: string;
+}
+
 // ============================================
 // Customer (顧客)
 // ============================================

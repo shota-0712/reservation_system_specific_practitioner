@@ -211,17 +211,9 @@ router.get(
         let service = createBookingLinkTokenService();
         if (parsed.data.tenantKey) {
             const tenant = await createTenantRepository().findBySlug(parsed.data.tenantKey);
-            if (!tenant || !['active', 'trial'].includes(tenant.status)) {
-                res.status(404).json({
-                    success: false,
-                    error: {
-                        code: 'NOT_FOUND',
-                        message: '予約URLが見つかりません',
-                    },
-                });
-                return;
+            if (tenant && ['active', 'trial'].includes(tenant.status)) {
+                service = createBookingLinkTokenService(tenant.id);
             }
-            service = createBookingLinkTokenService(tenant.id);
         }
 
         const resolved = await service.resolve(parsed.data.token);

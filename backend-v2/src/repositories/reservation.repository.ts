@@ -282,6 +282,17 @@ export class ReservationRepository {
         return reservation;
     }
 
+    async findBySalonboardReservationId(salonboardReservationId: string): Promise<Reservation | null> {
+        const row = await DatabaseService.queryOne(
+            'SELECT * FROM reservations WHERE tenant_id = $1 AND salonboard_reservation_id = $2 LIMIT 1',
+            [this.tenantId, salonboardReservationId],
+            this.tenantId
+        );
+        if (!row) return null;
+        const [withItems] = await this.attachItems([mapReservation(row as Record<string, any>)]);
+        return withItems ?? null;
+    }
+
     /**
      * Find reservations with filters
      */

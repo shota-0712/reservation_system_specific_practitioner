@@ -22,7 +22,6 @@ SET LOCAL statement_timeout = '15min';
 -- the legacy columns are not, something went wrong in a prior
 -- migration. We fail fast rather than silently lose data.
 -- ============================================================
--- Tracks: practitioner_store, admin_store, menu_practitioner, option_menu assignments.
 DO $$
 DECLARE
     legacy_practitioner_store_count BIGINT;

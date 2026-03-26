@@ -30,6 +30,15 @@ export interface GoogleIntegrationStatus {
     updatedAt?: string;
 }
 
+function normalizeStoredRefreshToken(token: string): string {
+    try {
+        return decrypt(token);
+    } catch {
+        // Backward compatibility: allow legacy/dev rows that still store plaintext.
+        return token;
+    }
+}
+
 export class GoogleCalendarService {
     constructor(private tenantId: string) {}
 
@@ -65,7 +74,8 @@ export class GoogleCalendarService {
              FROM tenant_google_calendar_oauth
              WHERE tenant_id = $1
              LIMIT 1`,
-            [this.tenantId]
+            [this.tenantId],
+            this.tenantId
         );
 
         if (!row) {
@@ -110,10 +120,12 @@ export class GoogleCalendarService {
              FROM tenant_google_calendar_oauth
              WHERE tenant_id = $1
              LIMIT 1`,
-            [this.tenantId]
+            [this.tenantId],
+            this.tenantId
         );
 
-        const rawRefreshToken = token.refresh_token || (existing ? decrypt(existing.refresh_token_encrypted) : null);
+        const rawRefreshToken = token.refresh_token
+            || (existing ? normalizeStoredRefreshToken(existing.refresh_token_encrypted) : null);
         if (!rawRefreshToken) {
             throw new ValidationError('Google refresh token の取得に失敗しました。再連携してください');
         }
@@ -132,14 +144,16 @@ export class GoogleCalendarService {
                      updated_at = NOW(),
                      expired_at = NULL
                  WHERE tenant_id = $1`,
-                [this.tenantId, encryptedRefreshToken, token.scope, email || null]
+                [this.tenantId, encryptedRefreshToken, token.scope, email || null],
+                this.tenantId
             );
         } else {
             await DatabaseService.query(
                 `INSERT INTO tenant_google_calendar_oauth (
                     tenant_id, refresh_token_encrypted, scope, email, status
                 ) VALUES ($1, $2, $3, $4, 'active')`,
-                [this.tenantId, encryptedRefreshToken, token.scope, email || null]
+                [this.tenantId, encryptedRefreshToken, token.scope, email || null],
+                this.tenantId
             );
         }
 
@@ -151,7 +165,8 @@ export class GoogleCalendarService {
             `UPDATE tenant_google_calendar_oauth
              SET status = 'revoked', updated_at = NOW(), expired_at = NOW()
              WHERE tenant_id = $1`,
-            [this.tenantId]
+            [this.tenantId],
+            this.tenantId
         );
     }
 
@@ -267,19 +282,15 @@ export class GoogleCalendarService {
              FROM tenant_google_calendar_oauth
              WHERE tenant_id = $1
              LIMIT 1`,
-            [this.tenantId]
+            [this.tenantId],
+            this.tenantId
         );
 
         if (!oauth || oauth.status !== 'active') {
             return null;
         }
 
-        let refreshToken: string;
-        try {
-            refreshToken = decrypt(oauth.refresh_token_encrypted);
-        } catch {
-            refreshToken = oauth.refresh_token_encrypted;
-        }
+        const refreshToken = normalizeStoredRefreshToken(oauth.refresh_token_encrypted);
 
         const tokenResponse = await fetch('https://oauth2.googleapis.com/token', {
             method: 'POST',
@@ -301,7 +312,8 @@ export class GoogleCalendarService {
                 `UPDATE tenant_google_calendar_oauth
                  SET status = 'expired', updated_at = NOW(), expired_at = NOW()
                  WHERE tenant_id = $1`,
-                [this.tenantId]
+                [this.tenantId],
+                this.tenantId
             );
             return null;
         }

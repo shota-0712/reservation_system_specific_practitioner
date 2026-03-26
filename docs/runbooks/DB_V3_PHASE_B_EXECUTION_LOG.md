@@ -2,6 +2,8 @@
 
 更新日時: 2026-03-05 JST
 
+> Current canonical DB completeness audit flow is documented in `docs/runbooks/DB_V3_COMPLETENESS_AUDIT.md`.
+
 ## 1. 実行対象
 
 - Phase B-1: staging DB へ migration 適用

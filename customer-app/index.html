@@ -710,6 +710,12 @@
       return '';
     }
 
+    function resolveBookingLinkTenantHint() {
+      // Token-only resolve must not depend on stale localStorage/config tenant state.
+      const fromQuery = (queryParams.get('tenant') || queryParams.get('tenantKey') || '').trim().toLowerCase();
+      return isTenantKeyValid(fromQuery) ? fromQuery : '';
+    }
+
     function parseBooleanFlag(value) {
       return String(value || '').trim().toLowerCase() === 'true';
     }
@@ -934,7 +940,7 @@
       const resolveParams = new URLSearchParams({
         token: BOOKING_LINK_TOKEN,
       });
-      const tenantHint = TENANT_KEY_FROM_URL || TENANT_KEY;
+      const tenantHint = resolveBookingLinkTenantHint();
       if (isTenantKeyValid(tenantHint)) {
         resolveParams.set('tenantKey', tenantHint);
       }
