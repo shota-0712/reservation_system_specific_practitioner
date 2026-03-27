@@ -1,0 +1,17 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "backend-v2",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["--prefix", "backend-v2", "run", "dev"],
+      "port": 8080
+    },
+    {
+      "name": "admin-dashboard",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["--prefix", "admin-dashboard", "run", "dev"],
+      "port": 3000
+    }
+  ]
+}

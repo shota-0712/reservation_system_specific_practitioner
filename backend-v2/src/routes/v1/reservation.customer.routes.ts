@@ -63,7 +63,7 @@ const updateReservationSchema = z.object({
 });
 
 
-	router.post(
+router.post(
     '/',
     requireLineAuth(),
     validateBody(createReservationSchema),
@@ -168,10 +168,10 @@ const updateReservationSchema = z.object({
     })
 );
 
-	router.get(
-	    '/my',
-	    requireLineAuth(),
-	    asyncHandler(async (req: Request, res: Response): Promise<void> => {
+router.get(
+    '/my',
+    requireLineAuth(),
+    asyncHandler(async (req: Request, res: Response): Promise<void> => {
         const tenantId = getTenantId(req);
         const user = getUser(req);
         if (!user) throw new AuthenticationError('認証が必要です');
@@ -192,10 +192,10 @@ const updateReservationSchema = z.object({
             new Date(a.startsAt).getTime() - new Date(b.startsAt).getTime()
         );
 
-	        const response: ApiResponse<Reservation[]> = { success: true, data: reservations };
-	        res.json(response);
-	    })
-	);
+        const response: ApiResponse<Reservation[]> = { success: true, data: reservations };
+        res.json(response);
+    })
+);
 
 router.get(
     '/:id',
@@ -249,11 +249,6 @@ router.put(
             throw new ValidationError('この予約は変更できません');
         }
 
-        // Treat reschedule as a cancellation-like operation for policy purposes.
-        const existingStoreId = existing.storeId ?? (req as { storeId?: string }).storeId;
-        const { policy: existingPolicy } = await resolveStoreContext(tenantId, existingStoreId);
-        enforceCancelPolicy(existing, existingPolicy);
-
         const {
             practitionerId,
             menuIds,
@@ -268,8 +263,15 @@ router.put(
             storeId,
         } = req.body;
 
-        const targetStoreId = storeId ?? existing.storeId ?? (req as { storeId?: string }).storeId;
-        const { store, policy } = await resolveStoreContext(tenantId, targetStoreId);
+        // Treat reschedule as a cancellation-like operation for policy purposes.
+        const existingStoreId = existing.storeId ?? (req as { storeId?: string }).storeId;
+        const targetStoreId = storeId ?? existingStoreId;
+        const existingContext = await resolveStoreContext(tenantId, existingStoreId);
+        enforceCancelPolicy(existing, existingContext.policy);
+
+        const { store, policy } = targetStoreId === existingStoreId
+            ? existingContext
+            : await resolveStoreContext(tenantId, targetStoreId);
         const reservationService = createReservationService(tenantId);
         const tz = timezone || policy.timezone || 'Asia/Tokyo';
         const resolvedStartsAt = startsAt ?? new Date(existing.startsAt).toISOString();
@@ -338,11 +340,11 @@ router.put(
     })
 );
 
-	router.delete(
-	    '/:id',
-	    requireLineAuth(),
-	    validateParams(idParamSchema),
-	    asyncHandler(async (req: Request, res: Response): Promise<void> => {
+router.delete(
+    '/:id',
+    requireLineAuth(),
+    validateParams(idParamSchema),
+    asyncHandler(async (req: Request, res: Response): Promise<void> => {
         const tenantId = getTenantId(req);
         const user = getUser(req);
         if (!user) throw new AuthenticationError('認証が必要です');

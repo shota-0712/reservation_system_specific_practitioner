@@ -403,7 +403,7 @@ export default function StaffPage() {
         setError(null);
         try {
             const [practitionerRes, bookingLinkRes] = await Promise.all([
-                practitionersApi.listAll(),
+                practitionersApi.list(),
                 bookingLinksApi.list(),
             ]);
 

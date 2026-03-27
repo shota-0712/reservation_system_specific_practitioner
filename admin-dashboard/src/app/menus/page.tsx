@@ -70,7 +70,7 @@ export default function MenusPage() {
         setIsLoading(true);
         setError(null);
         try {
-            const res = await menusApi.listAll();
+            const res = await menusApi.list();
             if (res.success && res.data) {
                 setMenus(res.data as Menu[]);
             } else {
