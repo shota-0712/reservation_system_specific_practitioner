@@ -174,12 +174,12 @@ router.put(
 /**
  * 店舗プロフィールを更新
  * @route PUT /v1/:storeCode/admin/settings/profile
- * @access Owner
+ * @access Manager+
  */
 router.put(
     '/profile',
     requireFirebaseAuth(),
-    requireRole('owner'),
+    requireRole('manager', 'owner'),
     validateBody(updateProfileSchema),
     asyncHandler(async (req: Request, res: Response): Promise<void> => {
         const tenantId = getTenantId(req);
@@ -267,12 +267,12 @@ router.get(
 /**
  * ビジネス設定（営業時間など）を更新
  * @route PUT /v1/:storeCode/admin/settings/business
- * @access Owner
+ * @access Manager+
  */
 router.put(
     '/business',
     requireFirebaseAuth(),
-    requireRole('owner'),
+    requireRole('manager', 'owner'),
     validateBody(updateBusinessSchema),
     asyncHandler(async (req: Request, res: Response): Promise<void> => {
         const tenantId = getTenantId(req);
@@ -304,12 +304,12 @@ router.put(
 /**
  * LINE設定を更新
  * @route PUT /v1/:storeCode/admin/settings/line
- * @access Owner
+ * @access Manager+
  */
 router.put(
     '/line',
     requireFirebaseAuth(),
-    requireRole('owner'),
+    requireRole('manager', 'owner'),
     validateBody(updateLineConfigSchema),
     asyncHandler(async (req: Request, res: Response): Promise<void> => {
         const tenant = getTenant(req);
@@ -359,12 +359,12 @@ router.put(
 /**
  * ブランディング設定を更新
  * @route PUT /v1/:storeCode/admin/settings/branding
- * @access Owner
+ * @access Manager+
  */
 router.put(
     '/branding',
     requireFirebaseAuth(),
-    requireRole('owner'),
+    requireRole('manager', 'owner'),
     validateBody(updateBrandingSchema),
     asyncHandler(async (req: Request, res: Response): Promise<void> => {
         const tenant = getTenant(req);

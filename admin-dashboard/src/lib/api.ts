@@ -23,6 +23,7 @@ import type {
     UpdateProfileRequest,
     UpdateBusinessRequest,
     UpdateLineRequest,
+    UpdateBrandingRequest,
     UpdateNotificationSettingsRequest,
 } from '@/types/api-request-types';
 
@@ -516,6 +517,11 @@ export const settingsApi = {
     getNotifications: () => apiClient<NotificationSettings>('/admin/settings/notifications'),
     updateProfile: (data: UpdateProfileRequest) =>
         apiClient('/admin/settings/profile', {
+            method: 'PUT',
+            body: JSON.stringify(data),
+        }),
+    updateBranding: (data: UpdateBrandingRequest) =>
+        apiClient('/admin/settings/branding', {
             method: 'PUT',
             body: JSON.stringify(data),
         }),

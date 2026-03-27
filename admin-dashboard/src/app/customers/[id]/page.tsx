@@ -33,6 +33,18 @@ interface Reservation {
     status: string;
 }
 
+function parseNumericValue(value: unknown): number {
+    if (typeof value === "number") {
+        return Number.isFinite(value) ? value : 0;
+    }
+
+    if (typeof value === "string") {
+        const parsed = Number.parseFloat(value);
+        return Number.isFinite(parsed) ? parsed : 0;
+    }
+
+    return 0;
+}
 
 export default function CustomerDetailPage() {
     const router = useRouter();
@@ -62,8 +74,8 @@ export default function CustomerDetailPage() {
                         email: data.email,
                         tags: data.tags || [],
                         rfmSegment: data.rfmSegment,
-                        totalVisits: data.totalVisits,
-                        totalSpend: data.totalSpend,
+                        totalVisits: parseNumericValue(data.totalVisits),
+                        totalSpend: parseNumericValue(data.totalSpend),
                     });
                 }
                 if (reservationsRes.success && Array.isArray(reservationsRes.data)) {

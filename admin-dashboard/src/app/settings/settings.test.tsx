@@ -20,6 +20,7 @@ vi.mock('@/lib/api', async (importOriginal) => {
             get: vi.fn(),
             getNotifications: vi.fn(),
             updateProfile: vi.fn(),
+            updateBranding: vi.fn(),
             updateBusiness: vi.fn(),
             updateLine: vi.fn(),
             updateNotifications: vi.fn(),
@@ -81,6 +82,13 @@ describe('SettingsPage', () => {
                 pushCancellation: true,
             },
         });
+        vi.mocked(settingsApi.updateBranding).mockResolvedValue({
+            success: true,
+            data: {
+                primaryColor: '#4F46E5',
+                logoUrl: 'https://example.com/logo.png',
+            },
+        });
     });
 
     it('API が失敗した場合、エラーバナーを表示する', async () => {
@@ -98,7 +106,14 @@ describe('SettingsPage', () => {
         vi.mocked(settingsApi.get).mockResolvedValue({
             success: true,
             data: {
-                tenant: { id: 'tenant-1', name: 'テストサロン' },
+                tenant: {
+                    id: 'tenant-1',
+                    name: 'テストサロン',
+                    branding: {
+                        primaryColor: '#4F46E5',
+                        logoUrl: 'https://example.com/logo.png',
+                    },
+                },
                 store: { id: 'store-1', name: 'テスト店舗' },
             },
         });
@@ -107,6 +122,75 @@ describe('SettingsPage', () => {
 
         await waitFor(() => {
             expect(screen.queryByText(/設定の読み込みに失敗しました/)).not.toBeInTheDocument();
+        });
+    });
+
+    it('一般タブの保存で店舗情報とcustomer-app表示設定を更新する', async () => {
+        vi.mocked(settingsApi.get).mockResolvedValue({
+            success: true,
+            data: {
+                tenant: {
+                    id: 'tenant-1',
+                    name: 'テストサロン',
+                    branding: {
+                        primaryColor: '#123456',
+                        logoUrl: 'https://example.com/old-logo.png',
+                    },
+                },
+                store: {
+                    id: 'store-1',
+                    name: 'テスト店舗',
+                    address: '東京都港区',
+                    phone: '0312345678',
+                    email: 'store@example.com',
+                },
+            },
+        });
+        vi.mocked(settingsApi.updateProfile).mockResolvedValue({
+            success: true,
+            data: {
+                id: 'store-1',
+                name: '新しい店舗名',
+            },
+        });
+        vi.mocked(settingsApi.updateBranding).mockResolvedValue({
+            success: true,
+            data: {
+                primaryColor: '#abcdef',
+                logoUrl: 'https://example.com/new-logo.png',
+            },
+        });
+
+        render(<SettingsPage />);
+
+        await waitFor(() => {
+            expect(screen.getByLabelText('店舗名')).toBeInTheDocument();
+        });
+
+        fireEvent.change(screen.getByLabelText('店舗名'), {
+            target: { value: '新しい店舗名' },
+        });
+        fireEvent.change(screen.getByLabelText('ロゴ画像URL'), {
+            target: { value: 'https://example.com/new-logo.png' },
+        });
+        fireEvent.change(screen.getByLabelText('テーマカラー'), {
+            target: { value: '#abcdef' },
+        });
+
+        fireEvent.click(screen.getByRole('button', { name: '設定を保存' }));
+
+        await waitFor(() => {
+            expect(settingsApi.updateProfile).toHaveBeenCalledWith({
+                name: '新しい店舗名',
+                phone: '0312345678',
+                address: '東京都港区',
+                email: 'store@example.com',
+            });
+            expect(settingsApi.updateBranding).toHaveBeenCalledWith({
+                primaryColor: '#abcdef',
+                logoUrl: 'https://example.com/new-logo.png',
+            });
+            expect(screen.getByText('設定を保存しました')).toBeInTheDocument();
         });
     });
 

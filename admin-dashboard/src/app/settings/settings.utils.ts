@@ -1,5 +1,6 @@
 import type { NotificationSettings, RfmThresholdSettings } from "@/lib/api";
 import type {
+    BrandingSettingsForm,
     BookingSettingsForm,
     BusinessHour,
     IntegrationsSettingsForm,
@@ -35,6 +36,11 @@ export const DEFAULT_PROFILE_SETTINGS = {
     phone: "",
     address: "",
     email: "",
+};
+
+export const DEFAULT_BRANDING_SETTINGS: BrandingSettingsForm = {
+    primaryColor: "#4F46E5",
+    logoUrl: "",
 };
 
 export const DEFAULT_BOOKING_SETTINGS: BookingSettingsForm = {

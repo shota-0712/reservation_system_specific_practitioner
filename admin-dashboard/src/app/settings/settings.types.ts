@@ -21,6 +21,11 @@ export type ProfileSettingsForm = {
     email: string;
 };
 
+export type BrandingSettingsForm = {
+    primaryColor: string;
+    logoUrl: string;
+};
+
 export type BusinessHour = {
     day: string;
     dayOfWeek: number;
@@ -62,6 +67,10 @@ export interface SettingsResponse {
     tenant: {
         id: string;
         name: string;
+        branding?: {
+            primaryColor?: string;
+            logoUrl?: string;
+        };
         lineConfig?: {
             mode?: LineMode;
             channelId?: string;

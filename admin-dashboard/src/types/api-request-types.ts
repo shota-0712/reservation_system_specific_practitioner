@@ -52,17 +52,35 @@ export interface PractitionerSchedule {
     breakTime?: { start: string; end: string };
 }
 
+export interface PractitionerLineConfigRequest {
+    liffId?: string | null;
+    channelId?: string | null;
+    channelAccessToken?: string | null;
+    channelSecret?: string | null;
+}
+
 export interface CreatePractitionerRequest {
     name: string;
     nameKana?: string | null;
     role?: 'stylist' | 'assistant' | 'owner';
     phone?: string | null;
     email?: string | null;
+    imageUrl?: string | null;
     color?: string | null;
     title?: string | null;
     description?: string | null;
+    experience?: string | null;
+    prTitle?: string | null;
+    specialties?: string[] | null;
+    snsInstagram?: string | null;
+    snsTwitter?: string | null;
     nominationFee?: number | null;
     schedule?: PractitionerSchedule | null;
+    availableMenuIds?: string[] | null;
+    storeIds?: string[] | null;
+    calendarId?: string | null;
+    salonboardStaffId?: string | null;
+    lineConfig?: PractitionerLineConfigRequest | null;
     displayOrder?: number;
     isActive?: boolean;
 }
@@ -208,6 +226,11 @@ export interface UpdateLineRequest {
     channelAccessToken?: string | null;
     liffId?: string | null;
     mode?: 'tenant' | 'store' | 'practitioner' | string | null;
+}
+
+export interface UpdateBrandingRequest {
+    primaryColor?: string | null;
+    logoUrl?: string | null;
 }
 
 export interface UpdateNotificationSettingsRequest {

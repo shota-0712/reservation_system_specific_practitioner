@@ -21,6 +21,24 @@ interface Menu {
     isActive: boolean;
 }
 
+function normalizeOptionalText(value: string): string | undefined {
+    const trimmed = value.trim();
+    return trimmed || undefined;
+}
+
+function normalizeOptionalUrl(value: string): string | undefined {
+    const trimmed = value.trim();
+    if (!trimmed) {
+        return undefined;
+    }
+
+    try {
+        return new URL(trimmed).toString();
+    } catch {
+        throw new Error("画像URLは有効なURLを入力してください");
+    }
+}
+
 export default function MenusPage() {
     const { pushToast } = useToast();
     const [menus, setMenus] = useState<Menu[]>([]);
@@ -41,6 +59,7 @@ export default function MenusPage() {
         name: "",
         description: "",
         category: "",
+        imageUrl: "",
         duration: 60,
         price: 5000,
         isActive: true,
@@ -77,6 +96,7 @@ export default function MenusPage() {
             name: "",
             description: "",
             category: "",
+            imageUrl: "",
             duration: 60,
             price: 5000,
             isActive: true,
@@ -92,6 +112,7 @@ export default function MenusPage() {
             name: menu.name,
             description: menu.description || "",
             category: menu.category,
+            imageUrl: menu.imageUrl || "",
             duration: menu.duration,
             price: menu.price,
             isActive: menu.isActive,
@@ -121,10 +142,12 @@ export default function MenusPage() {
 
         setIsSaving(true);
         try {
+            const normalizedImageUrl = normalizeOptionalUrl(formData.imageUrl);
             const data = {
-                name: formData.name,
-                description: formData.description || null,
-                category: formData.category,
+                name: formData.name.trim(),
+                description: normalizeOptionalText(formData.description),
+                category: formData.category.trim(),
+                imageUrl: normalizedImageUrl,
                 duration: formData.duration,
                 price: formData.price,
                 isActive: formData.isActive,
@@ -145,6 +168,7 @@ export default function MenusPage() {
             });
             fetchData();
         } catch (err: any) {
+            setFormError(err.message || "メニュー保存に失敗しました");
             pushToast({
                 variant: "error",
                 title: "保存に失敗しました",
@@ -292,6 +316,15 @@ export default function MenusPage() {
                             )}
                         >
                             <CardContent className="p-4">
+                                {menu.imageUrl && (
+                                    <div className="mb-4 overflow-hidden rounded-xl border border-gray-100 bg-gray-50">
+                                        <img
+                                            src={menu.imageUrl}
+                                            alt={`${menu.name} の画像`}
+                                            className="h-40 w-full object-cover"
+                                        />
+                                    </div>
+                                )}
                                 <div className="flex items-start justify-between">
                                     <div className="flex-1">
                                         <div className="flex items-center gap-2">
@@ -338,7 +371,7 @@ export default function MenusPage() {
 
             {/* Edit/Create Modal */}
             <Dialog open={isEditModalOpen} onClose={() => setIsEditModalOpen(false)}>
-                <DialogContent className="max-w-md">
+                <DialogContent className="max-w-2xl">
                     <DialogHeader onClose={() => setIsEditModalOpen(false)}>
                         {selectedMenu ? "メニュー編集" : "新規メニュー"}
                     </DialogHeader>
@@ -388,6 +421,35 @@ export default function MenusPage() {
                                 className="w-full h-24 px-3 py-2 rounded-lg border border-gray-200 focus:border-primary focus:outline-none resize-none"
                                 placeholder="メニューの説明文"
                             />
+                        </div>
+                        <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_160px]">
+                            <div>
+                                <label className="block text-sm font-medium mb-1">画像URL</label>
+                                <input
+                                    type="url"
+                                    value={formData.imageUrl}
+                                    onChange={(e) => setFormData({ ...formData, imageUrl: e.target.value })}
+                                    className="w-full h-10 px-3 rounded-lg border border-gray-200 focus:border-primary focus:outline-none"
+                                    placeholder="https://example.com/menu.jpg"
+                                />
+                                <p className="mt-1 text-xs text-muted-foreground">
+                                    customer-app のメニュー一覧カードに表示されます
+                                </p>
+                            </div>
+                            <div className="rounded-xl border border-gray-200 bg-gray-50 p-3">
+                                <div className="text-xs font-medium text-gray-500 mb-2">プレビュー</div>
+                                {formData.imageUrl.trim() ? (
+                                    <img
+                                        src={formData.imageUrl}
+                                        alt="メニュー画像プレビュー"
+                                        className="h-24 w-full rounded-lg object-cover bg-white"
+                                    />
+                                ) : (
+                                    <div className="flex h-24 items-center justify-center rounded-lg border border-dashed border-gray-300 bg-white text-xs text-gray-400">
+                                        画像なし
+                                    </div>
+                                )}
+                            </div>
                         </div>
                         <div className="grid grid-cols-2 gap-4">
                             <div>

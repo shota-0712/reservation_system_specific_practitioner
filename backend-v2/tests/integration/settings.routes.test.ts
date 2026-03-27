@@ -215,4 +215,23 @@ describe('settings routes integration', () => {
             'admin-uid'
         );
     });
+
+    it('allows managers to update store profile settings', async () => {
+        settingsState.storeRepo.update.mockResolvedValue({
+            ...makeStore(),
+            name: 'Updated Store',
+        });
+
+        const { response, json } = await requestJson('/settings/profile', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name: 'Updated Store' }),
+        });
+
+        expect(response.status).toBe(200);
+        expect(json.success).toBe(true);
+        expect(settingsState.storeRepo.update).toHaveBeenCalledWith(STORE_ID, {
+            name: 'Updated Store',
+        });
+    });
 });

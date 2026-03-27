@@ -16,6 +16,7 @@ import {
     SettingsTabNav,
 } from "./settings.sections";
 import type {
+    BrandingSettingsForm,
     BusinessHour,
     IntegrationsSettingsForm,
     LineResolvePreviewResponse,
@@ -29,6 +30,7 @@ import type {
 } from "./settings.types";
 import {
     DEFAULT_BOOKING_SETTINGS,
+    DEFAULT_BRANDING_SETTINGS,
     DEFAULT_INTEGRATIONS_SETTINGS,
     DEFAULT_NOTIFICATION_SETTINGS,
     DEFAULT_PROFILE_SETTINGS,
@@ -43,6 +45,8 @@ import {
     normalizeRfmSettings,
     validateRfmSettings,
 } from "./settings.utils";
+
+const HEX_COLOR_REGEX = /^#[0-9A-Fa-f]{6}$/;
 
 function getErrorMessage(error: unknown, fallback: string): string {
     return error instanceof Error ? error.message : fallback;
@@ -60,6 +64,7 @@ export default function SettingsPage() {
     const [saveMessage, setSaveMessage] = useState<SaveMessage | null>(null);
 
     const [profile, setProfile] = useState<ProfileSettingsForm>(DEFAULT_PROFILE_SETTINGS);
+    const [branding, setBranding] = useState<BrandingSettingsForm>(DEFAULT_BRANDING_SETTINGS);
     const [businessHours, setBusinessHours] = useState<BusinessHour[]>(
         createInitialBusinessHours
     );
@@ -81,6 +86,13 @@ export default function SettingsPage() {
 
     const updateProfile = (field: keyof ProfileSettingsForm, value: string) => {
         setProfile((prev) => ({
+            ...prev,
+            [field]: value,
+        }));
+    };
+
+    const updateBranding = (field: keyof BrandingSettingsForm, value: string) => {
+        setBranding((prev) => ({
             ...prev,
             [field]: value,
         }));
@@ -197,6 +209,12 @@ export default function SettingsPage() {
                             address: data.store?.address || "",
                             email: data.store?.email || "",
                         });
+                        setBranding({
+                            primaryColor:
+                                data.tenant.branding?.primaryColor ||
+                                DEFAULT_BRANDING_SETTINGS.primaryColor,
+                            logoUrl: data.tenant.branding?.logoUrl || "",
+                        });
                         setBusinessHours(buildBusinessHours(data.store?.businessHours));
                         setBookingSettings((prev) =>
                             mergeBookingSettings(data.store, prev)
@@ -265,15 +283,63 @@ export default function SettingsPage() {
 
         try {
             if (activeTab === "general") {
-                const profileResult = await settingsApi.updateProfile({
-                    name: profile.name,
-                    phone: profile.phone,
-                    address: profile.address,
-                    email: profile.email,
-                });
-                if (!profileResult.success) {
-                    throw new Error(profileResult.error?.message || "Failed to save profile");
+                const normalizedPrimaryColor = branding.primaryColor.trim()
+                    || DEFAULT_BRANDING_SETTINGS.primaryColor;
+                if (!HEX_COLOR_REGEX.test(normalizedPrimaryColor)) {
+                    throw new Error("テーマカラーは #RRGGBB 形式で入力してください");
                 }
+
+                const normalizedLogoUrl = branding.logoUrl.trim();
+                if (normalizedLogoUrl) {
+                    try {
+                        new URL(normalizedLogoUrl);
+                    } catch {
+                        throw new Error("ロゴ画像URLは有効なURLを入力してください");
+                    }
+                }
+
+                const [profileResult, brandingResult] = await Promise.all([
+                    settingsApi.updateProfile({
+                        name: profile.name,
+                        phone: profile.phone,
+                        address: profile.address,
+                        email: profile.email,
+                    }),
+                    settingsApi.updateBranding({
+                        primaryColor: normalizedPrimaryColor,
+                        logoUrl: normalizedLogoUrl || null,
+                    }),
+                ]);
+
+                if (!profileResult.success && !brandingResult.success) {
+                    throw new Error(
+                        [
+                            profileResult.error?.message,
+                            brandingResult.error?.message,
+                        ]
+                            .filter(Boolean)
+                            .join(" / ") || "店舗情報の保存に失敗しました"
+                    );
+                }
+
+                if (!profileResult.success) {
+                    throw new Error(
+                        profileResult.error?.message || "店舗情報の保存に失敗しました"
+                    );
+                }
+
+                if (!brandingResult.success) {
+                    throw new Error(
+                        `店舗情報は保存しましたが、customer-app 表示設定の保存に失敗しました: ${
+                            brandingResult.error?.message || "unknown error"
+                        }`
+                    );
+                }
+
+                setBranding({
+                    primaryColor: normalizedPrimaryColor,
+                    logoUrl: normalizedLogoUrl,
+                });
             }
 
             if (activeTab === "hours" || activeTab === "booking") {
@@ -424,7 +490,9 @@ export default function SettingsPage() {
                 {activeTab === "general" && (
                     <GeneralSettingsSection
                         profile={profile}
+                        branding={branding}
                         onChange={updateProfile}
+                        onBrandingChange={updateBranding}
                     />
                 )}
 

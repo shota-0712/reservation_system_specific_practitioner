@@ -7,7 +7,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogBody, DialogFooter, ConfirmDialog } from "@/components/ui/dialog";
 import { useToast } from "@/components/ui/toast";
 import { cn } from "@/lib/utils";
-import { assignmentsApi, bookingLinksApi, getActiveStoreId, practitionersApi, STORE_CHANGED_EVENT } from "@/lib/api";
+import { assignmentsApi, bookingLinksApi, getActiveStoreId, practitionersApi, settingsApi, STORE_CHANGED_EVENT } from "@/lib/api";
 import { logger } from "@/lib/logger";
 
 const DAYS = ["日", "月", "火", "水", "木", "金", "土"];
@@ -26,7 +26,16 @@ interface Practitioner {
     storeIds?: string[];
     phone?: string;
     email?: string;
+    imageUrl?: string;
     color?: string;
+    title?: string;
+    description?: string;
+    experience?: string;
+    prTitle?: string;
+    specialties?: string[];
+    snsInstagram?: string;
+    snsTwitter?: string;
+    nominationFee?: number;
     lineConfig?: {
         liffId?: string;
         channelId?: string;
@@ -50,11 +59,51 @@ interface BookingLinkToken {
     createdByEmail?: string;
 }
 
+interface LineResolvePreview {
+    mode: "tenant" | "store" | "practitioner";
+    source: "tenant" | "store" | "practitioner";
+    liffId: string;
+    channelId: string;
+    storeId?: string;
+    practitionerId?: string;
+}
+
 const roleLabels: Record<string, { label: string; color: string }> = {
     stylist: { label: "スタイリスト", color: "bg-blue-100 text-blue-700" },
     assistant: { label: "アシスタント", color: "bg-purple-100 text-purple-700" },
     owner: { label: "オーナー", color: "bg-amber-100 text-amber-700" },
 };
+
+function normalizeOptionalText(value: string): string | undefined {
+    const trimmed = value.trim();
+    return trimmed || undefined;
+}
+
+function normalizeOptionalUrl(value: string): string | undefined {
+    const trimmed = value.trim();
+    if (!trimmed) {
+        return undefined;
+    }
+
+    try {
+        return new URL(trimmed).toString();
+    } catch {
+        throw new Error("画像URLは有効なURLを入力してください");
+    }
+}
+
+function formatSpecialties(value?: string[]): string {
+    return (value || []).filter(Boolean).join(", ");
+}
+
+function parseSpecialties(value: string): string[] | undefined {
+    const normalized = value
+        .split(/[\n,]/)
+        .map((item) => item.trim())
+        .filter(Boolean);
+
+    return normalized.length > 0 ? normalized : undefined;
+}
 
 export default function StaffPage() {
     const { pushToast } = useToast();
@@ -63,8 +112,10 @@ export default function StaffPage() {
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [showInactive, setShowInactive] = useState(false);
-    const [copiedLinkId, setCopiedLinkId] = useState<string | null>(null);
+    const [copiedLinkKey, setCopiedLinkKey] = useState<string | null>(null);
     const [linkLoadingByPractitioner, setLinkLoadingByPractitioner] = useState<Record<string, boolean>>({});
+    const [linePreviewByScope, setLinePreviewByScope] = useState<Record<string, LineResolvePreview | null | undefined>>({});
+    const [linePreviewLoadingByScope, setLinePreviewLoadingByScope] = useState<Record<string, boolean>>({});
 
     // Modal states
     const [isEditModalOpen, setIsEditModalOpen] = useState(false);
@@ -85,7 +136,16 @@ export default function StaffPage() {
         role: "stylist" as "stylist" | "assistant" | "owner",
         phone: "",
         email: "",
+        imageUrl: "",
         color: "#3b82f6",
+        title: "",
+        description: "",
+        experience: "",
+        prTitle: "",
+        specialties: "",
+        snsInstagram: "",
+        snsTwitter: "",
+        nominationFee: 0,
         isActive: true,
         workDays: [] as number[],
         workStart: "10:00",
@@ -121,6 +181,19 @@ export default function StaffPage() {
         }
     };
 
+    const buildTokenLiffUrl = (liffId: string, token: string): string => {
+        const normalizedLiffId = String(liffId || "").trim();
+        if (!normalizedLiffId) return "";
+
+        try {
+            const url = new URL(`https://liff.line.me/${encodeURIComponent(normalizedLiffId)}/`);
+            url.searchParams.set("t", token);
+            return url.toString();
+        } catch {
+            return "";
+        }
+    };
+
     const resolvePreferredStoreId = (practitioner: Practitioner): string | undefined => {
         const activeStoreId = getActiveStoreId();
         const staffStoreIds = (practitioner.storeIds || []).filter(Boolean);
@@ -129,6 +202,9 @@ export default function StaffPage() {
         }
         return staffStoreIds[0] || undefined;
     };
+
+    const getLinePreviewScopeKey = (practitionerId: string, storeId?: string): string =>
+        `${practitionerId}:${storeId || "tenant"}`;
 
     const getActiveLinkForPractitioner = (practitioner: Practitioner): BookingLinkToken | null => {
         const preferredStoreId = resolvePreferredStoreId(practitioner);
@@ -229,8 +305,9 @@ export default function StaffPage() {
 
         try {
             await navigator.clipboard.writeText(url);
-            setCopiedLinkId(link.id);
-            window.setTimeout(() => setCopiedLinkId((current) => (current === link.id ? null : current)), 1800);
+            const copiedKey = `web:${link.id}`;
+            setCopiedLinkKey(copiedKey);
+            window.setTimeout(() => setCopiedLinkKey((current) => (current === copiedKey ? null : current)), 1800);
             pushToast({
                 variant: "success",
                 title: "予約URLをコピーしました",
@@ -240,6 +317,82 @@ export default function StaffPage() {
             pushToast({
                 variant: "error",
                 title: "URLのコピーに失敗しました",
+            });
+        }
+    };
+
+    const ensureLinePreview = async (practitioner: Practitioner, options?: { silent?: boolean }): Promise<LineResolvePreview | null> => {
+        const storeId = resolvePreferredStoreId(practitioner);
+        const scopeKey = getLinePreviewScopeKey(practitioner.id, storeId);
+        const cached = linePreviewByScope[scopeKey];
+        if (cached !== undefined) {
+            return cached ?? null;
+        }
+
+        setLinePreviewLoadingByScope((prev) => ({ ...prev, [scopeKey]: true }));
+        try {
+            const response = await settingsApi.resolveLinePreview({
+                practitionerId: practitioner.id,
+                ...(storeId ? { storeId } : {}),
+            });
+            if (!response.success || !response.data) {
+                throw new Error(response.error?.message || "LINE設定の解決に失敗しました");
+            }
+
+            const resolved = response.data as LineResolvePreview;
+            setLinePreviewByScope((prev) => ({ ...prev, [scopeKey]: resolved }));
+            return resolved;
+        } catch (error) {
+            logger.error(error);
+            setLinePreviewByScope((prev) => ({ ...prev, [scopeKey]: null }));
+            if (!options?.silent) {
+                pushToast({
+                    variant: "error",
+                    title: "LIFF URLの生成に失敗しました",
+                    description: error instanceof Error ? error.message : "LINE設定の解決に失敗しました",
+                });
+            }
+            return null;
+        } finally {
+            setLinePreviewLoadingByScope((prev) => ({ ...prev, [scopeKey]: false }));
+        }
+    };
+
+    const copyPractitionerLiffUrl = async (practitioner: Practitioner, link: BookingLinkToken) => {
+        const resolved = await ensureLinePreview(practitioner);
+        if (!resolved?.liffId) {
+            pushToast({
+                variant: "warning",
+                title: "LIFF URLを生成できません",
+                description: "このスタッフに有効な LINE LIFF 設定が見つかりませんでした。",
+            });
+            return;
+        }
+
+        const url = buildTokenLiffUrl(resolved.liffId, link.token);
+        if (!url) {
+            pushToast({
+                variant: "error",
+                title: "LIFF URLの生成に失敗しました",
+                description: "LIFF ID を確認してください。",
+            });
+            return;
+        }
+
+        try {
+            await navigator.clipboard.writeText(url);
+            const copiedKey = `liff:${link.id}`;
+            setCopiedLinkKey(copiedKey);
+            window.setTimeout(() => setCopiedLinkKey((current) => (current === copiedKey ? null : current)), 1800);
+            pushToast({
+                variant: "success",
+                title: "LIFF URLをコピーしました",
+            });
+        } catch (error) {
+            logger.error(error);
+            pushToast({
+                variant: "error",
+                title: "LIFF URLのコピーに失敗しました",
             });
         }
     };
@@ -295,6 +448,8 @@ export default function StaffPage() {
 
     useEffect(() => {
         const onStoreChanged = () => {
+            setLinePreviewByScope({});
+            setLinePreviewLoadingByScope({});
             fetchData().catch(() => {
                 // noop
             });
@@ -304,6 +459,15 @@ export default function StaffPage() {
             window.removeEventListener(STORE_CHANGED_EVENT, onStoreChanged);
         };
     }, []);
+
+    useEffect(() => {
+        practitioners.forEach((practitioner) => {
+            if (!getActiveLinkForPractitioner(practitioner)) {
+                return;
+            }
+            void ensureLinePreview(practitioner, { silent: true });
+        });
+    }, [practitioners, bookingLinks]);
 
     // Open create modal
     const handleCreate = () => {
@@ -315,7 +479,16 @@ export default function StaffPage() {
             role: "stylist",
             phone: "",
             email: "",
+            imageUrl: "",
             color: "#3b82f6",
+            title: "",
+            description: "",
+            experience: "",
+            prTitle: "",
+            specialties: "",
+            snsInstagram: "",
+            snsTwitter: "",
+            nominationFee: 0,
             isActive: true,
             workDays: [1, 2, 3, 4, 5], // Mon-Fri default
             workStart: "10:00",
@@ -338,7 +511,16 @@ export default function StaffPage() {
             role: staff.role,
             phone: staff.phone || "",
             email: staff.email || "",
+            imageUrl: staff.imageUrl || "",
             color: staff.color || "#3b82f6",
+            title: staff.title || "",
+            description: staff.description || "",
+            experience: staff.experience || "",
+            prTitle: staff.prTitle || "",
+            specialties: formatSpecialties(staff.specialties),
+            snsInstagram: staff.snsInstagram || "",
+            snsTwitter: staff.snsTwitter || "",
+            nominationFee: staff.nominationFee ?? 0,
             isActive: staff.isActive,
             workDays: staff.schedule?.workDays || [],
             workStart: staff.schedule?.workHours?.start || "10:00",
@@ -372,24 +554,37 @@ export default function StaffPage() {
 
         setIsSaving(true);
         try {
+            const normalizedImageUrl = normalizeOptionalUrl(formData.imageUrl);
+            const lineConfig = {
+                liffId: normalizeOptionalText(formData.lineLiffId),
+                channelId: normalizeOptionalText(formData.lineChannelId),
+                channelAccessToken: normalizeOptionalText(formData.lineChannelAccessToken),
+                channelSecret: normalizeOptionalText(formData.lineChannelSecret),
+            };
+            const hasLineConfig = Object.values(lineConfig).some(Boolean);
+
             const data = {
-                name: formData.name,
-                nameKana: formData.nameKana || null,
+                name: formData.name.trim(),
+                nameKana: normalizeOptionalText(formData.nameKana),
                 role: formData.role,
-                phone: formData.phone || null,
-                email: formData.email || null,
+                phone: normalizeOptionalText(formData.phone),
+                email: normalizeOptionalText(formData.email),
+                imageUrl: normalizedImageUrl,
                 color: formData.color,
+                title: normalizeOptionalText(formData.title),
+                description: normalizeOptionalText(formData.description),
+                experience: normalizeOptionalText(formData.experience),
+                prTitle: normalizeOptionalText(formData.prTitle),
+                specialties: parseSpecialties(formData.specialties),
+                snsInstagram: normalizeOptionalText(formData.snsInstagram),
+                snsTwitter: normalizeOptionalText(formData.snsTwitter),
+                nominationFee: Number.isFinite(formData.nominationFee) ? formData.nominationFee : 0,
                 isActive: formData.isActive,
                 schedule: {
                     workDays: formData.workDays,
                     workHours: { start: formData.workStart, end: formData.workEnd },
                 },
-                lineConfig: {
-                    liffId: formData.lineLiffId || undefined,
-                    channelId: formData.lineChannelId || undefined,
-                    channelAccessToken: formData.lineChannelAccessToken || undefined,
-                    channelSecret: formData.lineChannelSecret || undefined,
-                },
+                lineConfig: hasLineConfig ? lineConfig : undefined,
             };
 
             if (selectedStaff) {
@@ -409,6 +604,7 @@ export default function StaffPage() {
             });
             fetchData();
         } catch (err: any) {
+            setFormError(err.message || "スタッフ保存に失敗しました");
             pushToast({
                 variant: "error",
                 title: "保存に失敗しました",
@@ -631,19 +827,34 @@ export default function StaffPage() {
                         const role = roleLabels[staff.role] || { label: staff.role, color: "bg-gray-100 text-gray-600" };
                         const activeLink = getActiveLinkForPractitioner(staff);
                         const bookingUrl = activeLink ? buildTokenBookingUrl(activeLink.token) : "";
-                        const copied = activeLink ? copiedLinkId === activeLink.id : false;
+                        const preferredStoreId = resolvePreferredStoreId(staff);
+                        const linePreviewScopeKey = getLinePreviewScopeKey(staff.id, preferredStoreId);
+                        const linePreview = linePreviewByScope[linePreviewScopeKey];
+                        const liffBookingUrl =
+                            activeLink && linePreview?.liffId ? buildTokenLiffUrl(linePreview.liffId, activeLink.token) : "";
+                        const copiedWeb = activeLink ? copiedLinkKey === `web:${activeLink.id}` : false;
+                        const copiedLiff = activeLink ? copiedLinkKey === `liff:${activeLink.id}` : false;
                         const linkLoading = Boolean(linkLoadingByPractitioner[staff.id]);
+                        const linePreviewLoading = Boolean(linePreviewLoadingByScope[linePreviewScopeKey]);
                         return (
                             <Card key={staff.id} className={cn(!staff.isActive && "opacity-60")}>
                                 <CardContent className="p-4">
                                     <div className="flex items-start gap-4">
                                         {/* Avatar */}
-                                        <div
-                                            className="w-12 h-12 rounded-full flex items-center justify-center text-white font-bold text-lg"
-                                            style={{ backgroundColor: staff.color || '#3b82f6' }}
-                                        >
-                                            {staff.name.charAt(0)}
-                                        </div>
+                                        {staff.imageUrl ? (
+                                            <img
+                                                src={staff.imageUrl}
+                                                alt={`${staff.name} の画像`}
+                                                className="h-14 w-14 rounded-full object-cover ring-2 ring-white shadow-sm"
+                                            />
+                                        ) : (
+                                            <div
+                                                className="w-14 h-14 rounded-full flex items-center justify-center text-white font-bold text-lg"
+                                                style={{ backgroundColor: staff.color || '#3b82f6' }}
+                                            >
+                                                {staff.name.charAt(0)}
+                                            </div>
+                                        )}
 
                                         {/* Info */}
                                         <div className="flex-1">
@@ -654,6 +865,11 @@ export default function StaffPage() {
                                                         <span className="text-sm text-muted-foreground">
                                                             {staff.nameKana}
                                                         </span>
+                                                    )}
+                                                    {staff.title && (
+                                                        <p className="mt-1 text-sm text-muted-foreground">
+                                                            {staff.title}
+                                                        </p>
                                                     )}
                                                 </div>
                                                 <div className="flex gap-1">
@@ -694,7 +910,39 @@ export default function StaffPage() {
                                                     <Calendar className="h-3 w-3" />
                                                     登録: {new Date(staff.createdAt).toLocaleDateString('ja-JP')}
                                                 </div>
+                                                {staff.experience && (
+                                                    <div>経験: {staff.experience}</div>
+                                                )}
+                                                {(staff.nominationFee ?? 0) > 0 && (
+                                                    <div>指名料: ¥{(staff.nominationFee || 0).toLocaleString()}</div>
+                                                )}
                                             </div>
+
+                                            {(staff.prTitle || staff.description) && (
+                                                <div className="mt-3 rounded-md border border-gray-200 bg-white p-3">
+                                                    {staff.prTitle && (
+                                                        <p className="text-sm font-medium text-gray-800">{staff.prTitle}</p>
+                                                    )}
+                                                    {staff.description && (
+                                                        <p className="mt-1 text-sm text-muted-foreground line-clamp-3">
+                                                            {staff.description}
+                                                        </p>
+                                                    )}
+                                                </div>
+                                            )}
+
+                                            {staff.specialties && staff.specialties.length > 0 && (
+                                                <div className="mt-3 flex flex-wrap gap-1">
+                                                    {staff.specialties.slice(0, 4).map((specialty) => (
+                                                        <span
+                                                            key={specialty}
+                                                            className="rounded-full bg-gray-100 px-2 py-1 text-xs text-gray-600"
+                                                        >
+                                                            {specialty}
+                                                        </span>
+                                                    ))}
+                                                </div>
+                                            )}
 
                                             {/* Work Days */}
                                             {staff.schedule?.workDays && (
@@ -743,8 +991,23 @@ export default function StaffPage() {
                                                                 onClick={() => copyPractitionerBookingUrl(activeLink)}
                                                                 disabled={!bookingUrl || linkLoading}
                                                             >
-                                                                {copied ? <Check className="mr-1 h-3 w-3" /> : <Copy className="mr-1 h-3 w-3" />}
-                                                                {copied ? "コピー済み" : "コピー"}
+                                                                {copiedWeb ? <Check className="mr-1 h-3 w-3" /> : <Copy className="mr-1 h-3 w-3" />}
+                                                                {copiedWeb ? "URLコピー済み" : "URLコピー"}
+                                                            </Button>
+                                                        )}
+                                                        {activeLink && (
+                                                            <Button
+                                                                type="button"
+                                                                variant="outline"
+                                                                size="sm"
+                                                                className="h-7 px-2 text-xs"
+                                                                onClick={() => {
+                                                                    void copyPractitionerLiffUrl(staff, activeLink);
+                                                                }}
+                                                                disabled={linePreviewLoading || linkLoading}
+                                                            >
+                                                                {linePreviewLoading ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : copiedLiff ? <Check className="mr-1 h-3 w-3" /> : <Copy className="mr-1 h-3 w-3" />}
+                                                                {copiedLiff ? "LIFFコピー済み" : "LIFFコピー"}
                                                             </Button>
                                                         )}
                                                         <Button
@@ -777,6 +1040,13 @@ export default function StaffPage() {
                                                 {bookingUrl ? (
                                                     <>
                                                         <code className="block break-all text-[11px] text-gray-600">{bookingUrl}</code>
+                                                        {liffBookingUrl ? (
+                                                            <code className="mt-1 block break-all text-[11px] text-gray-600">{liffBookingUrl}</code>
+                                                        ) : linePreviewLoading ? (
+                                                            <p className="mt-1 text-[11px] text-muted-foreground">LIFF URLを解決中...</p>
+                                                        ) : (
+                                                            <p className="mt-1 text-[11px] text-amber-600">LIFF URLは LINE 設定解決後に生成されます。</p>
+                                                        )}
                                                         <div className="mt-1 text-[10px] text-gray-500">
                                                             token: {activeLink?.token}
                                                             {activeLink?.storeId ? ` / storeId: ${activeLink.storeId}` : " / store: tenant-default"}
@@ -831,7 +1101,7 @@ export default function StaffPage() {
 
             {/* Edit/Create Modal */}
             <Dialog open={isEditModalOpen} onClose={() => setIsEditModalOpen(false)}>
-                <DialogContent className="max-w-md">
+                <DialogContent className="max-w-2xl">
                     <DialogHeader onClose={() => setIsEditModalOpen(false)}>
                         {selectedStaff ? "スタッフ編集" : "新規スタッフ"}
                     </DialogHeader>
@@ -897,6 +1167,125 @@ export default function StaffPage() {
                                     placeholder="staff@salon.com"
                                 />
                             </div>
+                        </div>
+                        <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_160px]">
+                            <div>
+                                <label className="block text-sm font-medium mb-1">プロフィール画像URL</label>
+                                <input
+                                    type="url"
+                                    value={formData.imageUrl}
+                                    onChange={(e) => setFormData({ ...formData, imageUrl: e.target.value })}
+                                    className="w-full h-10 px-3 rounded-lg border border-gray-200 focus:border-primary focus:outline-none"
+                                    placeholder="https://example.com/staff.jpg"
+                                />
+                                <p className="mt-1 text-xs text-muted-foreground">
+                                    customer-app のスタッフ選択カードに表示されます
+                                </p>
+                            </div>
+                            <div className="rounded-xl border border-gray-200 bg-gray-50 p-3">
+                                <div className="mb-2 text-xs font-medium text-gray-500">プレビュー</div>
+                                {formData.imageUrl.trim() ? (
+                                    <img
+                                        src={formData.imageUrl}
+                                        alt="スタッフ画像プレビュー"
+                                        className="h-24 w-24 rounded-full object-cover bg-white mx-auto"
+                                    />
+                                ) : (
+                                    <div
+                                        className="mx-auto flex h-24 w-24 items-center justify-center rounded-full text-2xl font-bold text-white"
+                                        style={{ backgroundColor: formData.color }}
+                                    >
+                                        {(formData.name || "S").charAt(0)}
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                        <div className="grid grid-cols-2 gap-4">
+                            <div>
+                                <label className="block text-sm font-medium mb-1">肩書き</label>
+                                <input
+                                    type="text"
+                                    value={formData.title}
+                                    onChange={(e) => setFormData({ ...formData, title: e.target.value })}
+                                    className="w-full h-10 px-3 rounded-lg border border-gray-200 focus:border-primary focus:outline-none"
+                                    placeholder="トップスタイリスト"
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium mb-1">経験</label>
+                                <input
+                                    type="text"
+                                    value={formData.experience}
+                                    onChange={(e) => setFormData({ ...formData, experience: e.target.value })}
+                                    className="w-full h-10 px-3 rounded-lg border border-gray-200 focus:border-primary focus:outline-none"
+                                    placeholder="歴8年"
+                                />
+                            </div>
+                        </div>
+                        <div className="grid grid-cols-2 gap-4">
+                            <div>
+                                <label className="block text-sm font-medium mb-1">指名料（円）</label>
+                                <input
+                                    type="number"
+                                    value={formData.nominationFee}
+                                    onChange={(e) => setFormData({ ...formData, nominationFee: Math.max(0, parseInt(e.target.value, 10) || 0) })}
+                                    className="w-full h-10 px-3 rounded-lg border border-gray-200 focus:border-primary focus:outline-none"
+                                    placeholder="0"
+                                    min={0}
+                                    step={100}
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium mb-1">得意分野</label>
+                                <input
+                                    type="text"
+                                    value={formData.specialties}
+                                    onChange={(e) => setFormData({ ...formData, specialties: e.target.value })}
+                                    className="w-full h-10 px-3 rounded-lg border border-gray-200 focus:border-primary focus:outline-none"
+                                    placeholder="カラー, メンズ, ヘッドスパ"
+                                />
+                            </div>
+                        </div>
+                        <div className="grid grid-cols-2 gap-4">
+                            <div>
+                                <label className="block text-sm font-medium mb-1">Instagram</label>
+                                <input
+                                    type="text"
+                                    value={formData.snsInstagram}
+                                    onChange={(e) => setFormData({ ...formData, snsInstagram: e.target.value })}
+                                    className="w-full h-10 px-3 rounded-lg border border-gray-200 focus:border-primary focus:outline-none"
+                                    placeholder="@stylist_account"
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium mb-1">X / Twitter</label>
+                                <input
+                                    type="text"
+                                    value={formData.snsTwitter}
+                                    onChange={(e) => setFormData({ ...formData, snsTwitter: e.target.value })}
+                                    className="w-full h-10 px-3 rounded-lg border border-gray-200 focus:border-primary focus:outline-none"
+                                    placeholder="@stylist_account"
+                                />
+                            </div>
+                        </div>
+                        <div>
+                            <label className="block text-sm font-medium mb-1">PRタイトル</label>
+                            <input
+                                type="text"
+                                value={formData.prTitle}
+                                onChange={(e) => setFormData({ ...formData, prTitle: e.target.value })}
+                                className="w-full h-10 px-3 rounded-lg border border-gray-200 focus:border-primary focus:outline-none"
+                                placeholder="透明感カラーならお任せください"
+                            />
+                        </div>
+                        <div>
+                            <label className="block text-sm font-medium mb-1">紹介文</label>
+                            <textarea
+                                value={formData.description}
+                                onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                                className="w-full h-24 px-3 py-2 rounded-lg border border-gray-200 focus:border-primary focus:outline-none resize-none"
+                                placeholder="customer-app に表示する紹介文"
+                            />
                         </div>
                         <div>
                             <label className="block text-sm font-medium mb-1">カラー</label>

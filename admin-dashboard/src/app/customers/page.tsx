@@ -32,6 +32,18 @@ interface PaginationInfo {
     hasPrev: boolean;
 }
 
+function parseNumericValue(value: unknown): number {
+    if (typeof value === "number") {
+        return Number.isFinite(value) ? value : 0;
+    }
+
+    if (typeof value === "string") {
+        const parsed = Number.parseFloat(value);
+        return Number.isFinite(parsed) ? parsed : 0;
+    }
+
+    return 0;
+}
 
 export default function CustomersPage() {
     const [customers, setCustomers] = useState<Customer[]>([]);
@@ -51,6 +63,8 @@ export default function CustomersPage() {
                 const items = (res.data as any[]).map((c) => ({
                     ...c,
                     phoneNumber: c.phoneNumber || c.phone || undefined,
+                    totalVisits: parseNumericValue(c.totalVisits),
+                    totalSpend: parseNumericValue(c.totalSpend),
                 })) as Customer[];
                 setCustomers(items);
                 if (res.meta) {

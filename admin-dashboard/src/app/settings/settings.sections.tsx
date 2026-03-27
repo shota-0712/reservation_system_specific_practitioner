@@ -15,6 +15,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 import type {
+    BrandingSettingsForm,
     BookingSettingsForm,
     BusinessHour,
     IntegrationsSettingsForm,
@@ -103,6 +104,8 @@ type EditableLineField =
     | "lineChannelAccessToken"
     | "lineChannelSecret";
 
+const HEX_COLOR_REGEX = /^#[0-9A-Fa-f]{6}$/;
+
 export function SettingsTabNav({
     activeTab,
     onChange,
@@ -160,22 +163,31 @@ export function SettingsErrorBanners({
 
 export function GeneralSettingsSection({
     profile,
+    branding,
     onChange,
+    onBrandingChange,
 }: {
     profile: ProfileSettingsForm;
+    branding: BrandingSettingsForm;
     onChange: (field: keyof ProfileSettingsForm, value: string) => void;
+    onBrandingChange: (field: keyof BrandingSettingsForm, value: string) => void;
 }) {
+    const previewColor = HEX_COLOR_REGEX.test(branding.primaryColor)
+        ? branding.primaryColor
+        : "#4F46E5";
+
     return (
         <Card>
             <CardHeader>
                 <CardTitle className="text-lg">店舗基本情報</CardTitle>
-                <CardDescription>店舗の基本情報を設定します</CardDescription>
+                <CardDescription>customer-app に表示する店舗情報とロゴを設定します</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
                 <div className="grid gap-4 md:grid-cols-2">
                     <div>
-                        <label className="mb-1 block text-sm font-medium">店舗名</label>
+                        <label htmlFor="settings-store-name" className="mb-1 block text-sm font-medium">店舗名</label>
                         <input
+                            id="settings-store-name"
                             type="text"
                             value={profile.name}
                             onChange={(event) => onChange("name", event.target.value)}
@@ -183,8 +195,9 @@ export function GeneralSettingsSection({
                         />
                     </div>
                     <div>
-                        <label className="mb-1 block text-sm font-medium">電話番号</label>
+                        <label htmlFor="settings-store-phone" className="mb-1 block text-sm font-medium">電話番号</label>
                         <input
+                            id="settings-store-phone"
                             type="tel"
                             value={profile.phone}
                             onChange={(event) => onChange("phone", event.target.value)}
@@ -194,8 +207,9 @@ export function GeneralSettingsSection({
                 </div>
 
                 <div>
-                    <label className="mb-1 block text-sm font-medium">住所</label>
+                    <label htmlFor="settings-store-address" className="mb-1 block text-sm font-medium">住所</label>
                     <input
+                        id="settings-store-address"
                         type="text"
                         value={profile.address}
                         onChange={(event) => onChange("address", event.target.value)}
@@ -204,13 +218,100 @@ export function GeneralSettingsSection({
                 </div>
 
                 <div>
-                    <label className="mb-1 block text-sm font-medium">メールアドレス</label>
+                    <label htmlFor="settings-store-email" className="mb-1 block text-sm font-medium">メールアドレス</label>
                     <input
+                        id="settings-store-email"
                         type="email"
                         value={profile.email}
                         onChange={(event) => onChange("email", event.target.value)}
                         className="h-10 w-full rounded-lg border border-gray-200 px-3 text-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
                     />
+                </div>
+
+                <div className="border-t border-gray-100 pt-4">
+                    <div className="mb-4">
+                        <h3 className="text-sm font-semibold text-gray-900">customer-app 表示</h3>
+                        <p className="mt-1 text-sm text-muted-foreground">
+                            ヘッダーのロゴ画像とテーマカラーを設定します
+                        </p>
+                    </div>
+
+                    <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_144px]">
+                        <div className="space-y-4">
+                            <div>
+                                <label htmlFor="settings-logo-url" className="mb-1 block text-sm font-medium">ロゴ画像URL</label>
+                                <input
+                                    id="settings-logo-url"
+                                    type="url"
+                                    value={branding.logoUrl}
+                                    onChange={(event) => onBrandingChange("logoUrl", event.target.value)}
+                                    placeholder="https://example.com/logo.png"
+                                    className="h-10 w-full rounded-lg border border-gray-200 px-3 text-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                                />
+                                <p className="mt-1 text-xs text-muted-foreground">
+                                    未入力なら customer-app では店舗アイコンのプレースホルダを表示します
+                                </p>
+                            </div>
+
+                            <div>
+                                <label htmlFor="settings-primary-color" className="mb-1 block text-sm font-medium">テーマカラー</label>
+                                <div className="flex items-center gap-3">
+                                    <input
+                                        type="color"
+                                        aria-label="テーマカラー選択"
+                                        value={previewColor}
+                                        onChange={(event) => onBrandingChange("primaryColor", event.target.value)}
+                                        className="h-10 w-14 rounded-lg border border-gray-200 bg-white p-1"
+                                    />
+                                    <input
+                                        id="settings-primary-color"
+                                        type="text"
+                                        value={branding.primaryColor}
+                                        onChange={(event) => onBrandingChange("primaryColor", event.target.value)}
+                                        placeholder="#4F46E5"
+                                        className={cn(
+                                            "h-10 flex-1 rounded-lg border px-3 text-sm focus:outline-none focus:ring-1",
+                                            HEX_COLOR_REGEX.test(branding.primaryColor)
+                                                ? "border-gray-200 focus:border-primary focus:ring-primary"
+                                                : "border-destructive/50 focus:border-destructive focus:ring-destructive"
+                                        )}
+                                    />
+                                </div>
+                                <p className="mt-1 text-xs text-muted-foreground">
+                                    予約導線のアクセントカラーとして反映されます
+                                </p>
+                            </div>
+                        </div>
+
+                        <div className="rounded-2xl border border-gray-200 bg-gray-50 p-4">
+                            <p className="mb-3 text-xs font-medium text-gray-500">プレビュー</p>
+                            <div className="flex items-center gap-3 rounded-2xl bg-white p-3 shadow-sm">
+                                {branding.logoUrl ? (
+                                    <img
+                                        src={branding.logoUrl}
+                                        alt="customer-app ロゴプレビュー"
+                                        className="h-12 w-12 rounded-full object-cover"
+                                    />
+                                ) : (
+                                    <div className="flex h-12 w-12 items-center justify-center rounded-full bg-gray-200 text-xs text-gray-500">
+                                        LOGO
+                                    </div>
+                                )}
+                                <div className="min-w-0 flex-1">
+                                    <div className="truncate text-sm font-semibold text-gray-900">
+                                        {profile.name || "店舗名"}
+                                    </div>
+                                    <div className="truncate text-xs text-gray-500">
+                                        {profile.address || "住所が入ります"}
+                                    </div>
+                                    <div
+                                        className="mt-2 h-1.5 rounded-full"
+                                        style={{ backgroundColor: previewColor }}
+                                    />
+                                </div>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </CardContent>
         </Card>
