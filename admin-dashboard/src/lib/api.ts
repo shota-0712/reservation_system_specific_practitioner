@@ -24,6 +24,7 @@ import type {
     UpdateBusinessRequest,
     UpdateLineRequest,
     UpdateBrandingRequest,
+    UploadBrandingLogoRequest,
     UpdateNotificationSettingsRequest,
 } from '@/types/api-request-types';
 
@@ -523,6 +524,11 @@ export const settingsApi = {
     updateBranding: (data: UpdateBrandingRequest) =>
         apiClient('/admin/settings/branding', {
             method: 'PUT',
+            body: JSON.stringify(data),
+        }),
+    uploadBrandingLogo: (data: UploadBrandingLogoRequest) =>
+        apiClient<{ logoUrl: string }>('/admin/settings/branding/logo-upload', {
+            method: 'POST',
             body: JSON.stringify(data),
         }),
     updateBusiness: (data: UpdateBusinessRequest) =>

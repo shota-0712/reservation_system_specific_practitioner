@@ -47,6 +47,28 @@ import {
 } from "./settings.utils";
 
 const HEX_COLOR_REGEX = /^#[0-9A-Fa-f]{6}$/;
+const ALLOWED_LOGO_CONTENT_TYPES = new Set([
+    "image/jpeg",
+    "image/png",
+    "image/svg+xml",
+    "image/webp",
+]);
+
+function readFileAsBase64(file: File): Promise<string> {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onerror = () => reject(new Error("ロゴ画像の読み取りに失敗しました"));
+        reader.onload = () => {
+            if (typeof reader.result !== "string") {
+                reject(new Error("ロゴ画像の読み取りに失敗しました"));
+                return;
+            }
+            const [, base64 = ""] = reader.result.split(",", 2);
+            resolve(base64);
+        };
+        reader.readAsDataURL(file);
+    });
+}
 
 function getErrorMessage(error: unknown, fallback: string): string {
     return error instanceof Error ? error.message : fallback;
@@ -56,12 +78,15 @@ export default function SettingsPage() {
     const [activeTab, setActiveTab] = useState<SettingsTabId>("general");
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
+    const [logoUploading, setLogoUploading] = useState(false);
 
     const [fetchError, setFetchError] = useState<string | null>(null);
     const [notificationFetchError, setNotificationFetchError] = useState<string | null>(null);
     const [rfmError, setRfmError] = useState<string | null>(null);
     const [rfmValidationError, setRfmValidationError] = useState<string | null>(null);
+    const [logoUploadError, setLogoUploadError] = useState<string | null>(null);
     const [saveMessage, setSaveMessage] = useState<SaveMessage | null>(null);
+    const [tenantId, setTenantId] = useState("");
 
     const [profile, setProfile] = useState<ProfileSettingsForm>(DEFAULT_PROFILE_SETTINGS);
     const [branding, setBranding] = useState<BrandingSettingsForm>(DEFAULT_BRANDING_SETTINGS);
@@ -92,10 +117,55 @@ export default function SettingsPage() {
     };
 
     const updateBranding = (field: keyof BrandingSettingsForm, value: string) => {
+        setLogoUploadError(null);
         setBranding((prev) => ({
             ...prev,
             [field]: value,
         }));
+    };
+
+    const handleLogoUpload = async (file: File) => {
+        if (!tenantId) {
+            setLogoUploadError("店舗情報の読み込み後にもう一度お試しください");
+            return;
+        }
+
+        if (!ALLOWED_LOGO_CONTENT_TYPES.has(file.type)) {
+            setLogoUploadError("PNG / JPG / WebP / SVG の画像を選択してください");
+            return;
+        }
+
+        setLogoUploading(true);
+        setLogoUploadError(null);
+        setSaveMessage(null);
+
+        try {
+            const dataBase64 = await readFileAsBase64(file);
+            const response = await settingsApi.uploadBrandingLogo({
+                fileName: file.name,
+                contentType: file.type as "image/jpeg" | "image/png" | "image/svg+xml" | "image/webp",
+                dataBase64,
+            });
+
+            if (!response.success || !response.data?.logoUrl) {
+                throw new Error(response.error?.message || "ロゴ画像のアップロードに失敗しました");
+            }
+
+            setBranding((prev) => ({
+                ...prev,
+                logoUrl: response.data?.logoUrl ?? "",
+            }));
+            setSaveMessage({
+                type: "success",
+                text: "ロゴ画像をアップロードしました。設定を保存すると反映されます",
+            });
+        } catch (error) {
+            setLogoUploadError(
+                getErrorMessage(error, "ロゴ画像のアップロードに失敗しました")
+            );
+        } finally {
+            setLogoUploading(false);
+        }
     };
 
     const updateBusinessHour = (
@@ -203,6 +273,7 @@ export default function SettingsPage() {
                     if (response.success && response.data) {
                         const data = response.data as SettingsResponse;
                         setFetchError(null);
+                        setTenantId(data.tenant.id || "");
                         setProfile({
                             name: data.store?.name || data.tenant.name || "",
                             phone: data.store?.phone || "",
@@ -278,6 +349,14 @@ export default function SettingsPage() {
     }, []);
 
     const handleSave = async () => {
+        if (logoUploading) {
+            setSaveMessage({
+                type: "error",
+                text: "ロゴ画像のアップロード完了後に保存してください",
+            });
+            return;
+        }
+
         setSaving(true);
         setSaveMessage(null);
 
@@ -491,8 +570,17 @@ export default function SettingsPage() {
                     <GeneralSettingsSection
                         profile={profile}
                         branding={branding}
+                        logoUploading={logoUploading}
+                        logoUploadError={logoUploadError}
                         onChange={updateProfile}
                         onBrandingChange={updateBranding}
+                        onLogoUpload={(file) => {
+                            void handleLogoUpload(file);
+                        }}
+                        onLogoRemove={() => {
+                            setLogoUploadError(null);
+                            setBranding((prev) => ({ ...prev, logoUrl: "" }));
+                        }}
                     />
                 )}
 
@@ -548,6 +636,7 @@ export default function SettingsPage() {
             <SaveActions
                 saveMessage={saveMessage}
                 saving={saving}
+                saveDisabled={logoUploading}
                 onSave={handleSave}
             />
         </div>

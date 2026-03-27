@@ -11,6 +11,7 @@ import { validateBody, validateQuery } from '../../middleware/validation.js';
 import { TenantRepository, createStoreRepository } from '../../repositories/tenant.repository.js';
 import { createPractitionerRepository, createTenantNotificationSettingsRepository } from '../../repositories/index.js';
 import { resolveLineConfigForTenant } from '../../services/line-config.service.js';
+import { uploadTenantBrandingLogo } from '../../services/branding-logo.service.js';
 import { sanitizeStoreForResponse } from '../../services/store-response.service.js';
 import { z } from 'zod';
 
@@ -51,6 +52,17 @@ const lineResolvePreviewQuerySchema = z.object({
 const updateBrandingSchema = z.object({
     primaryColor: z.string().regex(/^#[0-9A-Fa-f]{6}$/).optional(),
     logoUrl: z.string().url().optional().nullable(),
+});
+
+const uploadBrandingLogoSchema = z.object({
+    fileName: z.string().min(1).max(255),
+    contentType: z.enum([
+        'image/jpeg',
+        'image/png',
+        'image/svg+xml',
+        'image/webp',
+    ]),
+    dataBase64: z.string().min(1),
 });
 
 const updateNotificationSettingsSchema = z.object({
@@ -352,6 +364,48 @@ router.put(
         res.json({
             success: true,
             message: 'LINE configuration updated successfully',
+        });
+    })
+);
+
+/**
+ * ブランドロゴ画像をアップロード
+ * @route POST /v1/:storeCode/admin/settings/branding/logo-upload
+ * @access Manager+
+ */
+router.post(
+    '/branding/logo-upload',
+    requireFirebaseAuth(),
+    requireRole('manager', 'owner'),
+    validateBody(uploadBrandingLogoSchema),
+    asyncHandler(async (req: Request, res: Response): Promise<void> => {
+        const tenantId = getTenantId(req);
+        const normalizedBase64 = req.body.dataBase64.replace(/\s+/g, '');
+        const bytes = Buffer.from(normalizedBase64, 'base64');
+
+        if (bytes.byteLength === 0) {
+            res.status(400).json({
+                success: false,
+                error: {
+                    code: 'VALIDATION_ERROR',
+                    message: 'ロゴ画像データの読み取りに失敗しました',
+                },
+            });
+            return;
+        }
+
+        const uploaded = await uploadTenantBrandingLogo({
+            tenantId,
+            fileName: req.body.fileName,
+            contentType: req.body.contentType,
+            bytes,
+        });
+
+        res.status(201).json({
+            success: true,
+            data: {
+                logoUrl: uploaded.logoUrl,
+            },
         });
     })
 );

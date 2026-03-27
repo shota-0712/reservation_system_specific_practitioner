@@ -1,13 +1,17 @@
+import { useRef, type ChangeEvent } from "react";
 import Link from "next/link";
 import {
     Bell,
+    Check,
     Clock,
     CreditCard,
     ExternalLink,
+    ImagePlus,
     Loader2,
     Mail,
     Save,
     Shield,
+    Trash2,
     type LucideIcon,
 } from "lucide-react";
 import type { RfmThresholdSettings } from "@/lib/api";
@@ -105,6 +109,16 @@ type EditableLineField =
     | "lineChannelSecret";
 
 const HEX_COLOR_REGEX = /^#[0-9A-Fa-f]{6}$/;
+const BRANDING_COLOR_PRESETS = [
+    { name: "Rose", value: "#E11D48" },
+    { name: "Coral", value: "#F97316" },
+    { name: "Gold", value: "#D97706" },
+    { name: "Emerald", value: "#059669" },
+    { name: "Teal", value: "#0F766E" },
+    { name: "Sky", value: "#0284C7" },
+    { name: "Indigo", value: "#4F46E5" },
+    { name: "Slate", value: "#334155" },
+] as const;
 
 export function SettingsTabNav({
     activeTab,
@@ -164,17 +178,35 @@ export function SettingsErrorBanners({
 export function GeneralSettingsSection({
     profile,
     branding,
+    logoUploading,
+    logoUploadError,
     onChange,
     onBrandingChange,
+    onLogoUpload,
+    onLogoRemove,
 }: {
     profile: ProfileSettingsForm;
     branding: BrandingSettingsForm;
+    logoUploading: boolean;
+    logoUploadError: string | null;
     onChange: (field: keyof ProfileSettingsForm, value: string) => void;
     onBrandingChange: (field: keyof BrandingSettingsForm, value: string) => void;
+    onLogoUpload: (file: File) => void;
+    onLogoRemove: () => void;
 }) {
+    const fileInputRef = useRef<HTMLInputElement | null>(null);
     const previewColor = HEX_COLOR_REGEX.test(branding.primaryColor)
         ? branding.primaryColor
         : "#4F46E5";
+
+    const handleLogoFileChange = (event: ChangeEvent<HTMLInputElement>) => {
+        const file = event.target.files?.[0];
+        if (!file) {
+            return;
+        }
+        onLogoUpload(file);
+        event.target.value = "";
+    };
 
     return (
         <Card>
@@ -239,29 +271,129 @@ export function GeneralSettingsSection({
                     <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_144px]">
                         <div className="space-y-4">
                             <div>
-                                <label htmlFor="settings-logo-url" className="mb-1 block text-sm font-medium">ロゴ画像URL</label>
-                                <input
-                                    id="settings-logo-url"
-                                    type="url"
-                                    value={branding.logoUrl}
-                                    onChange={(event) => onBrandingChange("logoUrl", event.target.value)}
-                                    placeholder="https://example.com/logo.png"
-                                    className="h-10 w-full rounded-lg border border-gray-200 px-3 text-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
-                                />
-                                <p className="mt-1 text-xs text-muted-foreground">
-                                    未入力なら customer-app では店舗アイコンのプレースホルダを表示します
-                                </p>
+                                <label className="mb-1 block text-sm font-medium">ロゴ画像</label>
+                                <div className="rounded-2xl border border-dashed border-gray-200 bg-gray-50 p-4">
+                                    <input
+                                        ref={fileInputRef}
+                                        type="file"
+                                        accept="image/png,image/jpeg,image/webp,image/svg+xml"
+                                        aria-label="ロゴ画像をアップロード"
+                                        className="hidden"
+                                        onChange={handleLogoFileChange}
+                                    />
+                                    <div className="flex items-start gap-3">
+                                        <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-white shadow-sm">
+                                            {branding.logoUrl ? (
+                                                <img
+                                                    src={branding.logoUrl}
+                                                    alt="現在のロゴ画像"
+                                                    className="h-12 w-12 rounded-xl object-cover"
+                                                />
+                                            ) : (
+                                                <ImagePlus className="h-6 w-6 text-gray-400" />
+                                            )}
+                                        </div>
+                                        <div className="min-w-0 flex-1">
+                                            <p className="text-sm font-medium text-gray-900">
+                                                {branding.logoUrl ? "ロゴ画像を設定済み" : "ロゴ画像をアップロード"}
+                                            </p>
+                                            <p className="mt-1 text-xs text-muted-foreground">
+                                                PNG / JPG / WebP / SVG、4MBまで。保存すると customer-app に反映されます
+                                            </p>
+                                            {branding.logoUrl && (
+                                                <p className="mt-2 break-all text-[11px] text-muted-foreground">
+                                                    {branding.logoUrl}
+                                                </p>
+                                            )}
+                                        </div>
+                                    </div>
+                                    <div className="mt-4 flex flex-wrap items-center gap-2">
+                                        <Button
+                                            type="button"
+                                            variant="outline"
+                                            onClick={() => fileInputRef.current?.click()}
+                                            disabled={logoUploading}
+                                        >
+                                            {logoUploading ? (
+                                                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                            ) : (
+                                                <ImagePlus className="mr-2 h-4 w-4" />
+                                            )}
+                                            {branding.logoUrl ? "画像を変更" : "画像をアップロード"}
+                                        </Button>
+                                        {branding.logoUrl && (
+                                            <Button
+                                                type="button"
+                                                variant="ghost"
+                                                className="text-gray-600"
+                                                onClick={onLogoRemove}
+                                                disabled={logoUploading}
+                                            >
+                                                <Trash2 className="mr-2 h-4 w-4" />
+                                                ロゴを削除
+                                            </Button>
+                                        )}
+                                    </div>
+                                    {logoUploadError && (
+                                        <p className="mt-3 text-xs text-red-600">{logoUploadError}</p>
+                                    )}
+                                    <div className="mt-4 border-t border-gray-200 pt-4">
+                                        <label htmlFor="settings-logo-url" className="mb-1 block text-xs font-medium text-gray-600">
+                                            URLを直接指定する場合
+                                        </label>
+                                        <input
+                                            id="settings-logo-url"
+                                            type="url"
+                                            value={branding.logoUrl}
+                                            onChange={(event) => onBrandingChange("logoUrl", event.target.value)}
+                                            placeholder="https://example.com/logo.png"
+                                            className="h-10 w-full rounded-lg border border-gray-200 bg-white px-3 text-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                                        />
+                                    </div>
+                                </div>
                             </div>
 
                             <div>
                                 <label htmlFor="settings-primary-color" className="mb-1 block text-sm font-medium">テーマカラー</label>
-                                <div className="flex items-center gap-3">
+                                <div className="mb-3 grid grid-cols-4 gap-2 sm:grid-cols-8">
+                                    {BRANDING_COLOR_PRESETS.map((preset) => {
+                                        const isSelected = previewColor.toLowerCase() === preset.value.toLowerCase();
+                                        return (
+                                            <button
+                                                key={preset.value}
+                                                type="button"
+                                                aria-label={`テーマカラー ${preset.name}`}
+                                                onClick={() => onBrandingChange("primaryColor", preset.value)}
+                                                className={cn(
+                                                    "group rounded-2xl border bg-white p-2 text-left transition",
+                                                    isSelected
+                                                        ? "border-primary ring-2 ring-primary/20"
+                                                        : "border-gray-200 hover:border-gray-300"
+                                                )}
+                                            >
+                                                <div
+                                                    className="mb-2 h-8 rounded-xl"
+                                                    style={{ backgroundColor: preset.value }}
+                                                />
+                                                <div className="flex items-center justify-between">
+                                                    <span className="text-[11px] font-medium text-gray-700">
+                                                        {preset.name}
+                                                    </span>
+                                                    {isSelected && (
+                                                        <Check className="h-3.5 w-3.5 text-primary" />
+                                                    )}
+                                                </div>
+                                            </button>
+                                        );
+                                    })}
+                                </div>
+                                <div className="flex items-center gap-3 rounded-2xl border border-gray-200 bg-gray-50 p-3">
                                     <input
                                         type="color"
                                         aria-label="テーマカラー選択"
                                         value={previewColor}
                                         onChange={(event) => onBrandingChange("primaryColor", event.target.value)}
-                                        className="h-10 w-14 rounded-lg border border-gray-200 bg-white p-1"
+                                        className="h-11 w-16 rounded-xl border border-gray-200 bg-white p-1"
                                     />
                                     <input
                                         id="settings-primary-color"
@@ -278,7 +410,7 @@ export function GeneralSettingsSection({
                                     />
                                 </div>
                                 <p className="mt-1 text-xs text-muted-foreground">
-                                    予約導線のアクセントカラーとして反映されます
+                                    まず上の色見本から選び、細かく調整したいときだけカラーピッカーか HEX を使ってください
                                 </p>
                             </div>
                         </div>
@@ -807,10 +939,12 @@ export function IntegrationsSection({
 export function SaveActions({
     saveMessage,
     saving,
+    saveDisabled = false,
     onSave,
 }: {
     saveMessage: SaveMessage | null;
     saving: boolean;
+    saveDisabled?: boolean;
     onSave: () => void;
 }) {
     return (
@@ -827,7 +961,7 @@ export function SaveActions({
                     {saveMessage.text}
                 </div>
             )}
-            <Button size="lg" onClick={onSave} disabled={saving}>
+            <Button size="lg" onClick={onSave} disabled={saving || saveDisabled}>
                 {saving ? (
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                 ) : (

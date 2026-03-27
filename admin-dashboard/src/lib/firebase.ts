@@ -30,9 +30,14 @@ function isBrowser(): boolean {
     return typeof window !== 'undefined';
 }
 
-function getAuthSafe() {
+function getFirebaseAppSafe() {
     if (!isBrowser()) return null;
-    const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApps()[0];
+    return getApps().length === 0 ? initializeApp(firebaseConfig) : getApps()[0];
+}
+
+function getAuthSafe() {
+    const app = getFirebaseAppSafe();
+    if (!app) return null;
     return getAuth(app);
 }
 

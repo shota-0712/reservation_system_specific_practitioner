@@ -38,6 +38,9 @@ const settingsState = vi.hoisted(() => ({
         get: vi.fn(),
         upsert: vi.fn(),
     },
+    brandingLogoService: {
+        uploadTenantBrandingLogo: vi.fn(),
+    },
 }));
 
 vi.mock('../../src/middleware/auth.js', () => ({
@@ -75,6 +78,11 @@ vi.mock('../../src/repositories/tenant.repository.js', () => ({
 vi.mock('../../src/repositories/index.js', () => ({
     createPractitionerRepository: vi.fn(),
     createTenantNotificationSettingsRepository: () => settingsState.notificationRepo,
+}));
+
+vi.mock('../../src/services/branding-logo.service.js', () => ({
+    uploadTenantBrandingLogo: (...args: unknown[]) =>
+        settingsState.brandingLogoService.uploadTenantBrandingLogo(...args),
 }));
 
 let settingsRoutes: typeof import('../../src/routes/v1/settings.routes.js').default;
@@ -170,6 +178,10 @@ beforeEach(() => {
         pushCancellation: true,
         updatedBy: 'admin-uid',
     });
+    settingsState.brandingLogoService.uploadTenantBrandingLogo.mockResolvedValue({
+        logoUrl: 'https://storage.example/logo.png',
+        objectPath: 'tenant-assets/tenant-1/branding/logo.png',
+    });
 });
 
 afterEach(() => {
@@ -233,5 +245,29 @@ describe('settings routes integration', () => {
         expect(settingsState.storeRepo.update).toHaveBeenCalledWith(STORE_ID, {
             name: 'Updated Store',
         });
+    });
+
+    it('uploads branding logo via backend storage', async () => {
+        const { response, json } = await requestJson('/settings/branding/logo-upload', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                fileName: 'logo.png',
+                contentType: 'image/png',
+                dataBase64: Buffer.from('logo-binary').toString('base64'),
+            }),
+        });
+
+        expect(response.status).toBe(201);
+        expect(json.success).toBe(true);
+        expect(json.data.logoUrl).toBe('https://storage.example/logo.png');
+        expect(settingsState.brandingLogoService.uploadTenantBrandingLogo).toHaveBeenCalledWith(
+            expect.objectContaining({
+                tenantId: settingsState.tenant.id,
+                fileName: 'logo.png',
+                contentType: 'image/png',
+                bytes: expect.any(Buffer),
+            })
+        );
     });
 });

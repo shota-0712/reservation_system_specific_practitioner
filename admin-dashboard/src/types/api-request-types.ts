@@ -233,6 +233,12 @@ export interface UpdateBrandingRequest {
     logoUrl?: string | null;
 }
 
+export interface UploadBrandingLogoRequest {
+    fileName: string;
+    contentType: 'image/jpeg' | 'image/png' | 'image/svg+xml' | 'image/webp';
+    dataBase64: string;
+}
+
 export interface UpdateNotificationSettingsRequest {
     emailNewReservation?: boolean;
     emailCancellation?: boolean;

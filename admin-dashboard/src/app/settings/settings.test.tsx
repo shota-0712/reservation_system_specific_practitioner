@@ -21,6 +21,7 @@ vi.mock('@/lib/api', async (importOriginal) => {
             getNotifications: vi.fn(),
             updateProfile: vi.fn(),
             updateBranding: vi.fn(),
+            uploadBrandingLogo: vi.fn(),
             updateBusiness: vi.fn(),
             updateLine: vi.fn(),
             updateNotifications: vi.fn(),
@@ -87,6 +88,12 @@ describe('SettingsPage', () => {
             data: {
                 primaryColor: '#4F46E5',
                 logoUrl: 'https://example.com/logo.png',
+            },
+        });
+        vi.mocked(settingsApi.uploadBrandingLogo).mockResolvedValue({
+            success: true,
+            data: {
+                logoUrl: 'https://storage.example/uploaded-logo.png',
             },
         });
     });
@@ -170,7 +177,7 @@ describe('SettingsPage', () => {
         fireEvent.change(screen.getByLabelText('店舗名'), {
             target: { value: '新しい店舗名' },
         });
-        fireEvent.change(screen.getByLabelText('ロゴ画像URL'), {
+        fireEvent.change(screen.getByLabelText('URLを直接指定する場合'), {
             target: { value: 'https://example.com/new-logo.png' },
         });
         fireEvent.change(screen.getByLabelText('テーマカラー'), {
@@ -191,6 +198,71 @@ describe('SettingsPage', () => {
                 logoUrl: 'https://example.com/new-logo.png',
             });
             expect(screen.getByText('設定を保存しました')).toBeInTheDocument();
+        });
+    });
+
+    it('ロゴ画像アップロード後に保存するとアップロード済みURLを使う', async () => {
+        vi.mocked(settingsApi.get).mockResolvedValue({
+            success: true,
+            data: {
+                tenant: {
+                    id: 'tenant-1',
+                    name: 'テストサロン',
+                    branding: {
+                        primaryColor: '#123456',
+                        logoUrl: '',
+                    },
+                },
+                store: {
+                    id: 'store-1',
+                    name: 'テスト店舗',
+                    address: '東京都港区',
+                    phone: '0312345678',
+                    email: 'store@example.com',
+                },
+            },
+        });
+        vi.mocked(settingsApi.updateProfile).mockResolvedValue({
+            success: true,
+            data: {
+                id: 'store-1',
+                name: 'テスト店舗',
+            },
+        });
+        vi.mocked(settingsApi.updateBranding).mockResolvedValue({
+            success: true,
+            data: {
+                primaryColor: '#123456',
+                logoUrl: 'https://storage.example/uploaded-logo.png',
+            },
+        });
+
+        render(<SettingsPage />);
+
+        await waitFor(() => {
+            expect(screen.getByLabelText('ロゴ画像をアップロード')).toBeInTheDocument();
+        });
+
+        const file = new File(['logo-binary'], 'logo.png', { type: 'image/png' });
+        fireEvent.change(screen.getByLabelText('ロゴ画像をアップロード'), {
+            target: { files: [file] },
+        });
+
+        await waitFor(() => {
+            expect(settingsApi.uploadBrandingLogo).toHaveBeenCalledWith({
+                fileName: 'logo.png',
+                contentType: 'image/png',
+                dataBase64: expect.any(String),
+            });
+        });
+
+        fireEvent.click(screen.getByRole('button', { name: '設定を保存' }));
+
+        await waitFor(() => {
+            expect(settingsApi.updateBranding).toHaveBeenCalledWith({
+                primaryColor: '#123456',
+                logoUrl: 'https://storage.example/uploaded-logo.png',
+            });
         });
     });
 
