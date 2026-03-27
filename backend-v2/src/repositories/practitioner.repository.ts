@@ -388,8 +388,10 @@ export class PractitionerRepository {
         );
 
         const created = mapPractitioner(row as Record<string, any>);
-        await this.replaceStoreAssignments(created.id, data.storeIds);
-        await this.replaceMenuAssignments(created.id, data.availableMenuIds);
+        await Promise.all([
+            this.replaceStoreAssignments(created.id, data.storeIds),
+            this.replaceMenuAssignments(created.id, data.availableMenuIds),
+        ]);
         const saved = await this.findById(created.id);
         return saved ?? created;
     }
@@ -454,8 +456,10 @@ export class PractitionerRepository {
         );
 
         if (!row) throw new NotFoundError('施術者', id);
-        await this.replaceStoreAssignments(id, data.storeIds);
-        await this.replaceMenuAssignments(id, data.availableMenuIds);
+        await Promise.all([
+            this.replaceStoreAssignments(id, data.storeIds),
+            this.replaceMenuAssignments(id, data.availableMenuIds),
+        ]);
         const saved = await this.findById(id);
         return saved ?? mapPractitioner(row as Record<string, any>);
     }

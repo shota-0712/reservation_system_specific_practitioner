@@ -51,7 +51,7 @@ export default function OptionsPage() {
         setLoading(true);
         setError(null);
         try {
-            const [optionsRes, menusRes] = await Promise.all([optionsApi.list(), menusApi.listAll()]);
+            const [optionsRes, menusRes] = await Promise.all([optionsApi.list(), menusApi.list()]);
             if (optionsRes.success && Array.isArray(optionsRes.data)) {
                 const optionItems = optionsRes.data as OptionItem[];
                 const optionsWithAssignments = await Promise.all(

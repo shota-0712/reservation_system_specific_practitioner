@@ -132,8 +132,8 @@ export default function ReservationsPage() {
         fetchReservations();
         const fetchOptions = async () => {
             const [pRes, mRes] = await Promise.all([
-                practitionersApi.listAll(),
-                menusApi.listAll(),
+                practitionersApi.list(),
+                menusApi.list(),
             ]);
 
             if (pRes.success && Array.isArray(pRes.data)) {

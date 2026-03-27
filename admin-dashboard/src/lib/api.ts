@@ -296,7 +296,6 @@ export const customersApi = {
 
 export const practitionersApi = {
     list: () => apiClient('/admin/practitioners'),
-    listAll: () => apiClient('/admin/practitioners'),
     get: (id: string) => apiClient(`/admin/practitioners/${id}`),
     create: (data: CreatePractitionerRequest) =>
         apiClient('/admin/practitioners', {
@@ -323,8 +322,6 @@ export const practitionersApi = {
 
 export const menusApi = {
     list: () => apiClient('/admin/menus'),
-    listAll: () => apiClient('/admin/menus'),
-    listPublic: () => apiClient('/admin/menus'),
     get: (id: string) => apiClient(`/admin/menus/${id}`),
     create: (data: CreateMenuRequest) =>
         apiClient('/admin/menus', {
@@ -351,7 +348,6 @@ export const menusApi = {
 
 export const optionsApi = {
     list: () => apiClient('/admin/options'),
-    listPublic: (menuId?: string) => apiClient(`/admin/options${buildQuery({ menuId })}`),
     create: (data: CreateOptionRequest) =>
         apiClient('/admin/options', {
             method: 'POST',

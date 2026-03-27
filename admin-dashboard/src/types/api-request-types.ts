@@ -15,11 +15,11 @@ export interface CreateAdminReservationRequest {
     optionIds?: string[];
     startsAt: string;    // ISO 8601 UTC datetime
     timezone: string;    // IANA timezone, e.g. "Asia/Tokyo"
-    status?: 'pending' | 'confirmed' | string;
+    status?: 'pending' | 'confirmed';
     isNomination?: boolean;
     customerNote?: string | null;
     staffNote?: string | null;
-    source?: ReservationSource | string;
+    source?: ReservationSource;
     storeId?: string;
 }
 
