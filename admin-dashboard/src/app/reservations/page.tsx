@@ -201,9 +201,9 @@ export default function ReservationsPage() {
                 optionIds: [],
                 startsAt: toStartsAt(createForm.date, createForm.startTime, 'Asia/Tokyo'),
                 timezone: 'Asia/Tokyo',
-                status: "confirmed",
+                status: "confirmed" as const,
                 isNomination: createForm.isNomination,
-                source: "admin",
+                source: "admin" as const,
             };
 
             const res = await reservationsApi.createAdmin(payload);
