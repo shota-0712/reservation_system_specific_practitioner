@@ -264,7 +264,7 @@ export const reservationsApi = {
         }),
     update: (id: string, data: UpdateAdminReservationRequest) =>
         apiClient(`/admin/reservations/${id}`, {
-            method: 'PUT',
+            method: 'PATCH',
             body: JSON.stringify(data),
         }),
     updateStatus: (id: string, status: string, reason?: string) =>
@@ -284,7 +284,7 @@ export const customersApi = {
     get: (id: string) => apiClient(`/admin/customers/${id}`),
     update: (id: string, data: UpdateCustomerRequest) =>
         apiClient(`/admin/customers/${id}`, {
-            method: 'PUT',
+            method: 'PATCH',
             body: JSON.stringify(data),
         }),
     getReservations: (id: string) => apiClient(`/admin/customers/${id}/reservations`),
@@ -514,12 +514,12 @@ export const settingsApi = {
     getNotifications: () => apiClient<NotificationSettings>('/admin/settings/notifications'),
     updateProfile: (data: UpdateProfileRequest) =>
         apiClient('/admin/settings/profile', {
-            method: 'PUT',
+            method: 'PATCH',
             body: JSON.stringify(data),
         }),
     updateBranding: (data: UpdateBrandingRequest) =>
         apiClient('/admin/settings/branding', {
-            method: 'PUT',
+            method: 'PATCH',
             body: JSON.stringify(data),
         }),
     uploadBrandingLogo: (data: UploadBrandingLogoRequest) =>
@@ -529,17 +529,17 @@ export const settingsApi = {
         }),
     updateBusiness: (data: UpdateBusinessRequest) =>
         apiClient('/admin/settings/business', {
-            method: 'PUT',
+            method: 'PATCH',
             body: JSON.stringify(data),
         }),
     updateLine: (data: UpdateLineRequest) =>
         apiClient('/admin/settings/line', {
-            method: 'PUT',
+            method: 'PATCH',
             body: JSON.stringify(data),
         }),
     updateNotifications: (data: UpdateNotificationSettingsRequest) =>
         apiClient<NotificationSettings>('/admin/settings/notifications', {
-            method: 'PUT',
+            method: 'PATCH',
             body: JSON.stringify(data),
         }),
     resolveLinePreview: (params?: { storeId?: string; practitionerId?: string }) =>

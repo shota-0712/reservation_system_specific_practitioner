@@ -34,6 +34,12 @@ interface EnvConfig {
     READINESS_REQUIRE_LINE: boolean;
     READINESS_REQUIRE_GOOGLE_OAUTH: boolean;
     PUBLIC_ONBOARDING_ENABLED: boolean;
+    EXTERNAL_API_TIMEOUT_MS: number;
+    EXTERNAL_API_MAX_RETRIES: number;
+    EXTERNAL_API_RETRY_BASE_DELAY_MS: number;
+    EXTERNAL_API_RETRY_MAX_DELAY_MS: number;
+    EXTERNAL_API_CIRCUIT_BREAKER_FAILURE_THRESHOLD: number;
+    EXTERNAL_API_CIRCUIT_BREAKER_COOLDOWN_MS: number;
 
     // LINE
     LINE_CHANNEL_ACCESS_TOKEN?: string;
@@ -199,6 +205,18 @@ function validateConfig(): EnvConfig {
         READINESS_REQUIRE_LINE: getEnvBoolean('READINESS_REQUIRE_LINE', false),
         READINESS_REQUIRE_GOOGLE_OAUTH: getEnvBoolean('READINESS_REQUIRE_GOOGLE_OAUTH', true),
         PUBLIC_ONBOARDING_ENABLED: getEnvBoolean('PUBLIC_ONBOARDING_ENABLED', true),
+        EXTERNAL_API_TIMEOUT_MS: getEnvNumber('EXTERNAL_API_TIMEOUT_MS', 5000),
+        EXTERNAL_API_MAX_RETRIES: getEnvNumber('EXTERNAL_API_MAX_RETRIES', 2),
+        EXTERNAL_API_RETRY_BASE_DELAY_MS: getEnvNumber('EXTERNAL_API_RETRY_BASE_DELAY_MS', 250),
+        EXTERNAL_API_RETRY_MAX_DELAY_MS: getEnvNumber('EXTERNAL_API_RETRY_MAX_DELAY_MS', 2000),
+        EXTERNAL_API_CIRCUIT_BREAKER_FAILURE_THRESHOLD: getEnvNumber(
+            'EXTERNAL_API_CIRCUIT_BREAKER_FAILURE_THRESHOLD',
+            5
+        ),
+        EXTERNAL_API_CIRCUIT_BREAKER_COOLDOWN_MS: getEnvNumber(
+            'EXTERNAL_API_CIRCUIT_BREAKER_COOLDOWN_MS',
+            30000
+        ),
 
         // LINE
         LINE_CHANNEL_ACCESS_TOKEN: process.env.LINE_CHANNEL_ACCESS_TOKEN,
@@ -245,6 +263,8 @@ export function logConfig(): void {
     console.log(`   Readiness Require LINE: ${env.READINESS_REQUIRE_LINE}`);
     console.log(`   Readiness Require Google OAuth: ${env.READINESS_REQUIRE_GOOGLE_OAUTH}`);
     console.log(`   Public Onboarding Enabled: ${env.PUBLIC_ONBOARDING_ENABLED}`);
+    console.log(`   External API Timeout: ${env.EXTERNAL_API_TIMEOUT_MS}ms`);
+    console.log(`   External API Retries: ${env.EXTERNAL_API_MAX_RETRIES}`);
     console.log(`   Analytics Export Source: ${env.ANALYTICS_EXPORT_SOURCE}`);
     console.log(`   Export GCS Bucket: ${env.EXPORT_GCS_BUCKET ?? '(inline)'}`);
 }

@@ -86,6 +86,13 @@ beforeAll(async () => {
 
     const app = express();
     app.use(express.json());
+    app.use((req: any, _res: any, next: any) => {
+        req.user = {
+            uid: reminderState.auth.uid,
+            role: reminderState.auth.role,
+        };
+        next();
+    });
     app.use('/reminders', reminderRoutes);
     app.use((error: any, _req: any, res: any, _next: any) => {
         res.status(error?.statusCode ?? 500).json({

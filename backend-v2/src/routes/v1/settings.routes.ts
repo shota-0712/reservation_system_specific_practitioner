@@ -158,10 +158,10 @@ router.get(
 
 /**
  * 通知設定を更新
- * @route PUT /v1/:storeCode/admin/settings/notifications
+ * @route PATCH /v1/:storeCode/admin/settings/notifications
  * @access Manager+
  */
-router.put(
+router.patch(
     '/notifications',
     requireRole('manager', 'owner'),
     validateBody(updateNotificationSettingsSchema),
@@ -182,10 +182,10 @@ router.put(
 
 /**
  * 店舗プロフィールを更新
- * @route PUT /v1/:storeCode/admin/settings/profile
+ * @route PATCH /v1/:storeCode/admin/settings/profile
  * @access Manager+
  */
-router.put(
+router.patch(
     '/profile',
     requireRole('manager', 'owner'),
     validateBody(updateProfileSchema),
@@ -273,10 +273,10 @@ router.get(
 
 /**
  * ビジネス設定（営業時間など）を更新
- * @route PUT /v1/:storeCode/admin/settings/business
+ * @route PATCH /v1/:storeCode/admin/settings/business
  * @access Manager+
  */
-router.put(
+router.patch(
     '/business',
     requireRole('manager', 'owner'),
     validateBody(updateBusinessSchema),
@@ -309,10 +309,10 @@ router.put(
 
 /**
  * LINE設定を更新
- * @route PUT /v1/:storeCode/admin/settings/line
+ * @route PATCH /v1/:storeCode/admin/settings/line
  * @access Manager+
  */
-router.put(
+router.patch(
     '/line',
     requireRole('manager', 'owner'),
     validateBody(updateLineConfigSchema),
@@ -404,10 +404,10 @@ router.post(
 
 /**
  * ブランディング設定を更新
- * @route PUT /v1/:storeCode/admin/settings/branding
+ * @route PATCH /v1/:storeCode/admin/settings/branding
  * @access Manager+
  */
-router.put(
+router.patch(
     '/branding',
     requireRole('manager', 'owner'),
     validateBody(updateBrandingSchema),

@@ -71,6 +71,13 @@ beforeAll(async () => {
 
     const app = express();
     app.use(express.json());
+    app.use((req: any, _res: any, next: any) => {
+        req.user = {
+            uid: jobsState.auth.uid,
+            role: jobsState.auth.role,
+        };
+        next();
+    });
     app.use('/jobs', adminJobRoutes);
     app.use((error: any, _req: any, res: any, _next: any) => {
         res.status(error?.statusCode ?? 500).json({

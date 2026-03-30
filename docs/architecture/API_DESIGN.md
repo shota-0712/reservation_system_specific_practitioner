@@ -145,7 +145,9 @@ Authorization: Bearer {firebase_id_token}
 - `GET  /{tenantKey}/slots` - 空き枠取得
 - `POST /{tenantKey}/reservations` - 予約作成（顧客）
 - `GET  /{tenantKey}/reservations/my` - 自分の予約（顧客）
+- `PATCH /{tenantKey}/reservations/:id` - 予約部分更新（顧客）
 - `GET  /{tenantKey}/reservations` - 予約一覧（管理者）
+- `PATCH /api/v1/admin/reservations/:id` - 予約部分更新（管理者）
 - `PATCH /{tenantKey}/reservations/:id/status` - ステータス更新
 
 ### 4.4 管理画面
@@ -154,9 +156,16 @@ Authorization: Bearer {firebase_id_token}
 - `GET  /api/v1/admin/dashboard/kpi`
 - `GET  /api/v1/admin/dashboard/today`
 - `GET  /api/v1/admin/customers`
+- `PATCH /api/v1/admin/customers/:id`
 - `GET  /api/v1/admin/settings`
-- `PUT  /api/v1/admin/settings/profile`
+- `PATCH /api/v1/admin/settings/notifications`
+- `PATCH /api/v1/admin/settings/profile`
+- `PATCH /api/v1/admin/settings/business`
+- `PATCH /api/v1/admin/settings/line`
+- `PATCH /api/v1/admin/settings/branding`
 - `GET  /api/v1/admin/reports/summary`
+
+部分更新エンドポイントは `PATCH` を使用する。2026-03-30 以降、旧 `PUT` クライアントは上記 `PATCH` へ移行すること。
 
 ---
 
