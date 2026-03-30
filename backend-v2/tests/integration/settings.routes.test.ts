@@ -123,7 +123,8 @@ beforeAll(async () => {
 
     const app = express();
     app.use(express.json());
-    app.use((req: any, _res, next) => {
+  
+    app.use((req: any, _res: any, next: any) => {
         req.user = {
             uid: settingsState.auth.uid,
             role: settingsState.auth.role,
