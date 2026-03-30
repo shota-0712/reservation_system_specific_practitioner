@@ -27,7 +27,11 @@ vi.mock('../../src/middleware/auth.js', () => ({
         next();
     },
     requireRole: (...roles: string[]) => (req: any, _res: any, next: any) => {
-        if (!req.user || !roles.includes(req.user.role)) {
+        req.user = req.user ?? {
+            uid: dashboardState.auth.uid,
+            role: dashboardState.auth.role,
+        };
+        if (!roles.includes(req.user.role)) {
             next({
                 statusCode: 403,
                 code: 'AUTHORIZATION_ERROR',

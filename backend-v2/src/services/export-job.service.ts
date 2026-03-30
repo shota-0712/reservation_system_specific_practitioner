@@ -3,6 +3,7 @@ import { NotFoundError, ValidationError } from '../utils/errors.js';
 import { env } from '../config/env.js';
 import { getStorageInstance } from '../config/firebase.js';
 import { GoogleAuth } from 'google-auth-library';
+import { fetchWithResilience } from '../utils/external-api-client.js';
 
 const DEFAULT_TIMEZONE = 'Asia/Tokyo';
 
@@ -226,10 +227,15 @@ export class ExportJobService {
             throw new ValidationError('BigQuery 認証トークンの取得に失敗しました');
         }
 
-        const response = await fetch(
+        const response = await fetchWithResilience(
             `https://bigquery.googleapis.com/bigquery/v2/projects/${projectId}/queries`,
             {
+                service: 'bigquery',
+                operation: 'run-query',
+                tenantId: this.tenantId,
                 method: 'POST',
+                enableRetries: false,
+                timeoutMs: 15000,
                 headers: {
                     Authorization: `Bearer ${accessToken}`,
                     'Content-Type': 'application/json',

@@ -3,6 +3,7 @@ import { DatabaseService } from '../config/database.js';
 import { decrypt, encrypt } from '../utils/crypto.js';
 import { ExternalServiceError, ValidationError } from '../utils/errors.js';
 import { logger } from '../utils/logger.js';
+import { fetchWithResilience } from '../utils/external-api-client.js';
 import type { Reservation } from '../types/index.js';
 
 interface OAuthRow {
@@ -94,8 +95,12 @@ export class GoogleCalendarService {
     async exchangeCodeAndSave(code: string): Promise<GoogleIntegrationStatus> {
         this.ensureConfigured();
 
-        const tokenResponse = await fetch('https://oauth2.googleapis.com/token', {
+        const tokenResponse = await fetchWithResilience('https://oauth2.googleapis.com/token', {
+            service: 'google-oauth',
+            operation: 'exchange-code',
+            tenantId: this.tenantId,
             method: 'POST',
+            enableRetries: false,
             headers: {
                 'Content-Type': 'application/x-www-form-urlencoded',
             },
@@ -190,14 +195,21 @@ export class GoogleCalendarService {
             end: { dateTime: end, timeZone: timezone },
         };
 
-        const response = await fetch(`https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events`, {
-            method: 'POST',
-            headers: {
-                Authorization: `Bearer ${accessToken}`,
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify(body),
-        });
+        const response = await fetchWithResilience(
+            `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events`,
+            {
+                service: 'google-calendar',
+                operation: 'create-event',
+                tenantId: this.tenantId,
+                method: 'POST',
+                enableRetries: false,
+                headers: {
+                    Authorization: `Bearer ${accessToken}`,
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(body),
+            }
+        );
 
         if (!response.ok) {
             const message = await response.text();
@@ -234,9 +246,12 @@ export class GoogleCalendarService {
             end: { dateTime: end, timeZone: timezone },
         };
 
-        const response = await fetch(
+        const response = await fetchWithResilience(
             `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(eventId)}`,
             {
+                service: 'google-calendar',
+                operation: 'update-event',
+                tenantId: this.tenantId,
                 method: 'PUT',
                 headers: {
                     Authorization: `Bearer ${accessToken}`,
@@ -257,9 +272,12 @@ export class GoogleCalendarService {
         const accessToken = await this.getAccessToken();
         if (!accessToken) return;
 
-        const response = await fetch(
+        const response = await fetchWithResilience(
             `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(eventId)}`,
             {
+                service: 'google-calendar',
+                operation: 'delete-event',
+                tenantId: this.tenantId,
                 method: 'DELETE',
                 headers: {
                     Authorization: `Bearer ${accessToken}`,
@@ -292,8 +310,12 @@ export class GoogleCalendarService {
 
         const refreshToken = normalizeStoredRefreshToken(oauth.refresh_token_encrypted);
 
-        const tokenResponse = await fetch('https://oauth2.googleapis.com/token', {
+        const tokenResponse = await fetchWithResilience('https://oauth2.googleapis.com/token', {
+            service: 'google-oauth',
+            operation: 'refresh-access-token',
+            tenantId: this.tenantId,
             method: 'POST',
+            enableRetries: true,
             headers: {
                 'Content-Type': 'application/x-www-form-urlencoded',
             },
@@ -323,7 +345,10 @@ export class GoogleCalendarService {
     }
 
     private async resolveGoogleEmail(accessToken: string): Promise<string | undefined> {
-        const response = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
+        const response = await fetchWithResilience('https://www.googleapis.com/oauth2/v2/userinfo', {
+            service: 'google-oauth',
+            operation: 'resolve-user-email',
+            tenantId: this.tenantId,
             headers: {
                 Authorization: `Bearer ${accessToken}`,
             },

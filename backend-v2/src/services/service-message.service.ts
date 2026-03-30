@@ -10,6 +10,7 @@ import { TenantRepository } from '../repositories/tenant.repository.js';
 import { createPractitionerRepository, createStoreRepository } from '../repositories/index.js';
 import { decrypt } from '../utils/crypto.js';
 import { logger } from '../utils/logger.js';
+import { fetchWithResilience } from '../utils/external-api-client.js';
 import { resolveLineConfigForTenant } from './line-config.service.js';
 import type { Practitioner, Reservation, Store, Tenant } from '../types/index.js';
 
@@ -100,8 +101,12 @@ export class ServiceMessageService {
             const flexMessage = this.buildFlexMessage(type, templateArgs);
 
             // Messaging API Push Message
-            const response = await fetch('https://api.line.me/v2/bot/message/push', {
+            const response = await fetchWithResilience('https://api.line.me/v2/bot/message/push', {
+                service: 'line',
+                operation: 'send-service-flex-message',
+                tenantId: this.tenantId,
                 method: 'POST',
+                enableRetries: false,
                 headers: {
                     'Content-Type': 'application/json',
                     'Authorization': `Bearer ${channelAccessToken}`,
@@ -110,6 +115,10 @@ export class ServiceMessageService {
                     to: notificationToken,
                     messages: [flexMessage]
                 }),
+                metadata: {
+                    reservationId: reservation.id,
+                    messageType: type,
+                },
             });
 
             if (!response.ok) {

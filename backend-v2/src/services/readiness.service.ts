@@ -2,6 +2,7 @@ import { DatabaseService } from '../config/database.js';
 import { env } from '../config/env.js';
 import { getAuthInstance } from '../config/firebase.js';
 import { decrypt } from '../utils/crypto.js';
+import { fetchWithResilience } from '../utils/external-api-client.js';
 import { GoogleCalendarService } from './google-calendar.service.js';
 
 const LINE_VERIFY_URL = 'https://api.line.me/v2/bot/info';
@@ -65,23 +66,21 @@ async function resolveLineToken(): Promise<string | null> {
 }
 
 async function verifyLineConnection(token: string): Promise<boolean> {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), LINE_VERIFY_TIMEOUT_MS);
-
     try {
-        const response = await fetch(LINE_VERIFY_URL, {
+        const response = await fetchWithResilience(LINE_VERIFY_URL, {
+            service: 'line',
+            operation: 'readiness-check',
+            timeoutMs: LINE_VERIFY_TIMEOUT_MS,
+            enableRetries: false,
             method: 'GET',
             headers: {
                 Authorization: `Bearer ${token}`,
             },
-            signal: controller.signal,
         });
 
         return response.ok;
     } catch {
         return false;
-    } finally {
-        clearTimeout(timeout);
     }
 }
 

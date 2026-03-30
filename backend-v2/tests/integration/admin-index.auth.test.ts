@@ -58,39 +58,48 @@ function requireFirebaseAuthMock() {
     };
 }
 
-vi.mock('../../src/middleware/auth.js', () => ({
-    requireFirebaseAuth: requireFirebaseAuthMock,
-    requireRole: (...roles: string[]) => (req: any, _res: any, next: any) => {
-        if (!req.user || !roles.includes(req.user.role)) {
-            next({
-                statusCode: 403,
-                code: 'AUTHORIZATION_ERROR',
-                message: 'forbidden',
-            });
-            return;
-        }
-        next();
-    },
-    requirePermission: (permission: string) => (req: any, _res: any, next: any) => {
-        if (!req.user) {
-            next({
-                statusCode: 401,
-                code: 'AUTHENTICATION_ERROR',
-                message: 'unauthenticated',
-            });
-            return;
-        }
-        if (req.user.role !== 'owner' && !req.user.permissions?.[permission]) {
-            next({
-                statusCode: 403,
-                code: 'AUTHORIZATION_ERROR',
-                message: 'forbidden',
-            });
-            return;
-        }
-        next();
-    },
-}));
+vi.mock('../../src/middleware/auth.js', async () => {
+    const actual = await vi.importActual<typeof import('../../src/middleware/auth.js')>('../../src/middleware/auth.js');
+    return {
+        ...actual,
+        requireJwtTenant: () => (req: any, _res: any, next: any) => {
+            req.tenantId = adminState.tenant.id;
+            req.storeId = adminState.storeId;
+            next();
+        },
+        requireFirebaseAuth: requireFirebaseAuthMock,
+        requireRole: (...roles: string[]) => (req: any, _res: any, next: any) => {
+            if (!req.user || !roles.includes(req.user.role)) {
+                next({
+                    statusCode: 403,
+                    code: 'AUTHORIZATION_ERROR',
+                    message: 'forbidden',
+                });
+                return;
+            }
+            next();
+        },
+        requirePermission: (permission: string) => (req: any, _res: any, next: any) => {
+            if (!req.user) {
+                next({
+                    statusCode: 401,
+                    code: 'AUTHENTICATION_ERROR',
+                    message: 'unauthenticated',
+                });
+                return;
+            }
+            if (req.user.role !== 'owner' && !req.user.permissions?.[permission]) {
+                next({
+                    statusCode: 403,
+                    code: 'AUTHORIZATION_ERROR',
+                    message: 'forbidden',
+                });
+                return;
+            }
+            next();
+        },
+    };
+});
 
 vi.mock('../../src/middleware/index.js', async () => {
     const actual = await vi.importActual<typeof import('../../src/middleware/index.js')>('../../src/middleware/index.js');
@@ -105,21 +114,25 @@ vi.mock('../../src/middleware/index.js', async () => {
     };
 });
 
-vi.mock('../../src/middleware/tenant.js', () => ({
-    getTenant: (req: any) => {
-        if (req.tenantId !== adminState.tenant.id) {
-            throw new Error(`unexpected tenantId: ${String(req.tenantId)}`);
-        }
-        return adminState.tenant;
-    },
-    getTenantId: (req: any) => {
-        if (req.tenantId !== adminState.tenant.id) {
-            throw new Error(`unexpected tenantId: ${String(req.tenantId)}`);
-        }
-        return req.tenantId;
-    },
-    getStoreId: (req: any) => req.storeId ?? null,
-}));
+vi.mock('../../src/middleware/tenant.js', async () => {
+    const actual = await vi.importActual<typeof import('../../src/middleware/tenant.js')>('../../src/middleware/tenant.js');
+    return {
+        ...actual,
+        getTenant: (req: any) => {
+            if (req.tenantId !== adminState.tenant.id) {
+                throw new Error(`unexpected tenantId: ${String(req.tenantId)}`);
+            }
+            return adminState.tenant;
+        },
+        getTenantId: (req: any) => {
+            if (req.tenantId !== adminState.tenant.id) {
+                throw new Error(`unexpected tenantId: ${String(req.tenantId)}`);
+            }
+            return req.tenantId;
+        },
+        getStoreId: (req: any) => req.storeId ?? null,
+    };
+});
 
 vi.mock('../../src/repositories/customer.repository.js', () => ({
     CustomerRepository: class CustomerRepository {
@@ -184,6 +197,9 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
+    if (!server) {
+        return;
+    }
     await new Promise<void>((resolve, reject) => {
         server.close((error) => {
             if (error) reject(error);

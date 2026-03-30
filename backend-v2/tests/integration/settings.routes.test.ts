@@ -118,10 +118,12 @@ function makeStore() {
 }
 
 beforeAll(async () => {
+    vi.resetModules();
     ({ default: settingsRoutes } = await import('../../src/routes/v1/settings.routes.js'));
 
     const app = express();
     app.use(express.json());
+  
     app.use((req: any, _res: any, next: any) => {
         req.user = {
             uid: settingsState.auth.uid,
