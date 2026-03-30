@@ -148,11 +148,13 @@ async function invokeRoute(
     const req: any = {
         method: method.toUpperCase(),
         path,
+        tenantId: testState.authContext.tenantId,
         query: { ...(options.query ?? {}) },
         params: { ...(options.params ?? {}) },
         body: { ...(options.body ?? {}) },
         headers: { ...(options.headers ?? {}) },
         ip: options.ip,
+        user: { ...testState.authContext.user },
     };
     const res = createResponse();
     let index = 0;

@@ -7,6 +7,7 @@ import { getAuth } from 'firebase-admin/auth';
 import { logger } from '../utils/logger.js';
 import { AuthenticationError } from '../utils/errors.js';
 import { decrypt } from '../utils/crypto.js';
+import { fetchWithResilience } from '../utils/external-api-client.js';
 import type { Tenant } from '../types/index.js';
 
 interface LINEProfile {
@@ -66,16 +67,29 @@ export class LineService {
             throw new AuthenticationError('LINE channel not configured for this tenant');
         }
 
-        const response = await fetch('https://api.line.me/oauth2/v2.1/verify', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/x-www-form-urlencoded',
-            },
-            body: new URLSearchParams({
-                id_token: idToken,
-                client_id: this.channelId,
-            }),
-        });
+        let response: Response;
+        try {
+            response = await fetchWithResilience('https://api.line.me/oauth2/v2.1/verify', {
+                service: 'line',
+                operation: 'verify-id-token',
+                tenantId: this.tenant.id,
+                method: 'POST',
+                enableRetries: true,
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                },
+                body: new URLSearchParams({
+                    id_token: idToken,
+                    client_id: this.channelId,
+                }),
+            });
+        } catch (error) {
+            logger.error('LINE token verification request failed', {
+                tenantId: this.tenant.id,
+                error: error instanceof Error ? error.message : String(error),
+            });
+            throw new AuthenticationError('LINE token verification failed');
+        }
 
         if (!response.ok) {
             const error = await response.json();
@@ -90,11 +104,23 @@ export class LineService {
      * Get LINE profile using access token
      */
     async getProfile(accessToken: string): Promise<LINEProfile> {
-        const response = await fetch('https://api.line.me/v2/profile', {
-            headers: {
-                Authorization: `Bearer ${accessToken}`,
-            },
-        });
+        let response: Response;
+        try {
+            response = await fetchWithResilience('https://api.line.me/v2/profile', {
+                service: 'line',
+                operation: 'get-profile',
+                tenantId: this.tenant.id,
+                headers: {
+                    Authorization: `Bearer ${accessToken}`,
+                },
+            });
+        } catch (error) {
+            logger.error('LINE profile request failed', {
+                tenantId: this.tenant.id,
+                error: error instanceof Error ? error.message : String(error),
+            });
+            throw new AuthenticationError('Failed to get LINE profile');
+        }
 
         if (!response.ok) {
             throw new AuthenticationError('Failed to get LINE profile');
@@ -139,17 +165,31 @@ export class LineService {
             return;
         }
 
-        const response = await fetch('https://api.line.me/v2/bot/message/push', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                Authorization: `Bearer ${this.channelAccessToken}`,
-            },
-            body: JSON.stringify({
-                to: lineUserId,
-                messages,
-            }),
-        });
+        let response: Response;
+        try {
+            response = await fetchWithResilience('https://api.line.me/v2/bot/message/push', {
+                service: 'line',
+                operation: 'send-push-message',
+                tenantId: this.tenant.id,
+                method: 'POST',
+                enableRetries: false,
+                headers: {
+                    'Content-Type': 'application/json',
+                    Authorization: `Bearer ${this.channelAccessToken}`,
+                },
+                body: JSON.stringify({
+                    to: lineUserId,
+                    messages,
+                }),
+            });
+        } catch (error) {
+            logger.error('Failed to send LINE message', {
+                tenantId: this.tenant.id,
+                lineUserId,
+                error: error instanceof Error ? error.message : String(error),
+            });
+            throw new Error('Failed to send LINE message');
+        }
 
         if (!response.ok) {
             const error = await response.json();
@@ -175,18 +215,32 @@ export class LineService {
             return;
         }
 
-        const response = await fetch('https://api.line.me/message/v3/notifier/send', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                Authorization: `Bearer ${this.channelAccessToken}`,
-            },
-            body: JSON.stringify({
-                notificationToken: payload.notificationToken,
+        let response: Response;
+        try {
+            response = await fetchWithResilience('https://api.line.me/message/v3/notifier/send', {
+                service: 'line',
+                operation: 'send-service-message',
+                tenantId: this.tenant.id,
+                method: 'POST',
+                enableRetries: false,
+                headers: {
+                    'Content-Type': 'application/json',
+                    Authorization: `Bearer ${this.channelAccessToken}`,
+                },
+                body: JSON.stringify({
+                    notificationToken: payload.notificationToken,
+                    templateName: payload.templateName,
+                    templateArgs: payload.templateArgs,
+                }),
+            });
+        } catch (error) {
+            logger.error('Failed to send service message', {
+                tenantId: this.tenant.id,
                 templateName: payload.templateName,
-                templateArgs: payload.templateArgs,
-            }),
-        });
+                error: error instanceof Error ? error.message : String(error),
+            });
+            throw new Error('Failed to send service message');
+        }
 
         if (!response.ok) {
             const error = await response.json();

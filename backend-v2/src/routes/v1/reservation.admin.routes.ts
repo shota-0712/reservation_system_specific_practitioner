@@ -209,7 +209,7 @@ router.post(
     })
 );
 
-router.put(
+router.patch(
     '/:id',
     requirePermission('canManageReservations'),
     validateParams(idParamSchema),

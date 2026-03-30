@@ -153,10 +153,10 @@ router.get(
 
 /**
  * 顧客を更新
- * @route PUT /v1/:storeCode/admin/customers/:id
+ * @route PATCH /v1/:storeCode/admin/customers/:id
  * @access Staff+
  */
-router.put(
+router.patch(
     '/:id',
     requireRole('staff', 'manager', 'owner'),
     validateParams(idParamSchema),

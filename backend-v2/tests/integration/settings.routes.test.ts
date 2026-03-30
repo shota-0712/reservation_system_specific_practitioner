@@ -118,10 +118,18 @@ function makeStore() {
 }
 
 beforeAll(async () => {
+    vi.resetModules();
     ({ default: settingsRoutes } = await import('../../src/routes/v1/settings.routes.js'));
 
     const app = express();
     app.use(express.json());
+    app.use((req: any, _res, next) => {
+        req.user = {
+            uid: settingsState.auth.uid,
+            role: settingsState.auth.role,
+        };
+        next();
+    });
     app.use('/settings', settingsRoutes);
     app.use((error: any, _req: any, res: any, _next: any) => {
         res.status(error?.statusCode ?? 500).json({
@@ -214,7 +222,7 @@ describe('settings routes integration', () => {
 
     it('updates tenant notification settings', async () => {
         const { response, json } = await requestJson('/settings/notifications', {
-            method: 'PUT',
+            method: 'PATCH',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ lineReminder: false }),
         });
@@ -235,7 +243,7 @@ describe('settings routes integration', () => {
         });
 
         const { response, json } = await requestJson('/settings/profile', {
-            method: 'PUT',
+            method: 'PATCH',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ name: 'Updated Store' }),
         });
@@ -245,6 +253,16 @@ describe('settings routes integration', () => {
         expect(settingsState.storeRepo.update).toHaveBeenCalledWith(STORE_ID, {
             name: 'Updated Store',
         });
+    });
+
+    it('does not accept legacy PUT for partial profile updates', async () => {
+        const response = await fetch(`${baseUrl}/settings/profile`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name: 'Updated Store' }),
+        });
+
+        expect(response.status).toBe(404);
     });
 
     it('uploads branding logo via backend storage', async () => {

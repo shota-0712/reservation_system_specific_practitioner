@@ -9,6 +9,7 @@ import { DatabaseService } from '../config/database.js';
 import { primeTenantCache } from './tenant.js';
 import { AuthenticationError, AuthorizationError } from '../utils/errors.js';
 import { logger } from '../utils/logger.js';
+import { fetchWithResilience } from '../utils/external-api-client.js';
 import type { AuthenticatedRequest, Admin, AdminRole, DecodedLineToken } from '../types/index.js';
 
 /**
@@ -326,8 +327,12 @@ async function verifyLineIdToken(
             throw new AuthenticationError('LINE認証設定が不完全です（チャンネルID未設定）');
         }
 
-        const response = await fetch('https://api.line.me/oauth2/v2.1/verify', {
+        const response = await fetchWithResilience('https://api.line.me/oauth2/v2.1/verify', {
+            service: 'line',
+            operation: 'verify-id-token-middleware',
+            tenantId,
             method: 'POST',
+            enableRetries: true,
             headers: {
                 'Content-Type': 'application/x-www-form-urlencoded',
             },

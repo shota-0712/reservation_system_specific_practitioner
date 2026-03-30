@@ -222,7 +222,7 @@ router.get(
     })
 );
 
-router.put(
+router.patch(
     '/:id',
     requireLineAuth(),
     validateParams(idParamSchema),
