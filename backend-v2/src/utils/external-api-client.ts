@@ -235,19 +235,19 @@ function throwIfCircuitOpen(
 }
 
 function createMergedSignal(
-    primary?: AbortSignal,
-    secondary?: AbortSignal
+    primary?: AbortSignal | null,
+    secondary?: AbortSignal | null
 ): { signal?: AbortSignal; cleanup: () => void } {
     if (!primary && !secondary) {
         return { cleanup: () => undefined };
     }
 
     if (!primary) {
-        return { signal: secondary, cleanup: () => undefined };
+        return { signal: secondary ?? undefined, cleanup: () => undefined };
     }
 
     if (!secondary) {
-        return { signal: primary, cleanup: () => undefined };
+        return { signal: primary ?? undefined, cleanup: () => undefined };
     }
 
     const controller = new AbortController();
