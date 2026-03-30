@@ -255,7 +255,7 @@ describe('settings routes integration', () => {
     });
 
     it('does not accept legacy PUT for partial profile updates', async () => {
-        const { response } = await requestJson('/settings/profile', {
+        const response = await fetch(`${baseUrl}/settings/profile`, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ name: 'Updated Store' }),
