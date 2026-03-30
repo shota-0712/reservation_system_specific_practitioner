@@ -4,7 +4,7 @@
  */
 
 import { Router, Request, Response } from 'express';
-import { requireFirebaseAuth, requireRole } from '../../middleware/auth.js';
+import { requireRole } from '../../middleware/auth.js';
 import { getTenant } from '../../middleware/tenant.js';
 import { asyncHandler } from '../../middleware/error-handler.js';
 import { validateBody, validateParams, validateQuery, idParamSchema } from '../../middleware/validation.js';
@@ -52,7 +52,6 @@ const customerSearchQuerySchema = z.object({
  */
 router.get(
     '/',
-    requireFirebaseAuth(),
     requireRole('staff', 'manager', 'owner'),
     validateQuery(listCustomersQuerySchema),
     asyncHandler(async (req: Request, res: Response): Promise<void> => {
@@ -99,7 +98,6 @@ router.get(
  */
 router.post(
     '/search',
-    requireFirebaseAuth(),
     requireRole('staff', 'manager', 'owner'),
     validateQuery(customerSearchQuerySchema),
     validateBody(searchCustomerSchema),
@@ -126,7 +124,6 @@ router.post(
  */
 router.get(
     '/:id',
-    requireFirebaseAuth(),
     requireRole('staff', 'manager', 'owner'),
     validateParams(idParamSchema),
     asyncHandler(async (req: Request, res: Response): Promise<void> => {
@@ -161,7 +158,6 @@ router.get(
  */
 router.put(
     '/:id',
-    requireFirebaseAuth(),
     requireRole('staff', 'manager', 'owner'),
     validateParams(idParamSchema),
     validateBody(updateCustomerSchema),
@@ -227,7 +223,6 @@ router.put(
  */
 router.get(
     '/:id/reservations',
-    requireFirebaseAuth(),
     requireRole('staff', 'manager', 'owner'),
     validateParams(idParamSchema),
     asyncHandler(async (req: Request, res: Response): Promise<void> => {
@@ -264,7 +259,6 @@ router.get(
  */
 router.post(
     '/:id/tags',
-    requireFirebaseAuth(),
     requireRole('manager', 'owner'),
     validateParams(idParamSchema),
     validateBody(z.object({ tags: z.array(z.string()) })),
@@ -307,7 +301,6 @@ router.post(
  */
 router.delete(
     '/:id/tags/:tag',
-    requireFirebaseAuth(),
     requireRole('manager', 'owner'),
     validateParams(z.object({ id: z.string().min(1), tag: z.string().min(1) })),
     asyncHandler(async (req: Request, res: Response): Promise<void> => {
@@ -348,7 +341,6 @@ router.delete(
  */
 router.get(
     '/stats/overview',
-    requireFirebaseAuth(),
     requireRole('manager', 'owner'),
     asyncHandler(async (req: Request, res: Response): Promise<void> => {
         const tenant = getTenant(req);

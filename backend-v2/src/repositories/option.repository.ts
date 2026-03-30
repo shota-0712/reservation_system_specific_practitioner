@@ -100,6 +100,37 @@ export class OptionRepository {
         return option;
     }
 
+    async findByIds(ids: string[]): Promise<Option[]> {
+        if (ids.length === 0) return [];
+
+        const uniqueIds = [...new Set(ids)];
+        const rows = await DatabaseService.query(
+            'SELECT * FROM menu_options WHERE tenant_id = $1 AND id = ANY($2)',
+            [this.tenantId, uniqueIds],
+            this.tenantId
+        );
+        const hydratedOptions = await this.hydrateMenuAssignments(rows.map(mapOption));
+        const optionById = new Map(hydratedOptions.map((option) => [option.id, option]));
+
+        return ids.flatMap((id) => {
+            const option = optionById.get(id);
+            return option ? [option] : [];
+        });
+    }
+
+    async findByIdsOrFail(ids: string[]): Promise<Option[]> {
+        if (ids.length === 0) return [];
+
+        const options = await this.findByIds(ids);
+        if (options.length === ids.length) {
+            return options;
+        }
+
+        const foundIds = new Set(options.map((option) => option.id));
+        const missingId = ids.find((id) => !foundIds.has(id));
+        throw new NotFoundError('オプション', missingId);
+    }
+
     /**
      * Find all options
      */

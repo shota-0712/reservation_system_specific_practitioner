@@ -4,7 +4,7 @@
  */
 
 import { Router, Request, Response } from 'express';
-import { requireFirebaseAuth, requireRole } from '../../middleware/auth.js';
+import { requireRole } from '../../middleware/auth.js';
 import { getTenant } from '../../middleware/tenant.js';
 import { asyncHandler } from '../../middleware/error-handler.js';
 import { validateQuery } from '../../middleware/validation.js';
@@ -89,7 +89,6 @@ async function fetchSummaryFromDailyAnalytics(
  */
 router.get(
     '/summary',
-    requireFirebaseAuth(),
     requireRole('manager', 'owner'),
     validateQuery(reportSummaryQuerySchema),
     asyncHandler(async (req: Request, res: Response): Promise<void> => {
@@ -249,7 +248,6 @@ router.get(
  */
 router.get(
     '/revenue',
-    requireFirebaseAuth(),
     requireRole('manager', 'owner'),
     asyncHandler(async (req: Request, res: Response): Promise<void> => {
         const tenant = getTenant(req);
@@ -329,7 +327,6 @@ router.get(
  */
 router.get(
     '/menu-ranking',
-    requireFirebaseAuth(),
     requireRole('manager', 'owner'),
     asyncHandler(async (req: Request, res: Response): Promise<void> => {
         const tenant = getTenant(req);
@@ -354,7 +351,6 @@ router.get(
  */
 router.get(
     '/practitioner-revenue',
-    requireFirebaseAuth(),
     requireRole('manager', 'owner'),
     asyncHandler(async (req: Request, res: Response): Promise<void> => {
         const tenant = getTenant(req);

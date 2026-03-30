@@ -1,7 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { z } from 'zod';
 import { asyncHandler, validateBody, validateQuery } from '../../middleware/index.js';
-import { requireFirebaseAuth, requirePermission } from '../../middleware/auth.js';
+import { requirePermission } from '../../middleware/auth.js';
 import { getTenantId } from '../../middleware/tenant.js';
 import { createBookingLinkTokenService } from '../../services/booking-link-token.service.js';
 import { createPractitionerRepository } from '../../repositories/index.js';
@@ -25,7 +25,6 @@ const listBookingLinkQuerySchema = z.object({
 
 router.get(
     '/',
-    requireFirebaseAuth(),
     requirePermission('canManagePractitioners'),
     validateQuery(listBookingLinkQuerySchema),
     asyncHandler(async (req: Request, res: Response): Promise<void> => {
@@ -48,7 +47,6 @@ router.get(
 
 router.post(
     '/',
-    requireFirebaseAuth(),
     requirePermission('canManagePractitioners'),
     validateBody(createBookingLinkSchema),
     asyncHandler(async (req: Request, res: Response): Promise<void> => {
@@ -85,7 +83,6 @@ router.post(
 
 router.delete(
     '/:id',
-    requireFirebaseAuth(),
     requirePermission('canManagePractitioners'),
     asyncHandler(async (req: Request, res: Response): Promise<void> => {
         const tenantId = getTenantId(req);

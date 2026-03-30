@@ -6,7 +6,7 @@
 
 import { Router, Request, Response } from 'express';
 import { z } from 'zod';
-import { requireFirebaseAuth, requireRole } from '../../middleware/auth.js';
+import { requireRole } from '../../middleware/auth.js';
 import { getTenantId } from '../../middleware/tenant.js';
 import { validateBody } from '../../middleware/validation.js';
 import { asyncHandler } from '../../middleware/error-handler.js';
@@ -34,7 +34,6 @@ const updateRfmThresholdsSchema = z.object({
  */
 router.get(
     '/',
-    requireFirebaseAuth(),
     requireRole('manager', 'owner'),
     asyncHandler(async (req: Request, res: Response): Promise<void> => {
         const tenantId = getTenantId(req);
@@ -49,7 +48,6 @@ router.get(
  */
 router.put(
     '/',
-    requireFirebaseAuth(),
     requireRole('owner'),
     validateBody(updateRfmThresholdsSchema),
     asyncHandler(async (req: Request, res: Response): Promise<void> => {

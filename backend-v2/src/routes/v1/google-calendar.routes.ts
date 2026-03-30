@@ -1,7 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { z } from 'zod';
 import { asyncHandler, validateBody } from '../../middleware/index.js';
-import { requireFirebaseAuth, requirePermission } from '../../middleware/auth.js';
+import { requirePermission } from '../../middleware/auth.js';
 import { getTenantId } from '../../middleware/tenant.js';
 import { createGoogleCalendarService } from '../../services/google-calendar.service.js';
 import { createGoogleCalendarSyncQueueService } from '../../services/google-calendar-sync-queue.service.js';
@@ -85,7 +85,6 @@ function renderOAuthCompletionPage(res: Response, payload: {
 
 adminRouter.get(
     '/',
-    requireFirebaseAuth(),
     requirePermission('canManageSettings'),
     asyncHandler(async (req: Request, res: Response): Promise<void> => {
         const tenantId = getTenantId(req);
@@ -105,7 +104,6 @@ adminRouter.get(
 
 adminRouter.put(
     '/',
-    requireFirebaseAuth(),
     requirePermission('canManageSettings'),
     validateBody(updateSchema),
     asyncHandler(async (req: Request, res: Response): Promise<void> => {
@@ -142,7 +140,6 @@ adminRouter.put(
 
 adminRouter.post(
     '/oauth/start',
-    requireFirebaseAuth(),
     requirePermission('canManageSettings'),
     asyncHandler(async (req: Request, res: Response): Promise<void> => {
         const tenantId = getTenantId(req);

@@ -5,7 +5,7 @@
 
 import { Router, Request, Response } from 'express';
 import { formatInTimeZone } from 'date-fns-tz';
-import { requireFirebaseAuth, requireRole } from '../../middleware/auth.js';
+import { requireRole } from '../../middleware/auth.js';
 import { getTenantId } from '../../middleware/tenant.js';
 import { asyncHandler } from '../../middleware/error-handler.js';
 import { validateQuery } from '../../middleware/validation.js';
@@ -91,7 +91,6 @@ async function fetchDashboardSummaryFromDailyAnalytics(
  */
 router.get(
     '/kpi',
-    requireFirebaseAuth(),
     requireRole('staff', 'manager', 'owner'),
     asyncHandler(async (req: Request, res: Response): Promise<void> => {
         const tenantId = getTenantId(req);
@@ -232,7 +231,6 @@ router.get(
  */
 router.get(
     '/today',
-    requireFirebaseAuth(),
     requireRole('staff', 'manager', 'owner'),
     asyncHandler(async (req: Request, res: Response): Promise<void> => {
         const tenantId = getTenantId(req);
@@ -269,7 +267,6 @@ router.get(
  */
 router.get(
     '/staff-utilization',
-    requireFirebaseAuth(),
     requireRole('manager', 'owner'),
     asyncHandler(async (req: Request, res: Response): Promise<void> => {
         const tenantId = getTenantId(req);
@@ -325,7 +322,6 @@ router.get(
  */
 router.get(
     '/weekly-summary',
-    requireFirebaseAuth(),
     requireRole('staff', 'manager', 'owner'),
     asyncHandler(async (req: Request, res: Response): Promise<void> => {
         const tenantId = getTenantId(req);
@@ -383,7 +379,6 @@ export default router;
  */
 router.get(
     '/activity',
-    requireFirebaseAuth(),
     requireRole('staff', 'manager', 'owner'),
     validateQuery(dashboardActivityQuerySchema),
     asyncHandler(async (req: Request, res: Response): Promise<void> => {

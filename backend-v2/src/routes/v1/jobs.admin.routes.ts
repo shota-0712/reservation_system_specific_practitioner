@@ -5,7 +5,7 @@
 
 import { Router, Request, Response } from 'express';
 import { z } from 'zod';
-import { requireFirebaseAuth, requireRole } from '../../middleware/auth.js';
+import { requireRole } from '../../middleware/auth.js';
 import { getTenantId } from '../../middleware/tenant.js';
 import { validateBody } from '../../middleware/index.js';
 import { asyncHandler } from '../../middleware/error-handler.js';
@@ -27,7 +27,6 @@ const retryGoogleSyncSchema = z.object({
  */
 router.post(
     '/reminders/day-before',
-    requireFirebaseAuth(),
     requireRole('manager', 'owner'),
     asyncHandler(async (req: Request, res: Response): Promise<void> => {
         const tenantId = getTenantId(req);
@@ -42,7 +41,6 @@ router.post(
  */
 router.post(
     '/reminders/same-day',
-    requireFirebaseAuth(),
     requireRole('manager', 'owner'),
     asyncHandler(async (req: Request, res: Response): Promise<void> => {
         const tenantId = getTenantId(req);
@@ -57,7 +55,6 @@ router.post(
  */
 router.post(
     '/analytics/daily',
-    requireFirebaseAuth(),
     requireRole('manager', 'owner'),
     asyncHandler(async (req: Request, res: Response): Promise<void> => {
         const tenantId = getTenantId(req);
@@ -73,7 +70,6 @@ router.post(
  */
 router.post(
     '/integrations/google-calendar/sync',
-    requireFirebaseAuth(),
     requireRole('manager', 'owner'),
     asyncHandler(async (req: Request, res: Response): Promise<void> => {
         const tenantId = getTenantId(req);
@@ -91,7 +87,6 @@ router.post(
  */
 router.post(
     '/integrations/salonboard/sync',
-    requireFirebaseAuth(),
     requireRole('manager', 'owner'),
     asyncHandler(async (req: Request, res: Response): Promise<void> => {
         const tenantId = getTenantId(req);
@@ -107,7 +102,6 @@ router.post(
  */
 router.post(
     '/integrations/google-calendar/retry',
-    requireFirebaseAuth(),
     requireRole('manager', 'owner'),
     validateBody(retryGoogleSyncSchema),
     asyncHandler(async (req: Request, res: Response): Promise<void> => {
@@ -127,7 +121,6 @@ router.post(
  */
 router.post(
     '/customers/rfm/recalculate',
-    requireFirebaseAuth(),
     requireRole('manager', 'owner'),
     asyncHandler(async (req: Request, res: Response): Promise<void> => {
         const tenantId = getTenantId(req);

@@ -97,6 +97,21 @@ function mapReservation(row: Record<string, any>): Reservation {
     };
 }
 
+function buildCancellationStateAssignments(
+    statusExpression: string,
+    cancelReasonExpression: string
+): string {
+    return `
+                canceled_at = CASE
+                    WHEN ${statusExpression} = 'canceled' THEN COALESCE(canceled_at, NOW())
+                    ELSE NULL
+                END,
+                cancel_reason = CASE
+                    WHEN ${statusExpression} = 'canceled' THEN ${cancelReasonExpression}
+                    ELSE NULL
+                END,`;
+}
+
 /**
  * Reservation Repository
  */
@@ -556,6 +571,7 @@ export class ReservationRepository {
                 ends_at = COALESCE($7::timestamptz, ends_at),
                 timezone = COALESCE($8, timezone),
                 status = COALESCE($9, status),
+${buildCancellationStateAssignments('COALESCE($9, status)', 'cancel_reason')}
                 source = COALESCE($10, source),
                 total_price = COALESCE($11, total_price),
                 total_duration = COALESCE($12, total_duration),
@@ -612,6 +628,7 @@ export class ReservationRepository {
                     practitioner_name = $19,
                     notes = $20,
                     internal_note = $21,
+${buildCancellationStateAssignments('$9', 'cancel_reason')}
                     google_calendar_id = $22,
                     google_calendar_event_id = $23,
                     salonboard_reservation_id = $24,
@@ -667,15 +684,13 @@ export class ReservationRepository {
         status: ReservationStatus,
         reason?: string
     ): Promise<Reservation> {
-        let sql = `UPDATE reservations SET status = $3, updated_at = NOW()`;
-        const params: any[] = [id, this.tenantId, status];
-
-        if (status === 'canceled') {
-            sql += `, canceled_at = NOW(), cancel_reason = $4`;
-            params.push(reason ?? null);
-        }
-
-        sql += ` WHERE id = $1 AND tenant_id = $2 RETURNING *`;
+        const sql = `UPDATE reservations SET
+            status = $3,
+${buildCancellationStateAssignments('$3', '$4')}
+            updated_at = NOW()
+         WHERE id = $1 AND tenant_id = $2
+         RETURNING *`;
+        const params: any[] = [id, this.tenantId, status, reason ?? null];
 
         const row = await DatabaseService.queryOne(sql, params, this.tenantId);
 

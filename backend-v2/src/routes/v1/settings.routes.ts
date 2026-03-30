@@ -4,7 +4,7 @@
  */
 
 import { Router, Request, Response } from 'express';
-import { requireFirebaseAuth, requireRole } from '../../middleware/auth.js';
+import { requireRole } from '../../middleware/auth.js';
 import { getStoreId, getTenant, getTenantId } from '../../middleware/tenant.js';
 import { asyncHandler } from '../../middleware/error-handler.js';
 import { validateBody, validateQuery } from '../../middleware/validation.js';
@@ -106,7 +106,6 @@ async function resolveScopedStore(req: Request, tenantId: string) {
  */
 router.get(
     '/',
-    requireFirebaseAuth(),
     requireRole('manager', 'owner'),
     asyncHandler(async (req: Request, res: Response): Promise<void> => {
         const tenant = getTenant(req);
@@ -145,7 +144,6 @@ router.get(
  */
 router.get(
     '/notifications',
-    requireFirebaseAuth(),
     requireRole('manager', 'owner'),
     asyncHandler(async (req: Request, res: Response): Promise<void> => {
         const tenantId = getTenantId(req);
@@ -165,7 +163,6 @@ router.get(
  */
 router.put(
     '/notifications',
-    requireFirebaseAuth(),
     requireRole('manager', 'owner'),
     validateBody(updateNotificationSettingsSchema),
     asyncHandler(async (req: Request, res: Response): Promise<void> => {
@@ -190,7 +187,6 @@ router.put(
  */
 router.put(
     '/profile',
-    requireFirebaseAuth(),
     requireRole('manager', 'owner'),
     validateBody(updateProfileSchema),
     asyncHandler(async (req: Request, res: Response): Promise<void> => {
@@ -221,7 +217,6 @@ router.put(
  */
 router.get(
     '/line/resolve-preview',
-    requireFirebaseAuth(),
     requireRole('manager', 'owner'),
     validateQuery(lineResolvePreviewQuerySchema),
     asyncHandler(async (req: Request, res: Response): Promise<void> => {
@@ -283,7 +278,6 @@ router.get(
  */
 router.put(
     '/business',
-    requireFirebaseAuth(),
     requireRole('manager', 'owner'),
     validateBody(updateBusinessSchema),
     asyncHandler(async (req: Request, res: Response): Promise<void> => {
@@ -320,7 +314,6 @@ router.put(
  */
 router.put(
     '/line',
-    requireFirebaseAuth(),
     requireRole('manager', 'owner'),
     validateBody(updateLineConfigSchema),
     asyncHandler(async (req: Request, res: Response): Promise<void> => {
@@ -375,7 +368,6 @@ router.put(
  */
 router.post(
     '/branding/logo-upload',
-    requireFirebaseAuth(),
     requireRole('manager', 'owner'),
     validateBody(uploadBrandingLogoSchema),
     asyncHandler(async (req: Request, res: Response): Promise<void> => {
@@ -417,7 +409,6 @@ router.post(
  */
 router.put(
     '/branding',
-    requireFirebaseAuth(),
     requireRole('manager', 'owner'),
     validateBody(updateBrandingSchema),
     asyncHandler(async (req: Request, res: Response): Promise<void> => {

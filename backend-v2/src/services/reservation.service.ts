@@ -128,8 +128,10 @@ export class ReservationService {
         const menuRepo = createMenuRepository(this.tenantId);
         const optionRepo = createOptionRepository(this.tenantId);
 
-        const menus = await Promise.all(menuIds.map((id) => menuRepo.findByIdOrFail(id)));
-        const options = await Promise.all(optionIds.map((id) => optionRepo.findByIdOrFail(id)));
+        const [menus, options] = await Promise.all([
+            menuRepo.findByIdsOrFail(menuIds),
+            optionRepo.findByIdsOrFail(optionIds),
+        ]);
 
         return {
             menus,

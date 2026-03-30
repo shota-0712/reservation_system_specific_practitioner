@@ -1,7 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { z } from 'zod';
 import { asyncHandler, validateBody, validateParams, validateQuery, idParamSchema } from '../../middleware/index.js';
-import { requireFirebaseAuth, requirePermission } from '../../middleware/auth.js';
+import { requirePermission } from '../../middleware/auth.js';
 import { getTenantId } from '../../middleware/tenant.js';
 import { createKarteRepository } from '../../repositories/index.js';
 import { getRequestMeta, writeAuditLog } from '../../services/audit-log.service.js';
@@ -44,7 +44,6 @@ const listKarteQuerySchema = z.object({
 
 router.get(
     '/',
-    requireFirebaseAuth(),
     requirePermission('canManageCustomers'),
     validateQuery(listKarteQuerySchema),
     asyncHandler(async (req: Request, res: Response): Promise<void> => {
@@ -64,7 +63,6 @@ router.get(
 
 router.get(
     '/:id',
-    requireFirebaseAuth(),
     requirePermission('canManageCustomers'),
     validateParams(idParamSchema),
     asyncHandler(async (req: Request, res: Response): Promise<void> => {
@@ -83,7 +81,6 @@ router.get(
 
 router.post(
     '/',
-    requireFirebaseAuth(),
     requirePermission('canManageCustomers'),
     validateBody(createKarteSchema),
     asyncHandler(async (req: Request, res: Response): Promise<void> => {
@@ -118,7 +115,6 @@ router.post(
 
 router.put(
     '/:id',
-    requireFirebaseAuth(),
     requirePermission('canManageCustomers'),
     validateParams(idParamSchema),
     validateBody(updateKarteSchema),
@@ -155,7 +151,6 @@ router.put(
 
 router.delete(
     '/:id',
-    requireFirebaseAuth(),
     requirePermission('canManageCustomers'),
     validateParams(idParamSchema),
     asyncHandler(async (req: Request, res: Response): Promise<void> => {

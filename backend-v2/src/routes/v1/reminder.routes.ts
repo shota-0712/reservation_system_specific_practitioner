@@ -4,7 +4,7 @@
  */
 
 import { Router, Request, Response } from 'express';
-import { requireFirebaseAuth, requireRole } from '../../middleware/auth.js';
+import { requireRole } from '../../middleware/auth.js';
 import { getTenant } from '../../middleware/tenant.js';
 import { asyncHandler } from '../../middleware/error-handler.js';
 import { validateBody, validateQuery } from '../../middleware/validation.js';
@@ -32,7 +32,6 @@ const reminderLogsQuerySchema = z.object({
  */
 router.post(
     '/send-single',
-    requireFirebaseAuth(),
     requireRole('manager', 'owner'),
     validateBody(sendSingleReminderBodySchema),
     asyncHandler(async (req: Request, res: Response): Promise<void> => {
@@ -84,7 +83,6 @@ router.post(
  */
 router.get(
     '/logs',
-    requireFirebaseAuth(),
     requireRole('manager', 'owner'),
     validateQuery(reminderLogsQuerySchema),
     asyncHandler(async (req: Request, res: Response): Promise<void> => {

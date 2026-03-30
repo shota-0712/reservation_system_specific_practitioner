@@ -1,7 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { z } from 'zod';
 import { asyncHandler, validateBody } from '../../middleware/index.js';
-import { requireFirebaseAuth, requirePermission } from '../../middleware/auth.js';
+import { requirePermission } from '../../middleware/auth.js';
 import { getTenantId } from '../../middleware/tenant.js';
 import { createTenantRepository } from '../../repositories/index.js';
 import { createOnboardingAdminSetupService } from '../../services/onboarding-admin-setup.service.js';
@@ -21,7 +21,6 @@ const updateSchema = z.object({
 
 router.get(
     '/status',
-    requireFirebaseAuth(),
     asyncHandler(async (req: Request, res: Response): Promise<void> => {
         const tenantId = getTenantId(req);
         const status = await tenantRepository.getOnboardingStatus(tenantId);
@@ -47,7 +46,6 @@ router.get(
 
 router.patch(
     '/status',
-    requireFirebaseAuth(),
     requirePermission('canManageSettings'),
     validateBody(updateSchema),
     asyncHandler(async (req: Request, res: Response): Promise<void> => {

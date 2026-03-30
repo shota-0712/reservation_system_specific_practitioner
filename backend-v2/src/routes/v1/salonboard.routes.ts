@@ -1,7 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { z } from 'zod';
 import { asyncHandler, validateBody } from '../../middleware/index.js';
-import { requireFirebaseAuth, requirePermission } from '../../middleware/auth.js';
+import { requirePermission } from '../../middleware/auth.js';
 import { getTenantId } from '../../middleware/tenant.js';
 import { createSalonboardService } from '../../services/salonboard.service.js';
 import { getRequestMeta, writeAuditLog } from '../../services/audit-log.service.js';
@@ -19,7 +19,6 @@ const updateSalonboardSchema = z.object({
 
 router.get(
     '/',
-    requireFirebaseAuth(),
     requirePermission('canManageSettings'),
     asyncHandler(async (req: Request, res: Response): Promise<void> => {
         const tenantId = getTenantId(req);
@@ -37,7 +36,6 @@ router.get(
 
 router.put(
     '/',
-    requireFirebaseAuth(),
     requirePermission('canManageSettings'),
     validateBody(updateSalonboardSchema),
     asyncHandler(async (req: Request, res: Response): Promise<void> => {

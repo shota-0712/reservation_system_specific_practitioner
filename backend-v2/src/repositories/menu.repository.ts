@@ -94,6 +94,37 @@ export class MenuRepository {
         return menu;
     }
 
+    async findByIds(ids: string[]): Promise<Menu[]> {
+        if (ids.length === 0) return [];
+
+        const uniqueIds = [...new Set(ids)];
+        const rows = await DatabaseService.query(
+            'SELECT * FROM menus WHERE tenant_id = $1 AND id = ANY($2)',
+            [this.tenantId, uniqueIds],
+            this.tenantId
+        );
+        const hydratedMenus = await this.hydratePractitionerAssignments(rows.map(mapMenu));
+        const menuById = new Map(hydratedMenus.map((menu) => [menu.id, menu]));
+
+        return ids.flatMap((id) => {
+            const menu = menuById.get(id);
+            return menu ? [menu] : [];
+        });
+    }
+
+    async findByIdsOrFail(ids: string[]): Promise<Menu[]> {
+        if (ids.length === 0) return [];
+
+        const menus = await this.findByIds(ids);
+        if (menus.length === ids.length) {
+            return menus;
+        }
+
+        const foundIds = new Set(menus.map((menu) => menu.id));
+        const missingId = ids.find((id) => !foundIds.has(id));
+        throw new NotFoundError('メニュー', missingId);
+    }
+
     async findAll(options?: { includeInactive?: boolean }): Promise<Menu[]> {
         const includeInactive = options?.includeInactive ?? false;
         const rows = await DatabaseService.query(
