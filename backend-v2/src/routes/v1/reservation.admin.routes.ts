@@ -419,18 +419,7 @@ router.patch(
         }
 
         const reservation = await reservationRepo.updateStatus(id, status, reason);
-
-        if (status === 'completed') {
-            await customerRepo.updateStatsAfterReservation(
-                reservation.customerId,
-                reservation.totalPrice,
-                new Date(reservation.startsAt).toISOString()
-            );
-        } else if (status === 'no_show') {
-            await customerRepo.incrementNoShow(reservation.customerId);
-        } else if (status === 'canceled') {
-            await customerRepo.incrementCancel(reservation.customerId);
-        }
+        await customerRepo.syncReservationStats(reservation.customerId);
 
         if (status === 'canceled' || status === 'no_show') {
             const practitioner = await practitionerRepo.findById(reservation.practitionerId);

@@ -5,7 +5,7 @@
 
 import { DatabaseService } from '../config/database.js';
 import { NotFoundError } from '../utils/errors.js';
-import type { Customer } from '../types/index.js';
+import type { Customer, ReservationStatus } from '../types/index.js';
 import { calcRfmSegment, getRfmThresholds } from '../services/rfm-thresholds.service.js';
 
 export interface CustomerFilters {
@@ -50,6 +50,55 @@ function mapCustomer(row: Record<string, any>): Customer {
         isActive: row.is_active,
         createdAt: row.created_at,
         updatedAt: row.updated_at,
+    };
+}
+
+interface CustomerReservationStatsRow {
+    status: ReservationStatus;
+    total_price: number | string | null;
+    starts_at: Date | string | null;
+}
+
+export interface CustomerReservationStats {
+    totalVisits: number;
+    totalSpend: number;
+    averageSpend: number;
+    firstVisitAt: string | null;
+    lastVisitAt: string | null;
+    cancelCount: number;
+    noShowCount: number;
+}
+
+function toReservationTimestamp(value: Date | string | null): string | null {
+    if (!value) return null;
+    const date = value instanceof Date ? value : new Date(value);
+    return Number.isNaN(date.getTime()) ? null : date.toISOString();
+}
+
+export function calculateCustomerReservationStats(rows: CustomerReservationStatsRow[]): CustomerReservationStats {
+    const completedReservations = rows
+        .filter((row) => row.status === 'completed')
+        .map((row) => ({
+            totalPrice: Number(row.total_price ?? 0),
+            startsAt: toReservationTimestamp(row.starts_at),
+        }))
+        .filter((row) => row.startsAt);
+
+    const sortedCompletedReservations = completedReservations.sort((left, right) => {
+        return new Date(left.startsAt as string).getTime() - new Date(right.startsAt as string).getTime();
+    });
+
+    const totalVisits = sortedCompletedReservations.length;
+    const totalSpend = sortedCompletedReservations.reduce((sum, row) => sum + row.totalPrice, 0);
+
+    return {
+        totalVisits,
+        totalSpend,
+        averageSpend: totalVisits > 0 ? totalSpend / totalVisits : 0,
+        firstVisitAt: sortedCompletedReservations[0]?.startsAt ?? null,
+        lastVisitAt: sortedCompletedReservations[sortedCompletedReservations.length - 1]?.startsAt ?? null,
+        cancelCount: rows.filter((row) => row.status === 'canceled').length,
+        noShowCount: rows.filter((row) => row.status === 'no_show').length,
     };
 }
 
@@ -410,24 +459,42 @@ export class CustomerRepository {
     }
 
     /**
-     * Update customer stats after a completed reservation
+     * Rebuild customer aggregates from reservation source-of-truth.
+     * This keeps stats idempotent across retries, same-status updates, and reversions.
      */
-    async updateStatsAfterReservation(
-        customerId: string,
-        totalPrice: number,
-        date: string
-    ): Promise<Customer> {
+    async syncReservationStats(customerId: string): Promise<Customer> {
+        const reservationRows = await DatabaseService.query<CustomerReservationStatsRow>(
+            `SELECT status, total_price, starts_at
+             FROM reservations
+             WHERE customer_id = $1 AND tenant_id = $2`,
+            [customerId, this.tenantId],
+            this.tenantId
+        );
+
+        const stats = calculateCustomerReservationStats(reservationRows);
         const row = await DatabaseService.queryOne(
             `UPDATE customers SET
-                total_visits = total_visits + 1,
-                total_spend = total_spend + $3,
-                average_spend = (total_spend + $3) / (total_visits + 1),
-                last_visit_at = $4::timestamptz,
-                first_visit_at = COALESCE(first_visit_at, $4::timestamptz),
+                total_visits = $3,
+                total_spend = $4,
+                average_spend = $5,
+                last_visit_at = $6::timestamptz,
+                first_visit_at = $7::timestamptz,
+                cancel_count = $8,
+                no_show_count = $9,
                 updated_at = NOW()
              WHERE id = $1 AND tenant_id = $2
              RETURNING *`,
-            [customerId, this.tenantId, totalPrice, date],
+            [
+                customerId,
+                this.tenantId,
+                stats.totalVisits,
+                stats.totalSpend,
+                stats.averageSpend,
+                stats.lastVisitAt,
+                stats.firstVisitAt,
+                stats.cancelCount,
+                stats.noShowCount,
+            ],
             this.tenantId
         );
 
@@ -435,7 +502,6 @@ export class CustomerRepository {
             throw new NotFoundError('顧客', customerId);
         }
 
-        // Update RFM segment (threshold-driven)
         const customer = mapCustomer(row as Record<string, any>);
         const rfmSegment = await this.calculateRfmSegmentForCustomer(customer);
 
@@ -449,6 +515,19 @@ export class CustomerRepository {
         }
 
         return customer;
+    }
+
+    /**
+     * Update customer stats after a completed reservation
+     */
+    async updateStatsAfterReservation(
+        customerId: string,
+        totalPrice: number,
+        date: string
+    ): Promise<Customer> {
+        void totalPrice;
+        void date;
+        return this.syncReservationStats(customerId);
     }
 
     /**
@@ -475,42 +554,14 @@ export class CustomerRepository {
      * Increment no-show count
      */
     async incrementNoShow(customerId: string): Promise<Customer> {
-        const row = await DatabaseService.queryOne(
-            `UPDATE customers SET
-                no_show_count = no_show_count + 1,
-                updated_at = NOW()
-             WHERE id = $1 AND tenant_id = $2
-             RETURNING *`,
-            [customerId, this.tenantId],
-            this.tenantId
-        );
-
-        if (!row) {
-            throw new NotFoundError('顧客', customerId);
-        }
-
-        return mapCustomer(row as Record<string, any>);
+        return this.syncReservationStats(customerId);
     }
 
     /**
      * Increment cancel count
      */
     async incrementCancel(customerId: string): Promise<Customer> {
-        const row = await DatabaseService.queryOne(
-            `UPDATE customers SET
-                cancel_count = cancel_count + 1,
-                updated_at = NOW()
-             WHERE id = $1 AND tenant_id = $2
-             RETURNING *`,
-            [customerId, this.tenantId],
-            this.tenantId
-        );
-
-        if (!row) {
-            throw new NotFoundError('顧客', customerId);
-        }
-
-        return mapCustomer(row as Record<string, any>);
+        return this.syncReservationStats(customerId);
     }
 
     /**

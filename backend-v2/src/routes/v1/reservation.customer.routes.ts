@@ -367,7 +367,7 @@ router.delete(
         enforceCancelPolicy(reservation, policy);
 
         const canceled = await reservationRepo.cancel(id, 'お客様によるキャンセル');
-        await customerRepo.incrementCancel(customer.id);
+        await customerRepo.syncReservationStats(customer.id);
 
         const practitioner = await practitionerRepo.findById(reservation.practitionerId);
         createGoogleCalendarSyncService(tenantId).syncReservationDeletion(reservation, practitioner ?? null);

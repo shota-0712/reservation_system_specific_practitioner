@@ -3,6 +3,7 @@ import {
     createMenuRepository,
     createPractitionerRepository,
     createOptionRepository,
+    createCustomerRepository,
 } from '../repositories/index.js';
 import { createServiceMessageService } from './service-message.service.js';
 import { createGoogleCalendarSyncService } from './google-calendar-sync.service.js';
@@ -267,6 +268,7 @@ export class ReservationService {
     ): Promise<Reservation> {
         const reservationRepo = createReservationRepository(this.tenantId);
         const practitionerRepo = createPractitionerRepository(this.tenantId);
+        const customerRepo = createCustomerRepository(this.tenantId);
 
         const updated = await reservationRepo.updateWithItems(
             id,
@@ -312,6 +314,11 @@ export class ReservationService {
                 salonboardReservationId: params.existingSalonboardReservationId,
             } as unknown as Omit<Reservation, 'id' | 'tenantId' | 'createdAt' | 'updatedAt'>
         );
+
+        const affectedCustomerIds = new Set([existing.customerId, updated.customerId]);
+        for (const customerId of affectedCustomerIds) {
+            await customerRepo.syncReservationStats(customerId);
+        }
 
         if (notifyChange) {
             const targetToken =

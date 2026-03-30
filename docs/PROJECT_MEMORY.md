@@ -1,6 +1,6 @@
 # プロジェクトメモ（正本）
 
-**最終更新日**: 2026-03-20（Firestore helper v3 / booking-link token-only / real LINE repo-fixed）
+**最終更新日**: 2026-03-30（issue #17 customer aggregate sync）
 **更新者**: Codex
 
 ## 1. このプロジェクトでやりたいこと
@@ -37,7 +37,7 @@
 - **`resolve_active_store_context()` 関数（DB）**
   テナント解決の唯一の正規経路。この関数を経由しない `FROM stores` 直参照は廃止済み（MT-A2）。バイパスしてはいけない。
 
-## 4. 現在の実装状況（2026-03-20 時点）
+## 4. 現在の実装状況（2026-03-30 時点）
 
 ### backend-v2（Cloud SQL + RLS）
 - Phase A/B + P0 + OPS-001: **完了**。
@@ -61,10 +61,14 @@
   - Firestore import helper を v3 clean schema 前提へ更新。`practitioners` / `menus` / `menu_options` / `admins` の legacy array write を廃止し、assignment table を delete-and-replace で同期。
   - reservation import は `starts_at` / `ends_at` / `timezone` を正本化し、`startAt/endAt` 優先 + legacy `date/startTime/endTime/duration` 変換入力のみを許可。`reservation_menus` / `reservation_options` も rerun-safe に再投入。
   - `GET /api/platform/v1/booking-links/resolve` は token-only を正式サポート。`tenantKey` は optional hint とし、schema/function/privilege regression (`42P01` / `42703` / `42501` / `42883`) は fail-fast で 5xx に寄せた。
-- ローカル検証（2026-03-20 gate）:
+- 2026-03-30:
+  - Issue #17 (`[P1] 予約ステータス変更で顧客集計が二重計上される`) をローカル修正。顧客集計は status 差分の単純加算をやめ、`reservations` 正本から `total_visits` / `total_spend` / `cancel_count` / `no_show_count` / `first_visit_at` / `last_visit_at` を再同期する方式へ変更した。
+  - `PATCH /api/v1/admin/reservations/:id/status`、顧客キャンセル、`ReservationService.persistUpdate` から `customerRepo.syncReservationStats()` を呼ぶようにし、再送・同一状態更新・completed からの復元・顧客変更を idempotent にした。
+  - `tests/unit/customer.repository.test.ts` と `tests/integration/reservation-status-aggregation.routes.test.ts` を追加し、状態戻しと retry cancel の回帰を固定した。
+- ローカル検証（2026-03-30 gate）:
   - `npm --prefix backend-v2 run lint`: 成功
   - `npm --prefix backend-v2 run typecheck`: 成功
-  - `npm --prefix backend-v2 run test:ci`: 成功（**108 tests**, 6 skipped）
+  - `npm --prefix backend-v2 run test:ci`: 成功（**180 tests**, 15 skipped）
 
 ### admin-dashboard
 - Wave-A（`CRM-FE-001`〜`004`）: **完了**。
@@ -110,6 +114,8 @@
   - seeded tenant `smoke-salon-1773288454` では owner login / claims sync / admin context / tenant LINE config 注入を確認済み。残タスクは real LINE app での LIFF 実認証 smoke。
 
 ## 5. 直近で完了したこと（セッションログ）
+- 2026-03-30: Issue #17 を修正し、予約ステータス更新・顧客キャンセル・reservation update 後の顧客集計を `reservations` 正本から再同期する方式へ統一した。`same-status retry` / `completed -> confirmed` / `completed -> canceled` でも集計が壊れないことを unit + integration test で固定した。
+- 2026-03-30: backend-v2 gate として `npm run lint` / `typecheck` / `test:ci` を再実行し、**180 passed / 15 skipped** を確認した。
 - 2026-03-20: Firestore helper を v3 clean schema 前提へ更新し、assignment table 同期・`starts_at/ends_at/timezone` 正本化・`migration_user` 既定化・reservation child row rerun-safe を実装した。
 - 2026-03-20: `booking-links/resolve` の token-only 経路を正式復旧し、`tenantKey` なしでも strict RLS 下で成功する正規経路へ統一した。schema/function/privilege regression は silent `404` ではなく 5xx に倒すよう是正した。
 - 2026-03-20: real LINE smoke 用 findings template を repo 管理へ移し、`./scripts/prepare_real_line_e2e.sh` で `/tmp/reserve-v3-findings.md` 展開、preflight curl、log watch、`auth/session 401 x2` recovery command を 1 回で出せるようにした。
@@ -145,6 +151,8 @@
   - `DEPLOYMENT.md` / `DB_V3_PHASE_B_EXECUTION_LOG.md §13` に標準手順を記載。
 
 ## 6. これからやること（優先順）
+Issue #17 修正後も優先順位は維持し、remote dev-v3 / real LINE smoke を次の主タスクとする。
+
 1. `./scripts/prepare_real_line_e2e.sh` を実行して `/tmp/reserve-v3-findings.md` を展開し、real LINE app で root URL と booking token URL の両方を `LIFF init -> login -> reservation create -> my reservations -> cancel` まで記録しながら完走する。
 2. post-login auth が失敗した場合は、helper script の recovery command と Cloud Run log watch を使って `channelSecret` / `channelAccessToken` が LIFF app と同じ `channelId=2008799804` の値かを最優先で切り分ける。
 3. Firestore helper の fixture smoke もしくは fresh v3 DB に対する `MIGRATE_DRY_RUN=true` 検証を追加実施し、rerun-safe を実データで確認して記録する。
